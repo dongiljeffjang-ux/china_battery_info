@@ -26,6 +26,8 @@ export async function supabaseRest(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   if (!result.ok) {
+    const detail = (await result.text()).slice(0, 500);
+    console.error(`[DEBUG-sb403] Supabase ${result.status}: ${detail}`);
     const error = new Error(`Supabase request failed: ${result.status}`);
     error.code = "DB_REQUEST_FAILED";
     throw error;
