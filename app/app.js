@@ -156,8 +156,8 @@ function mapDashboardArticle(article){
     date: article.published_at ? article.published_at.slice(0, 10).replaceAll('-', '.') : '날짜 미상',
     title: article.title_ko || article.title_original,
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
-    why: article.is_top10 ? 'Daily Top 10 선정' : '승인된 회사 이벤트',
-    confidence: article.source_tier || '검수 완료',
+    why: article.is_top10 ? 'Daily Top 10 선정' : article.verification_status === 'pending' ? '원문 검증 대기' : '승인된 회사 이벤트',
+    confidence: article.verification_status === 'pending' ? '검증 대기' : article.source_tier || '검수 완료',
     url: article.canonical_url
   };
 }
@@ -169,9 +169,10 @@ async function loadDashboardFromApi(){
     if (payload.status !== 'ok') return;
     const top10 = (payload.top10 || []).map(mapDashboardArticle);
     const companyNews = (payload.companyNews || []).map(mapDashboardArticle);
-    if (top10.length || companyNews.length) {
+    const pendingNews = (payload.pendingNews || []).map(mapDashboardArticle);
+    if (top10.length || companyNews.length || pendingNews.length) {
       const seen = new Set();
-      news = [...top10, ...companyNews].filter(item => {
+      news = [...top10, ...companyNews, ...pendingNews].filter(item => {
         const key = item.url;
         if (seen.has(key)) return false;
         seen.add(key);
