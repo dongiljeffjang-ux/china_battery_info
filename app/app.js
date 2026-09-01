@@ -53,9 +53,17 @@ const companies = {
 
 const companyDisplayNames = {
   CATL: '닝더스다이(CATL)',
+  catl: '닝더스다이(CATL)',
   Ronbay: '룽바이(Ronbay)',
+  ronbay: '룽바이(Ronbay)',
   BTR: '베이터루이(BTR)',
+  btr: '베이터루이(BTR)',
   Shanshan: '산산(Shanshan)'
+  ,shanshan: '산산(Shanshan)',
+  byd: 'BYD',
+  'hunan-yuneng': '후난위넝',
+  putailai: '푸타이라이',
+  'zhongke-electric': '중커전기'
 };
 
 const companySourceInfo = {
@@ -68,6 +76,9 @@ const companySourceInfo = {
 let currentCompany = 'Ronbay';
 let currentNewsCompany = 'all';
 let dailyReportFacts = null;
+let approvedTop10 = [];
+let approvedCompanyNews = [];
+let pendingCandidates = [];
 
 const marketLayerLabels = {
   'supply-performance': '수급·실적',
@@ -98,7 +109,11 @@ function renderDailySummary(){
 function renderTopNews(){
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#news-feed'); target.innerHTML = '';
-  news.slice(0, 10).forEach((item, index) => {
+  if (!approvedTop10.length) {
+    target.innerHTML = '<p>아직 본문·출처 검증을 마치고 승인된 Top 10이 없습니다. 아래 수집 후보에서 검토 과정을 확인할 수 있습니다.</p>';
+    return;
+  }
+  approvedTop10.forEach((item, index) => {
     const node = template.content.cloneNode(true);
     const sector = node.querySelector('.sector-tag'); sector.textContent = `TOP ${index + 1}`; sector.classList.toggle('anode', false);
     node.querySelector('.confidence-tag').textContent = item.confidence;
@@ -110,15 +125,59 @@ function renderTopNews(){
     target.append(node);
   });
 }
+
+function classifyCandidate(article){
+  const title = `${article.title_original || ''} ${article.title_ko || ''}`.toLowerCase();
+  const event = /扩产|增产|产能|项目|投产|开工|factory|capacity|production/.test(title) ? '투자·생산' :
+    /认证|客户|订单|供货|出货|交付|customer|order/.test(title) ? '고객·상업화' :
+    /专利|技术|研发|电池|材料|硅|磷酸|钠|technology|patent/.test(title) ? '기술·제품' :
+    /业绩|营收|利润|价格|销量|市场|financial|revenue/.test(title) ? '실적·시장' : '일반 산업 뉴스';
+  const relation = article.article_company?.[0];
+  const type = relation?.company?.type_tags?.[0];
+  return { event, type: type === 'anode' ? '음극재' : type === 'cathode' ? '양극재' : type === 'cell' ? '셀사' : '미분류' };
+}
+
+function renderCandidateQueue(){
+  const target = document.querySelector('#candidate-news-feed');
+  const count = document.querySelector('#candidate-news-count');
+  count.textContent = pendingCandidates.length ? `최신 ${pendingCandidates.length}건 · Top 10 미선정` : '수집 후보 없음';
+  target.innerHTML = '';
+  if (!pendingCandidates.length) {
+    target.innerHTML = '<p>수집 후보가 없습니다. 수집 1회 실행 후 다시 불러오세요.</p>';
+    return;
+  }
+  const template = document.querySelector('#news-template');
+  pendingCandidates.forEach(item => {
+    const node = template.content.cloneNode(true);
+    const sector = node.querySelector('.sector-tag'); sector.textContent = `${item.classification.type} · ${item.classification.event}`;
+    node.querySelector('.confidence-tag').textContent = '수집 후보';
+    node.querySelector('time').textContent = item.date;
+    node.querySelector('h3').textContent = `${companyDisplayNames[item.company] || item.company} · ${item.title}`;
+    node.querySelector('.news-fact').textContent = `분류 근거: 회사 별칭 매칭 / 제목 키워드 ‘${item.classification.event}’. 원문 본문과 출처 신뢰도는 아직 검증하지 않았습니다.`;
+    node.querySelector('.impact-reason').textContent = `출처: ${item.sourceName || 'RSS'}`;
+    node.querySelector('a').href = item.url;
+    target.append(node);
+  });
+}
 function renderHeadlineSankey(){
-  const sourceNames = [...new Set(headlineFlows.map(flow => flow.company))];
-  const eventNames = [...new Set(headlineFlows.map(flow => flow.event))];
-  const signalNames = [...new Set(headlineFlows.map(flow => flow.signal))];
-  const height = Math.max(310, headlineFlows.length * 52 + 36);
+  const flows = [...approvedTop10, ...approvedCompanyNews].map(item => ({
+    company: item.company,
+    event: item.classification?.event || '확인된 이벤트',
+    signal: item.classification?.type || '기업 이벤트'
+  }));
+  const target = document.querySelector('#headline-sankey');
+  if (!flows.length) {
+    target.innerHTML = '<p>승인된 주요 뉴스가 쌓이면, 그 기사만 기반으로 연결도를 표시합니다.</p>';
+    return;
+  }
+  const sourceNames = [...new Set(flows.map(flow => flow.company))];
+  const eventNames = [...new Set(flows.map(flow => flow.event))];
+  const signalNames = [...new Set(flows.map(flow => flow.signal))];
+  const height = Math.max(310, flows.length * 52 + 36);
   const yFor = (names, name, top, gap) => top + names.indexOf(name) * gap;
   const label = name => companyDisplayNames[name] || name;
   const curve = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 90} ${y1}, ${x2 - 90} ${y2}, ${x2} ${y2}`;
-  const links = headlineFlows.map(flow => {
+  const links = flows.map(flow => {
     const sy = yFor(sourceNames, flow.company, 48, 54) + 12;
     const ey = yFor(eventNames, flow.event, 42, 44) + 12;
     const ty = yFor(signalNames, flow.signal, 82, 76) + 12;
@@ -131,11 +190,13 @@ function renderHeadlineSankey(){
   document.querySelector('#headline-sankey').innerHTML = `<svg viewBox="0 0 850 ${height}" role="img" aria-label="주요 헤드라인의 회사, 사건 유형, 산업 신호 연결도" style="display:block;width:100%;height:auto;min-height:310px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">회사</text><text x="365" y="20" fill="#617187" font-size="11" font-weight="700">헤드라인 사건</text><text x="688" y="20" fill="#617187" font-size="11" font-weight="700">산업 신호</text>${links}${nodes(sourceNames, 14, 48, 54, '#eaf3fb', label)}${nodes(eventNames, 365, 42, 44, '#f5f7fa')}${nodes(signalNames, 688, 82, 76, '#e3f5ed')}</svg>`;
 }
 function renderCompanyNews(){
-  const companiesInNews = ['all', ...new Set(news.map(item => item.company))];
+  const companiesInNews = ['all', ...new Set(approvedCompanyNews.map(item => item.company))];
   document.querySelector('#company-news-controls').innerHTML = companiesInNews.map(company => `<button class="segment ${company === currentNewsCompany ? 'is-selected' : ''}" data-news-company="${company}">${company === 'all' ? '전체 회사' : companyDisplayNames[company] || company}</button>`).join('');
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#company-news-feed'); target.innerHTML = '';
-  news.filter(item => currentNewsCompany === 'all' || item.company === currentNewsCompany).forEach(item => {
+  const filtered = approvedCompanyNews.filter(item => currentNewsCompany === 'all' || item.company === currentNewsCompany);
+  if (!filtered.length) target.innerHTML = '<p>본문 검증과 승인까지 마친 회사별 뉴스가 아직 없습니다.</p>';
+  filtered.forEach(item => {
     const node = template.content.cloneNode(true);
     const sector = node.querySelector('.sector-tag'); sector.textContent = companyDisplayNames[item.company] || item.company; sector.classList.toggle('anode', false);
     node.querySelector('.confidence-tag').textContent = item.confidence;
@@ -158,7 +219,9 @@ function mapDashboardArticle(article){
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
     why: article.is_top10 ? 'Daily Top 10 선정' : article.verification_status === 'pending' ? '원문 검증 대기' : '승인된 회사 이벤트',
     confidence: article.verification_status === 'pending' ? '검증 대기' : article.source_tier || '검수 완료',
-    url: article.canonical_url
+    url: article.canonical_url,
+    sourceName: article.source_name,
+    classification: classifyCandidate(article)
   };
 }
 async function loadDashboardFromApi(){
@@ -167,22 +230,15 @@ async function loadDashboardFromApi(){
     if (!result.ok) return;
     const payload = await result.json();
     if (payload.status !== 'ok') return;
-    const top10 = (payload.top10 || []).map(mapDashboardArticle);
-    const companyNews = (payload.companyNews || []).map(mapDashboardArticle);
-    const pendingNews = (payload.pendingNews || []).map(mapDashboardArticle);
-    if (top10.length || companyNews.length || pendingNews.length) {
-      const seen = new Set();
-      news = [...top10, ...companyNews, ...pendingNews].filter(item => {
-        const key = item.url;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    }
+    approvedTop10 = (payload.top10 || []).map(mapDashboardArticle);
+    approvedCompanyNews = (payload.companyNews || []).map(mapDashboardArticle)
+      .filter(article => !approvedTop10.some(top10 => top10.url === article.url));
+    pendingCandidates = (payload.pendingNews || []).map(mapDashboardArticle);
+    news = [...approvedTop10, ...approvedCompanyNews];
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }
-    renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
+    renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCandidateQueue(); renderCompanyNews();
   } catch {
     // 환경변수 미설정·DB 초기화 전에는 시드 화면을 유지한다.
   }
@@ -272,5 +328,5 @@ document.querySelector('#run-collection-button').addEventListener('click', async
 const select = document.querySelector('#company-select'); makeSelect(select,currentCompany); select.addEventListener('change', () => { currentCompany = select.value; renderCompany(); });
 document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
 const compareA=document.querySelector('#compare-a'),compareB=document.querySelector('#compare-b'); makeSelect(compareA,'Ronbay'); makeSelect(compareB,'BTR'); compareA.addEventListener('change',renderComparison); compareB.addEventListener('change',renderComparison);
-renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompany(); renderComparison();
+renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCandidateQueue(); renderCompanyNews(); renderCompany(); renderComparison();
 loadDashboardFromApi();
