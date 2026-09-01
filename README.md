@@ -31,7 +31,7 @@ python .\pipeline\collect_feeds.py
 
 ## 무료 뉴스 수집
 
-`pipeline/collect_feeds.py`와 `/api/news`는 Google News RSS와 중국신문 공식 RSS를 사용합니다. 중국어·영어 키워드로 후보 메타데이터를 모으고, 승인된 기사만 원문 확인·한국어 번역 단계로 넘깁니다. 유료 뉴스 API 키 없이도 수집 파이프라인을 실행할 수 있습니다.
+`/api/ingest-rss`와 `/api/news`는 Google News RSS를 사용하지 않습니다. Sina Finance 공개 JSON 피드, 人民网·中新网 재경 RSS, 巨潮资讯(CNINFO) 공식 공시를 결합합니다. 언론·기업 뉴스는 헤드라인 선별 후 원문 확인·한국어 번역 단계로 넘기고, CNINFO 공시는 PDF 원문 링크와 공식 메타데이터를 회사 시계열 근거로 축적합니다.
 
 Vercel 배포에서는 별도 뉴스 API 키 없이 `/api/news`를 사용할 수 있습니다.
 
