@@ -57,7 +57,10 @@ async function analyzeArticle(article, bodyText) {
       text: { format: { type: "json_schema", name: "battery_article_event", strict: true, schema } }
     })
   });
-  if (!upstream.ok) throw new Error(`OPENAI_${upstream.status}`);
+  if (!upstream.ok) {
+    const detail = (await upstream.text()).replace(/\s+/g, " ").slice(0, 500);
+    throw new Error(`OPENAI_${upstream.status}: ${detail}`);
+  }
   const payload = await upstream.json();
   return JSON.parse(payload.output_text);
 }

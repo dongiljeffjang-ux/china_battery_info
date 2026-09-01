@@ -8,6 +8,7 @@ export const maxDuration = 60;
 
 const TOP10_LIMIT = 10;
 const PROCESS_CONCURRENCY = 3;
+const ANALYZABLE_SOURCES = new Set(["Sina Finance", "China News Finance", "People's Daily Finance", "CATL Newsroom"]);
 const HIGH_SIGNAL_TERMS = [
   "扩产", "增产", "产能", "投产", "开工", "项目", "签约", "订单", "定点", "认证", "量产", "出货", "交付",
   "营收", "收入", "净利润", "财报", "业绩", "海外", "建厂", "投资", "收购", "合作", "固态", "硅碳", "lmfp",
@@ -41,7 +42,7 @@ async function selectHeadlineTop10() {
     if (key && !unique.has(key)) unique.set(key, article);
   }
   return [...unique.values()]
-    .filter((article) => article.source_name !== "CNINFO Disclosure")
+    .filter((article) => ANALYZABLE_SOURCES.has(article.source_name))
     .map((article) => ({ ...article, headline_score: headlineScore(article) }))
     .sort((a, b) => b.headline_score - a.headline_score || new Date(b.published_at) - new Date(a.published_at))
     .slice(0, TOP10_LIMIT);
@@ -58,6 +59,7 @@ async function processSelectedBatch(rows) {
       try {
         outcomes.push({ articleId: article.id, ...(await processPendingArticle(article.id, companyId)) });
       } catch (error) {
+        console.error("[ARTICLE_PROCESS_FAILED]", JSON.stringify({ articleId: article.id, source: article.source_name, message: error.message }));
         outcomes.push({ articleId: article.id, status: "processing_failed", message: error.message });
       }
     }
