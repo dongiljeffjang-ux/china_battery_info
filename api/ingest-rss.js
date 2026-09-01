@@ -46,22 +46,25 @@ export default async function handler(request, response) {
   try {
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ aliases, ...company }) => company) });
     const candidates = await discoverArticles();
-    let stored = 0;
-    for (const candidate of candidates) {
-      const matches = companiesFor(candidate);
-      if (!matches.length) continue;
-      const rows = await supabaseRest("article?on_conflict=canonical_url", { method: "POST", prefer: "resolution=merge-duplicates,return=representation", body: {
+    const matchedCandidates = candidates
+      .map((candidate) => ({ candidate, companies: companiesFor(candidate) }))
+      .filter(({ companies }) => companies.length);
+    const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
         source_language: "zh", published_at: new Date(candidate.publishedAt || Date.now()).toISOString(),
         verification_status: "pending", source_tier: "needs_review"
-      } });
-      const article = rows[0];
-      for (const company of matches) {
-        await supabaseRest("article_company?on_conflict=article_id,company_id", { method: "POST", prefer: "resolution=ignore-duplicates,return=minimal", body: { article_id: article.id, company_id: company.id } });
-      }
-      stored += 1;
+    }));
+    const storedArticles = articleRows.length
+      ? await supabaseRest("article?on_conflict=canonical_url", { method: "POST", prefer: "resolution=merge-duplicates,return=representation", body: articleRows })
+      : [];
+    const idByUrl = new Map(storedArticles.map((article) => [article.canonical_url, article.id]));
+    const companyLinks = matchedCandidates.flatMap(({ candidate, companies }) =>
+      companies.map((company) => ({ article_id: idByUrl.get(candidate.url), company_id: company.id }))
+    ).filter((link) => link.article_id);
+    if (companyLinks.length) {
+      await supabaseRest("article_company?on_conflict=article_id,company_id", { method: "POST", prefer: "resolution=ignore-duplicates,return=minimal", body: companyLinks });
     }
-    return response.status(200).json({ status: "ok", discovered: candidates.length, stored, next_step: "Run /api/process-article for selected pending article IDs, then approve verified facts." });
+    return response.status(200).json({ status: "ok", discovered: candidates.length, stored: storedArticles.length, next_step: "Run /api/process-article for selected pending article IDs, then approve verified facts." });
   } catch (error) {
     return response.status(502).json({ status: "ingestion_failed", message: error.message });
   }
