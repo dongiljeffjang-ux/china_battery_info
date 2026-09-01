@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="China Battery Lens — 중국 양극재·음극재 인텔리전스" />
+    <title>China Battery Lens</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#daily" aria-label="China Battery Lens 홈">
+        <span class="brand-mark">CB</span>
+        <span>China Battery Lens</span>
+      </a>
+      <nav aria-label="주요 메뉴">
+        <a href="#daily" class="nav-link is-active" data-view="daily">Daily</a>
+        <a href="#companies" class="nav-link" data-view="companies">기업 분석</a>
+        <a href="#compare" class="nav-link" data-view="compare">비교</a>
+      </nav>
+      <div class="as-of">데이터 기준 2026.08.31 · 내부 검토용</div>
+    </header>
+
+    <main>
+      <section id="daily" class="view is-visible" aria-labelledby="daily-title">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">DAILY INTELLIGENCE</p>
+            <h1 id="daily-title">오늘의 중국 배터리 산업</h1>
+            <p>전체 수집 뉴스에서 선별한 핵심 사실을 한국어로 정리합니다.</p>
+          </div>
+          <button id="refresh-button" class="secondary-button">새로 고침</button>
+        </div>
+
+        <section class="signal-strip" aria-label="오늘의 핵심 신호" id="signal-strip"></section>
+
+        <section class="daily-summary" aria-labelledby="summary-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">FACT-ONLY SUMMARY</p>
+              <h2 id="summary-title">1페이지 Daily 요약 보고서</h2>
+            </div>
+            <span class="source-rule">공식 발표 1건 또는 복수 주요 언론 확인</span>
+          </div>
+          <ol id="daily-summary-list" class="summary-list"></ol>
+        </section>
+
+        <section class="news-section" aria-labelledby="news-title">
+          <div class="section-heading news-heading">
+            <div>
+              <p class="eyebrow">DAILY TOP 10</p>
+              <h2 id="news-title">본문 확인을 마친 핵심 뉴스</h2>
+            </div>
+            <span class="source-rule">기사 본문 정독 후 한국어 팩트 요약</span>
+          </div>
+          <div id="news-feed" class="news-feed"></div>
+        </section>
+
+        <section class="news-section" aria-labelledby="sankey-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">HEADLINE FLOW</p>
+              <h2 id="sankey-title">주요 헤드라인 산업 연결도</h2>
+            </div>
+            <span class="source-rule">Top 10 외 승인 주요 뉴스도 포함 · 해석·예측 없음</span>
+          </div>
+          <p>헤드라인에서 확인된 회사 → 사건 유형 → 산업 신호의 연결을 집계합니다.</p>
+          <div id="headline-sankey" aria-live="polite"></div>
+        </section>
+
+        <section class="news-section" aria-labelledby="company-news-title">
+          <div class="section-heading news-heading">
+            <div>
+              <p class="eyebrow">COMPANY NEWS</p>
+              <h2 id="company-news-title">회사별 뉴스</h2>
+            </div>
+            <div class="segmented-control" role="group" aria-label="회사 선택" id="company-news-controls"></div>
+          </div>
+          <div id="company-news-feed" class="news-feed"></div>
+        </section>
+      </section>
+
+      <section id="companies" class="view" aria-labelledby="companies-title">
+        <div class="page-heading compact">
+          <div>
+            <p class="eyebrow">COMPANY LENS</p>
+            <h1 id="companies-title">기업 시계열</h1>
+            <p>최소 최근 3년부터 현재까지, 출처가 확인된 주요 사실을 시간순으로 추적합니다.</p>
+          </div>
+          <label class="company-picker">기업 선택
+            <select id="company-select" aria-label="분석할 기업 선택"></select>
+          </label>
+          <button id="export-company-timeline" class="secondary-button" type="button">Excel 내보내기</button>
+        </div>
+
+        <section id="company-profile" class="company-profile"></section>
+        <section class="snapshot-section" aria-labelledby="snapshot-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">THREE-YEAR HISTORY</p>
+              <h2 id="snapshot-title">최근 3년 주요 이벤트</h2>
+            </div>
+            <span class="source-rule">해석이 아닌 출처 명시 팩트</span>
+          </div>
+          <div id="snapshot-grid" class="snapshot-grid"></div>
+        </section>
+
+        <section class="dual-track-section" aria-labelledby="tracks-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">MARKET × TECHNOLOGY</p>
+              <h2 id="tracks-title">시장·기술 레이어별 시간축</h2>
+            </div>
+          </div>
+          <div class="track-legend"><span><i class="dot market"></i>시장 레이어: 수급·실적 / 투자·생산기반 / 고객·상업화 / 지역·해외전략</span><span><i class="dot tech"></i>기술 레이어: 소재·화학계 / 공정·성능 / IP·표준 / 인증·양산</span></div>
+          <div id="dual-track" class="dual-track"></div>
+        </section>
+      </section>
+
+      <section id="compare" class="view" aria-labelledby="compare-title">
+        <div class="page-heading compact">
+          <div>
+            <p class="eyebrow">COMPANY COMPARISON</p>
+            <h1 id="compare-title">기업 비교</h1>
+            <p>두 기업의 출처 확인 이벤트를 공통 시간축에서 비교합니다. 위로 갈수록 최근입니다.</p>
+          </div>
+        </div>
+        <div class="compare-controls">
+          <label>기업 A <select id="compare-a"></select></label>
+          <label>기업 B <select id="compare-b"></select></label>
+        </div>
+          <div id="comparison-grid" class="comparison-stack"></div>
+      </section>
+    </main>
+
+    <template id="news-template">
+      <article class="news-card">
+        <div class="news-meta"><span class="sector-tag"></span><span class="confidence-tag"></span><time></time></div>
+        <h3></h3>
+        <p class="news-fact"></p>
+        <div class="news-footer"><span class="impact-reason"></span><a target="_blank" rel="noreferrer">원문 보기 ↗</a></div>
+      </article>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="./app.js?v=20260901k"></script>
+  </body>
+</html>

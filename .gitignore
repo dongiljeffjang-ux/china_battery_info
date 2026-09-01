@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+data/*.sqlite
+data/*.db
+data/archives/
+outputs/
+__pycache__/
+*.py[cod]
+*.log
