@@ -141,6 +141,7 @@ function classifyCandidate(article){
 function renderCandidateQueue(){
   const target = document.querySelector('#candidate-news-feed');
   const count = document.querySelector('#candidate-news-count');
+  if (!target || !count) return;
   count.textContent = pendingCandidates.length ? `최신 ${pendingCandidates.length}건 · Top 10 미선정` : '수집 후보 없음';
   target.innerHTML = '';
   if (!pendingCandidates.length) {
@@ -245,7 +246,7 @@ async function loadDashboardFromApi(){
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }
-    renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCandidateQueue(); renderCompanyNews();
+    renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
   } catch {
     // 환경변수 미설정·DB 초기화 전에는 시드 화면을 유지한다.
   }
@@ -297,6 +298,22 @@ function exportCompanyTimeline(){
   const blob = new Blob([`<html><head><meta charset="utf-8"></head><body><table border="1">${table}</table></body></html>`], {type:'application/vnd.ms-excel;charset=utf-8'});
   const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${currentCompany}_timeline.xls`; document.body.append(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
 }
+async function exportRawNews(){
+  const button = document.querySelector('#export-raw-news'); button.disabled = true; button.textContent = '다운로드 준비 중…';
+  try {
+    const result = await fetch('/api/raw-news'); const payload = await result.json();
+    if (!result.ok || !window.XLSX) throw new Error('raw_export_failed');
+    const rows = [['기사 ID','회사','기업 유형','원문 제목','한국어 제목','발행일','매체','원문 링크','한국어 요약','키워드','상태','출처 등급','Top 10','순위']];
+    (payload.articles || []).forEach(article => {
+      const links = article.article_company || [{company_id:'', company:{}}];
+      links.forEach(link => rows.push([article.id, link.company?.name_ko || link.company_id, (link.company?.type_tags || []).join(', '), article.title_original, article.title_ko, article.published_at, article.source_name, article.canonical_url, article.summary_ko, (article.keywords_ko || []).join(', '), article.verification_status, article.source_tier, article.is_top10 ? 'Y' : '', article.top10_rank || '']));
+    });
+    const sheet = XLSX.utils.aoa_to_sheet(rows); sheet['!cols'] = [36,18,14,60,50,20,20,70,70,35,18,18,10,8];
+    rows.slice(1).forEach((row, index) => { sheet[`H${index + 2}`].l = { Target: row[7] }; });
+    const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, sheet, 'Raw articles'); XLSX.writeFile(workbook, `china-battery-lens_raw_${new Date().toISOString().slice(0,10)}.xlsx`);
+  } catch { window.alert('Raw data Excel을 만들지 못했습니다.'); }
+  finally { button.disabled = false; button.textContent = 'Raw data Excel'; }
+}
 function comparisonTimeline(company){
   const item = companies[company];
   return [...item.market, ...item.tech].map(([date, title, fact]) => ({date, title, fact}));
@@ -335,10 +352,11 @@ document.querySelector('#run-collection-button').addEventListener('click', async
 });
 const select = document.querySelector('#company-select'); makeSelect(select,currentCompany); select.addEventListener('change', () => { currentCompany = select.value; renderCompany(); });
 document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
+document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
 const compareA=document.querySelector('#compare-a'),compareB=document.querySelector('#compare-b'); makeSelect(compareA,'Ronbay'); makeSelect(compareB,'BTR'); compareA.addEventListener('change',renderComparison); compareB.addEventListener('change',renderComparison);
 const sankeyTo = new Date();
 const sankeyFrom = new Date(); sankeyFrom.setDate(sankeyFrom.getDate() - 30);
 document.querySelector('#sankey-from').value = sankeyFrom.toISOString().slice(0, 10);
 document.querySelector('#sankey-to').value = sankeyTo.toISOString().slice(0, 10);
-renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCandidateQueue(); renderCompanyNews(); renderCompany(); renderComparison();
+renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompany(); renderComparison();
 loadDashboardFromApi();
