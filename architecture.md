@@ -6,6 +6,37 @@
 
 ## 2. 논리 아키텍처
 
+### 현재 구현 아키텍처
+
+```mermaid
+flowchart LR
+  RSS[Google News RSS\nChina News Finance RSS] --> INGEST[/Vercel: ingest-rss\n일일 Cron 또는 수동 수집/]
+  INGEST -->|제목·링크·발행일\n회사 별칭 매칭| ARTICLE[(Supabase\narticle · article_company)]
+
+  INGEST -->|Cron 인증 요청만| PROCESS[/LLM 본문 처리\nprocess-article/]
+  PROCESS -->|원문 일시 취득\n한국어 제목·요약·키워드 1~3개\n시장/기술 이벤트 추출| ARTICLE
+  PROCESS --> EVENT[(Supabase\nevent)]
+
+  ARTICLE -->|pending_review 기사\nTop 10 선별| DAILY[/LLM Daily 생성\ngenerate-daily/]
+  DAILY --> REPORT[(Supabase\ndaily_report)]
+  DAILY -->|Top 10 플래그·순위| ARTICLE
+
+  ARTICLE --> DASH[/Vercel: dashboard API/]
+  EVENT --> DASH
+  REPORT --> DASH
+  DASH --> UI[China Battery Lens\nVercel Web UI]
+
+  UI -->|Top 10·Daily 요약| DASH
+  UI -->|From~To 기간| DASH
+  DASH -->|Top 10 제외 기사\n기업 → LLM 키워드(n건)| UI
+
+  EVENT -->|승인 후| EMBED[/embed-event/]
+  EMBED --> VECTOR[(Supabase pgvector\nknowledge_chunk)]
+  VECTOR -. 향후 RAG 챗 .-> UI
+```
+
+현재 RSS 수집은 공개 트리거를 허용하고, 비용이 발생하는 본문 LLM 처리·Daily 생성은 Vercel Cron의 `CRON_SECRET` 인증 요청에서만 실행한다. 뉴스 원문은 LLM 처리 중에만 일시 취득하고 저장하지 않는다.
+
 ```mermaid
 flowchart TB
   subgraph Sources[외부·사용자 데이터]
