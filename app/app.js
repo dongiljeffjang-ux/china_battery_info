@@ -387,12 +387,18 @@ async function initializeAccessGate(){
       const result = await fetch('/api/access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessKey: document.querySelector('#access-key').value }) });
       const payload = await result.json().catch(() => ({}));
       if (!result.ok) throw new Error(payload.status || 'access_failed');
-      window.location.reload();
+      const session = await fetch('/api/access', { cache: 'no-store' });
+      if (!session.ok) throw new Error('session_cookie_not_saved');
+      gate.hidden = true;
+      shell.hidden = false;
+      await loadDashboardFromApi();
     } catch (error) {
       message.textContent = error.message === 'invalid_access_key'
         ? '접근 키가 Vercel에 저장된 값과 일치하지 않습니다. 공백·따옴표 없이 다시 확인해 주세요.'
         : error.message === 'access_key_not_configured'
           ? 'Vercel의 APP_ACCESS_KEY가 아직 Production 환경에 설정되지 않았습니다.'
+          : error.message === 'session_cookie_not_saved'
+            ? '키는 확인됐지만 브라우저가 입장 세션을 저장하지 못했습니다. 사이트 쿠키 차단을 해제한 뒤 다시 시도해 주세요.'
           : '접근 확인 중 문제가 발생했습니다. 새로고침 후 다시 시도해 주세요.';
       button.disabled = false;
     }
