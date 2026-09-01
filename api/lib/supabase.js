@@ -11,11 +11,15 @@ export async function supabaseRest(path, options = {}) {
     error.code = "DB_NOT_CONFIGURED";
     throw error;
   }
+  // New sb_secret_* keys are opaque API keys, not JWTs. Supabase accepts them
+  // in `apikey` only; legacy service_role JWTs require Authorization as well.
+  const authHeaders = SERVICE_ROLE_KEY.startsWith("sb_secret_")
+    ? { apikey: SERVICE_ROLE_KEY }
+    : { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` };
   const result = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method: options.method || "GET",
     headers: {
-      apikey: SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+      ...authHeaders,
       Accept: "application/json",
       ...(options.body ? { "Content-Type": "application/json", Prefer: options.prefer || "return=representation" } : {}),
     },
