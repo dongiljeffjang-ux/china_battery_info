@@ -252,7 +252,24 @@ function activateView(view){
   document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('is-active',el.dataset.view===view));
 }
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
-document.querySelector('#refresh-button').addEventListener('click', () => { renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); });
+document.querySelector('#refresh-button').addEventListener('click', () => { renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); loadDashboardFromApi(); });
+document.querySelector('#run-collection-button').addEventListener('click', async () => {
+  const secret = window.prompt('1회 수집 실행용 CRON_SECRET을 입력하세요. 이 값은 저장되지 않습니다.');
+  if (!secret) return;
+  const button = document.querySelector('#run-collection-button');
+  button.disabled = true; button.textContent = '수집 중…';
+  try {
+    const result = await fetch('/api/ingest-rss', { method: 'POST', headers: { Authorization: `Bearer ${secret}` } });
+    const payload = await result.json();
+    if (!result.ok) throw new Error(payload.status || '요청 실패');
+    window.alert(`후보 수집 완료: 발견 ${payload.discovered}건 / 저장 ${payload.stored}건\n다음 단계에서 원문 검증 대기열로 처리됩니다.`);
+    loadDashboardFromApi();
+  } catch (error) {
+    window.alert(`수집을 실행하지 못했습니다: ${error.message}`);
+  } finally {
+    button.disabled = false; button.textContent = '수집 1회 실행';
+  }
+});
 const select = document.querySelector('#company-select'); makeSelect(select,currentCompany); select.addEventListener('change', () => { currentCompany = select.value; renderCompany(); });
 document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
 const compareA=document.querySelector('#compare-a'),compareB=document.querySelector('#compare-b'); makeSelect(compareA,'Ronbay'); makeSelect(compareB,'BTR'); compareA.addEventListener('change',renderComparison); compareB.addEventListener('change',renderComparison);
