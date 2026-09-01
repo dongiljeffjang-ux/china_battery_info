@@ -135,6 +135,8 @@ export default async function handler(request, response) {
       ? await processSelectedBatch(selectedHeadlines)
       : [];
     const processedIds = llmResults.filter((result) => result.status === "pending_review").map((result) => result.articleId);
+    const outcomeCounts = llmResults.reduce((counts, result) => ({ ...counts, [result.status]: (counts[result.status] || 0) + 1 }), {});
+    console.info("[INGEST_OUTCOMES]", JSON.stringify({ selected: selectedHeadlines.length, outcomes: outcomeCounts }));
     const dailyReport = processedIds.length && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL
       ? await generateDailyReport(processedIds)
       : null;
@@ -142,6 +144,7 @@ export default async function handler(request, response) {
       status: "ok", discovered: candidates.length, stored: storedArticles.length,
       headline_selected: selectedHeadlines.length,
       llm_processed: llmResults.filter((result) => result.status === "pending_review").length,
+      outcome_counts: outcomeCounts,
       llm_results: llmResults,
       daily_report: dailyReport,
       next_step: shouldProcess ? "Headline-based Top 10 selection, body reading, Korean fact summarization, and Daily report generation have run." : "Use process=1 or the scheduled cron to run the Daily analysis."
