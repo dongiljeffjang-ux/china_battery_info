@@ -2,7 +2,7 @@ import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { requireAccess } from "./lib/access.js";
 import { processPendingArticle } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
-import { COMPANIES, companiesFor, discoverChinaSources } from "./lib/china-sources.js";
+import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
 
 export const maxDuration = 60;
 

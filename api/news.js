@@ -1,5 +1,5 @@
 import { requireAccess } from "./lib/access.js";
-import { companiesFor, discoverChinaSources } from "./lib/china-sources.js";
+import { companiesFor, discoverChinaSources } from "../lib/china-sources.js";
 
 export default async function handler(request, response) {
   if (!requireAccess(request, response)) return;
