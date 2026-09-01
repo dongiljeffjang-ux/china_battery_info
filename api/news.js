@@ -1,3 +1,5 @@
+import { requireAccess } from "./lib/access.js";
+
 const QUERIES = [
   "宁德时代 OR CATL 电池", "比亚迪 OR BYD 电池",
   "容百科技 OR Ronbay 正极", "湖南裕能 OR Hunan Yuneng 正极",
@@ -18,6 +20,7 @@ function parseRss(xml) {
 }
 
 export default async function handler(request, response) {
+  if (!requireAccess(request, response)) return;
   try {
     const results = await Promise.all(QUERIES.map(async (query) => {
       const params = new URLSearchParams({ q: query, hl: "zh-CN", gl: "CN", ceid: "CN:zh-Hans" });

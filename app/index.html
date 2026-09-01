@@ -6,8 +6,21 @@
     <meta name="description" content="China Battery Lens — 중국 양극재·음극재 인텔리전스" />
     <title>China Battery Lens</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./access.css" />
   </head>
   <body>
+    <section id="access-gate" class="access-gate" hidden aria-labelledby="access-title">
+      <form id="access-form" class="access-card">
+        <span class="brand-mark">CB</span>
+        <p class="eyebrow">PRIVATE ACCESS</p>
+        <h1 id="access-title">China Battery Lens</h1>
+        <p>접근 키를 입력해 내부 인텔리전스 페이지를 엽니다.</p>
+        <label>접근 키<input id="access-key" type="password" autocomplete="current-password" required /></label>
+        <button class="secondary-button" type="submit">입장하기</button>
+        <p id="access-message" class="access-message" role="alert"></p>
+      </form>
+    </section>
+    <div id="app-shell" hidden>
     <header class="topbar">
       <a class="brand" href="#daily" aria-label="China Battery Lens 홈">
         <span class="brand-mark">CB</span>
@@ -30,7 +43,7 @@
             <p>전체 수집 뉴스에서 선별한 핵심 사실을 한국어로 정리합니다.</p>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <button id="run-collection-button" class="secondary-button" type="button">수집 1회 실행</button>
+            <button id="run-collection-button" class="secondary-button" type="button">수집·분석 1회 실행</button>
             <button id="export-raw-news" class="secondary-button" type="button">Raw data Excel</button>
             <button id="refresh-button" class="secondary-button">새로 고침</button>
           </div>
@@ -133,6 +146,7 @@
           <div id="comparison-grid" class="comparison-stack"></div>
       </section>
     </main>
+    </div>
 
     <template id="news-template">
       <article class="news-card">

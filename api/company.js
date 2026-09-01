@@ -1,6 +1,8 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { requireAccess } from "./lib/access.js";
 
 export default async function handler(request, response) {
+  if (!requireAccess(request, response)) return;
   const companyId = String(request.query.companyId || "").trim();
   if (!companyId) return response.status(400).json({ status: "invalid_request", message: "companyId is required." });
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });

@@ -43,8 +43,9 @@ async function selectTop10(candidates) {
   return JSON.parse((await upstream.json()).output_text);
 }
 
-export async function generateDailyReport() {
-  const candidates = await supabaseRest("article?select=id,title_ko,summary_ko,source_name,published_at,article_company(company(name_ko))&verification_status=eq.pending_review&order=published_at.desc&limit=80");
+export async function generateDailyReport(articleIds = []) {
+  const idFilter = articleIds.length ? `&id=in.(${articleIds.join(",")})` : "";
+  const candidates = await supabaseRest(`article?select=id,title_ko,summary_ko,source_name,published_at,article_company(company(name_ko))&verification_status=eq.pending_review${idFilter}&order=published_at.desc&limit=80`);
   if (!candidates.length) return { status: "no_reviewed_articles" };
   const result = await selectTop10(candidates);
   const candidateIds = new Set(candidates.map((article) => article.id));

@@ -111,7 +111,7 @@ function renderTopNews(){
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#news-feed'); target.innerHTML = '';
   if (!approvedTop10.length) {
-    target.innerHTML = '<p>아직 본문·출처 검증을 마치고 승인된 Top 10이 없습니다. 아래 수집 후보에서 검토 과정을 확인할 수 있습니다.</p>';
+    target.innerHTML = '<p>아직 오늘의 Daily 분석 결과가 없습니다. 상단의 수집·분석 1회 실행을 누르면 헤드라인 선별, 본문 분석, 한국어 요약을 순서대로 진행합니다.</p>';
     return;
   }
   approvedTop10.forEach((item, index) => {
@@ -221,8 +221,8 @@ function mapDashboardArticle(article){
     date: article.published_at ? article.published_at.slice(0, 10).replaceAll('-', '.') : '날짜 미상',
     title: article.title_ko || article.title_original,
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
-    why: article.is_top10 ? 'Daily Top 10 선정' : article.verification_status === 'pending' ? '원문 검증 대기' : '승인된 회사 이벤트',
-    confidence: article.verification_status === 'pending' ? '검증 대기' : article.source_tier || '검수 완료',
+    why: article.is_top10 ? '헤드라인 선별 후 본문 정독·팩트 요약 완료' : article.verification_status === 'pending' ? '미분석 수집 원문' : '분석된 회사 이벤트',
+    confidence: article.verification_status === 'pending_review' ? 'LLM 본문 분류 완료' : article.verification_status === 'pending' ? '미분석' : article.source_tier || '검수 완료',
     url: article.canonical_url,
     sourceName: article.source_name,
     classification: classifyCandidate(article)
@@ -233,7 +233,8 @@ async function loadDashboardFromApi(){
     const from = document.querySelector('#sankey-from')?.value;
     const to = document.querySelector('#sankey-to')?.value;
     const params = new URLSearchParams(); if (from) params.set('from', from); if (to) params.set('to', to);
-    const result = await fetch(`/api/dashboard?${params}`);
+    params.set('_', Date.now().toString());
+    const result = await fetch(`/api/dashboard?${params}`, { cache: 'no-store' });
     if (!result.ok) return;
     const payload = await result.json();
     if (payload.status !== 'ok') return;
@@ -344,17 +345,17 @@ document.querySelector('#refresh-button').addEventListener('click', () => { rend
 document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
 document.querySelector('#run-collection-button').addEventListener('click', async () => {
   const button = document.querySelector('#run-collection-button');
-  button.disabled = true; button.textContent = '수집 중…';
+  button.disabled = true; button.textContent = '수집·분석 중…';
   try {
-    const result = await fetch('/api/ingest-rss', { method: 'POST' });
+    const result = await fetch('/api/ingest-rss?process=1', { method: 'POST' });
     const payload = await result.json();
     if (!result.ok) throw new Error(payload.status || '요청 실패');
-    window.alert(`후보 수집 완료: 발견 ${payload.discovered}건 / 저장 ${payload.stored}건\n다음 단계에서 원문 검증 대기열로 처리됩니다.`);
-    loadDashboardFromApi();
+    window.alert(`Daily 분석 완료: 발견 ${payload.discovered}건 / 저장 ${payload.stored}건 / 헤드라인 Top ${payload.headline_selected || 0}건 / 본문 처리 ${payload.llm_processed || 0}건\n첫 화면을 최신 결과로 갱신합니다.`);
+    await loadDashboardFromApi();
   } catch (error) {
     window.alert(`수집을 실행하지 못했습니다: ${error.message}`);
   } finally {
-    button.disabled = false; button.textContent = '수집 1회 실행';
+    button.disabled = false; button.textContent = '수집·분석 1회 실행';
   }
 });
 const select = document.querySelector('#company-select'); makeSelect(select,currentCompany); select.addEventListener('change', () => { currentCompany = select.value; renderCompany(); });
@@ -367,3 +368,29 @@ document.querySelector('#sankey-from').value = sankeyFrom.toISOString().slice(0,
 document.querySelector('#sankey-to').value = sankeyTo.toISOString().slice(0, 10);
 renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompany(); renderComparison();
 loadDashboardFromApi();
+
+async function initializeAccessGate(){
+  const gate = document.querySelector('#access-gate');
+  const shell = document.querySelector('#app-shell');
+  const form = document.querySelector('#access-form');
+  const message = document.querySelector('#access-message');
+  try {
+    const result = await fetch('/api/access', { cache: 'no-store' });
+    if (result.ok) { shell.hidden = false; return; }
+  } catch {}
+  gate.hidden = false;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = form.querySelector('button');
+    button.disabled = true; message.textContent = '';
+    try {
+      const result = await fetch('/api/access', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessKey: document.querySelector('#access-key').value }) });
+      if (!result.ok) throw new Error('invalid_access_key');
+      window.location.reload();
+    } catch {
+      message.textContent = '접근 키가 올바르지 않거나 아직 설정되지 않았습니다.';
+      button.disabled = false;
+    }
+  });
+}
+initializeAccessGate();
