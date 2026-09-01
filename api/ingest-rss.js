@@ -1,4 +1,27 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { processPendingArticle } from "./process-article.js";
+
+const LLM_BATCH_LIMIT = 8;
+
+function isCronRequest(request) {
+  const secret = process.env.CRON_SECRET;
+  return Boolean(secret && request.headers.authorization === `Bearer ${secret}`);
+}
+
+async function processPendingBatch() {
+  const rows = await supabaseRest(`article?select=id,article_company(company_id)&verification_status=eq.pending&order=published_at.desc&limit=${LLM_BATCH_LIMIT}`);
+  const outcomes = [];
+  for (const article of rows) {
+    const companyId = article.article_company?.[0]?.company_id;
+    if (!companyId) continue;
+    try {
+      outcomes.push({ articleId: article.id, ...(await processPendingArticle(article.id, companyId)) });
+    } catch (error) {
+      outcomes.push({ articleId: article.id, status: "processing_failed", message: error.message });
+    }
+  }
+  return outcomes;
+}
 
 const COMPANIES = [
   { id: "catl", name_ko: "CATL", name_zh: "宁德时代", name_en: "Contemporary Amperex Technology", type_tags: ["cell"], aliases: ["宁德时代", "CATL", "Contemporary Amperex Technology"] },
@@ -64,7 +87,15 @@ export default async function handler(request, response) {
     if (companyLinks.length) {
       await supabaseRest("article_company?on_conflict=article_id,company_id", { method: "POST", prefer: "resolution=ignore-duplicates,return=minimal", body: companyLinks });
     }
-    return response.status(200).json({ status: "ok", discovered: candidates.length, stored: storedArticles.length, next_step: "Run /api/process-article for selected pending article IDs, then approve verified facts." });
+    const llmResults = isCronRequest(request) && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL
+      ? await processPendingBatch()
+      : [];
+    return response.status(200).json({
+      status: "ok", discovered: candidates.length, stored: storedArticles.length,
+      llm_processed: llmResults.filter((result) => result.status === "pending_review").length,
+      llm_results: llmResults,
+      next_step: isCronRequest(request) ? "Review the LLM-classified pending_review items, approve verified facts, then select Top 10." : "Scheduled collection will process up to 8 pending articles with the LLM."
+    });
   } catch (error) {
     return response.status(502).json({ status: "ingestion_failed", message: error.message });
   }

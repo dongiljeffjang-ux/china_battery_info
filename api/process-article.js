@@ -27,8 +27,9 @@ async function analyzeArticle(article, bodyText) {
   const schema = {
     type: "object",
     additionalProperties: false,
-    required: ["summary_ko", "event_title_ko", "event_fact_ko", "original_excerpt", "original_excerpt_ko", "occurred_at", "trajectory_track", "layer_key", "region_scope", "timeline_eligibility", "confidence_note"],
+    required: ["title_ko", "summary_ko", "event_title_ko", "event_fact_ko", "original_excerpt", "original_excerpt_ko", "occurred_at", "trajectory_track", "layer_key", "region_scope", "timeline_eligibility", "confidence_note"],
     properties: {
+      title_ko: { type: "string" },
       summary_ko: { type: "string" },
       event_title_ko: { type: "string" },
       event_fact_ko: { type: "string" },
@@ -59,6 +60,34 @@ async function analyzeArticle(article, bodyText) {
   return JSON.parse(payload.output_text);
 }
 
+export async function processPendingArticle(articleId, companyId) {
+  const articles = await supabaseRest(`article?select=id,canonical_url,title_original,source_name,published_at,source_tier&id=eq.${encodeURIComponent(articleId)}&verification_status=eq.pending&limit=1`);
+  const article = articles[0];
+  if (!article) return { status: "not_pending" };
+  const sourceResponse = await fetch(article.canonical_url, { headers: { "User-Agent": "ChinaBatteryLens/0.1 (internal research)" } });
+  const contentType = sourceResponse.headers.get("content-type") || "";
+  if (!sourceResponse.ok || !contentType.includes("text/html")) return { status: "body_unavailable", contentType };
+  const bodyText = htmlToText((await sourceResponse.text()).slice(0, MAX_BODY_CHARS * 3)).slice(0, MAX_BODY_CHARS);
+  if (bodyText.length < 500) return { status: "body_too_short" };
+
+  const result = await analyzeArticle(article, bodyText);
+  await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
+    method: "PATCH",
+    body: { title_ko: result.title_ko, summary_ko: result.summary_ko, verification_status: "pending_review", updated_at: new Date().toISOString() }
+  });
+  if (result.timeline_eligibility !== "exclude" && result.occurred_at) {
+    await supabaseRest("event", { method: "POST", body: {
+      company_id: companyId, article_id: articleId, occurred_at: result.occurred_at,
+      title_ko: result.event_title_ko, fact_ko: result.event_fact_ko,
+      trajectory_track: result.trajectory_track, layer_key: result.layer_key,
+      region_scope: result.region_scope, source_url: article.canonical_url, source_name: article.source_name,
+      original_excerpt: result.original_excerpt, original_excerpt_ko: result.original_excerpt_ko,
+      timeline_eligibility: result.timeline_eligibility
+    } });
+  }
+  return { status: "pending_review", analysis: result };
+}
+
 export default async function handler(request, response) {
   if (request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
   if (!isAuthorized(request)) return response.status(401).json({ status: "unauthorized" });
@@ -69,28 +98,8 @@ export default async function handler(request, response) {
   if (!articleId || !companyId) return response.status(400).json({ status: "invalid_request", message: "articleId and companyId are required." });
 
   try {
-    const articles = await supabaseRest(`article?select=id,canonical_url,title_original,source_name,published_at,source_tier&id=eq.${encodeURIComponent(articleId)}&verification_status=eq.pending&limit=1`);
-    const article = articles[0];
-    if (!article) return response.status(404).json({ status: "not_pending" });
-    const sourceResponse = await fetch(article.canonical_url, { headers: { "User-Agent": "ChinaBatteryLens/0.1 (internal research)" } });
-    const contentType = sourceResponse.headers.get("content-type") || "";
-    if (!sourceResponse.ok || !contentType.includes("text/html")) return response.status(422).json({ status: "body_unavailable", contentType });
-    const bodyText = htmlToText((await sourceResponse.text()).slice(0, MAX_BODY_CHARS * 3)).slice(0, MAX_BODY_CHARS);
-    if (bodyText.length < 500) return response.status(422).json({ status: "body_too_short" });
-
-    const result = await analyzeArticle(article, bodyText);
-    await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, { method: "PATCH", body: { summary_ko: result.summary_ko, verification_status: "pending_review", updated_at: new Date().toISOString() } });
-    if (result.timeline_eligibility !== "exclude" && result.occurred_at) {
-      await supabaseRest("event", { method: "POST", body: {
-        company_id: companyId, article_id: articleId, occurred_at: result.occurred_at,
-        title_ko: result.event_title_ko, fact_ko: result.event_fact_ko,
-        trajectory_track: result.trajectory_track, layer_key: result.layer_key,
-        region_scope: result.region_scope, source_url: article.canonical_url, source_name: article.source_name,
-        original_excerpt: result.original_excerpt, original_excerpt_ko: result.original_excerpt_ko,
-        timeline_eligibility: result.timeline_eligibility
-      } });
-    }
-    return response.status(200).json({ status: "pending_review", analysis: result });
+    const result = await processPendingArticle(articleId, companyId);
+    return response.status(result.status === "pending_review" ? 200 : 422).json(result);
   } catch (error) {
     return response.status(502).json({ status: "processing_failed", message: error.message });
   }
