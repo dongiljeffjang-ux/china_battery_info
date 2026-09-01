@@ -27,9 +27,10 @@ async function analyzeArticle(article, bodyText) {
   const schema = {
     type: "object",
     additionalProperties: false,
-    required: ["title_ko", "summary_ko", "event_title_ko", "event_fact_ko", "original_excerpt", "original_excerpt_ko", "occurred_at", "trajectory_track", "layer_key", "region_scope", "timeline_eligibility", "confidence_note"],
+    required: ["title_ko", "summary_ko", "keywords_ko", "event_title_ko", "event_fact_ko", "original_excerpt", "original_excerpt_ko", "occurred_at", "trajectory_track", "layer_key", "region_scope", "timeline_eligibility", "confidence_note"],
     properties: {
       title_ko: { type: "string" },
+      keywords_ko: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
       summary_ko: { type: "string" },
       event_title_ko: { type: "string" },
       event_fact_ko: { type: "string" },
@@ -50,7 +51,7 @@ async function analyzeArticle(article, bodyText) {
     body: JSON.stringify({
       model,
       store: false,
-      instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다.",
+      instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. keywords_ko에는 헤드라인과 본문 요약을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다.",
       input,
       text: { format: { type: "json_schema", name: "battery_article_event", strict: true, schema } }
     })
@@ -73,7 +74,7 @@ export async function processPendingArticle(articleId, companyId) {
   const result = await analyzeArticle(article, bodyText);
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
     method: "PATCH",
-    body: { title_ko: result.title_ko, summary_ko: result.summary_ko, verification_status: "pending_review", updated_at: new Date().toISOString() }
+    body: { title_ko: result.title_ko, summary_ko: result.summary_ko, keywords_ko: result.keywords_ko, verification_status: "pending_review", updated_at: new Date().toISOString() }
   });
   if (result.timeline_eligibility !== "exclude" && result.occurred_at) {
     await supabaseRest("event", { method: "POST", body: {

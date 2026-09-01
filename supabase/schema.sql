@@ -22,6 +22,7 @@ create table if not exists public.article (
   source_language text,
   published_at timestamptz,
   summary_ko text,
+  keywords_ko text[] not null default '{}',
   verification_status text not null default 'pending',
   source_tier text not null default 'needs_review',
   is_top10 boolean not null default false,
@@ -102,6 +103,7 @@ alter table public.event add column if not exists source_url text;
 alter table public.event add column if not exists source_name text;
 alter table public.event add column if not exists original_excerpt text;
 alter table public.event add column if not exists original_excerpt_ko text;
+alter table public.article add column if not exists keywords_ko text[] not null default '{}';
 
 revoke all on public.company, public.article, public.article_company, public.event, public.daily_report from anon, authenticated;
 revoke all on public.knowledge_chunk from anon, authenticated;

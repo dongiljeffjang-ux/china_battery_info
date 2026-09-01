@@ -12,10 +12,10 @@ export default async function handler(request, response) {
       supabaseRest("article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,top10_rank,article_company(company_id,company(name_ko,type_tags))&is_top10=eq.true&verification_status=eq.approved&order=top10_rank.asc&limit=10"),
       supabaseRest("article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.approved&order=published_at.desc&limit=100"),
       supabaseRest("article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.pending&order=published_at.desc&limit=100"),
-      supabaseRest(`event?select=company_id,occurred_at,trajectory_track,layer_key,region_scope,article(is_top10,verification_status)&occurred_at=gte.${from}&occurred_at=lte.${to}&timeline_eligibility=neq.exclude&order=occurred_at.desc&limit=500`),
+      supabaseRest(`article?select=id,published_at,keywords_ko,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lte.${to}&verification_status=in.(pending_review,approved)&is_top10=eq.false&order=published_at.desc&limit=500`),
     ]);
     response.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=900");
-    const flows = flowEvents.filter((event) => !event.article?.is_top10 && ["pending_review", "approved"].includes(event.article?.verification_status));
+    const flows = flowEvents.flatMap((article) => (article.article_company || []).flatMap((link) => (article.keywords_ko || []).map((keyword) => ({ company_id: link.company_id, keyword }))));
     return response.status(200).json({ status: "ok", report: reports[0] || null, top10, companyNews, pendingNews, flows });
   } catch (error) {
     return response.status(502).json({ status: error.code || "db_error", message: "Dashboard data could not be loaded." });

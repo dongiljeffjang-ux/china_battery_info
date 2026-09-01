@@ -161,30 +161,36 @@ function renderCandidateQueue(){
   });
 }
 function renderHeadlineSankey(){
-  const flows = rangeFlows;
+  const counts = new Map();
+  rangeFlows.forEach(({company_id, keyword}) => {
+    const key = `${company_id}\u0000${keyword}`;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  const flows = [...counts.entries()].map(([key, count]) => {
+    const [company, keyword] = key.split('\u0000'); return { company, keyword, count };
+  });
   const target = document.querySelector('#headline-sankey');
   if (!flows.length) {
-    target.innerHTML = '<p>승인된 주요 뉴스가 쌓이면, 그 기사만 기반으로 연결도를 표시합니다.</p>';
+    target.innerHTML = '<p>선택 기간에 LLM 키워드 분류를 마친 비-Top 10 기사가 없습니다.</p>';
     return;
   }
   const sourceNames = [...new Set(flows.map(flow => flow.company))];
-  const eventNames = [...new Set(flows.map(flow => flow.event))];
-  const signalNames = [...new Set(flows.map(flow => flow.signal))];
-  const height = Math.max(310, flows.length * 52 + 36);
+  const keywordNames = [...new Set(flows.map(flow => flow.keyword))];
+  const height = Math.max(310, Math.max(sourceNames.length, keywordNames.length) * 54 + 54);
   const yFor = (names, name, top, gap) => top + names.indexOf(name) * gap;
   const label = name => companyDisplayNames[name] || name;
-  const curve = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 90} ${y1}, ${x2 - 90} ${y2}, ${x2} ${y2}`;
+  const curve = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 130} ${y1}, ${x2 - 130} ${y2}, ${x2} ${y2}`;
   const links = flows.map(flow => {
     const sy = yFor(sourceNames, flow.company, 48, 54) + 12;
-    const ey = yFor(eventNames, flow.event, 42, 44) + 12;
-    const ty = yFor(signalNames, flow.signal, 82, 76) + 12;
-    return `<path d="${curve(164, sy, 365, ey)}" fill="none" stroke="#8eb5d8" stroke-width="10" stroke-opacity=".5"/><path d="${curve(485, ey, 688, ty)}" fill="none" stroke="#4f8d70" stroke-width="10" stroke-opacity=".5"/>`;
+    const ky = yFor(keywordNames, flow.keyword, 48, 54) + 12;
+    return `<path d="${curve(164, sy, 600, ky)}" fill="none" stroke="#4f8d70" stroke-width="${Math.min(28, 5 + flow.count * 4)}" stroke-opacity=".55"/>`;
   }).join('');
   const nodes = (names, x, top, gap, fill, formatter = value => value) => names.map(name => {
     const y = yFor(names, name, top, gap);
-    return `<g><rect x="${x}" y="${y}" width="${x === 365 ? 120 : 150}" height="24" rx="4" fill="${fill}"/><text x="${x + 8}" y="${y + 16}" fill="#14263d" font-size="11" font-weight="700">${formatter(name)}</text></g>`;
+    return `<g><rect x="${x}" y="${y}" width="190" height="24" rx="4" fill="${fill}"/><text x="${x + 8}" y="${y + 16}" fill="#14263d" font-size="11" font-weight="700">${formatter(name)}</text></g>`;
   }).join('');
-  document.querySelector('#headline-sankey').innerHTML = `<svg viewBox="0 0 850 ${height}" role="img" aria-label="주요 헤드라인의 회사, 사건 유형, 산업 신호 연결도" style="display:block;width:100%;height:auto;min-height:310px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">회사</text><text x="365" y="20" fill="#617187" font-size="11" font-weight="700">헤드라인 사건</text><text x="688" y="20" fill="#617187" font-size="11" font-weight="700">산업 신호</text>${links}${nodes(sourceNames, 14, 48, 54, '#eaf3fb', label)}${nodes(eventNames, 365, 42, 44, '#f5f7fa')}${nodes(signalNames, 688, 82, 76, '#e3f5ed')}</svg>`;
+  const keywordLabel = keyword => `${keyword} · ${flows.filter(flow => flow.keyword === keyword).reduce((sum, flow) => sum + flow.count, 0)}건`;
+  target.innerHTML = `<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 핵심 키워드 기사 건수 흐름도" style="display:block;width:100%;height:auto;min-height:310px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#617187" font-size="11" font-weight="700">핵심 키워드 · 기사 수</text>${links}${nodes(sourceNames, 14, 48, 54, '#eaf3fb', label)}${nodes(keywordNames, 600, 48, 54, '#e3f5ed', keywordLabel)}</svg>`;
 }
 function renderCompanyNews(){
   const companiesInNews = ['all', ...new Set(approvedCompanyNews.map(item => item.company))];
@@ -234,11 +240,7 @@ async function loadDashboardFromApi(){
     approvedCompanyNews = (payload.companyNews || []).map(mapDashboardArticle)
       .filter(article => !approvedTop10.some(top10 => top10.url === article.url));
     pendingCandidates = (payload.pendingNews || []).map(mapDashboardArticle);
-    rangeFlows = (payload.flows || []).map(event => ({
-      company: event.company_id,
-      event: event.layer_key || (event.trajectory_track === 'technology' ? '기술' : '시장'),
-      signal: event.trajectory_track === 'both' ? '시장·기술' : event.trajectory_track === 'technology' ? '기술 레이어' : '시장 레이어'
-    }));
+    rangeFlows = payload.flows || [];
     news = [...approvedTop10, ...approvedCompanyNews];
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
