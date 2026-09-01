@@ -79,6 +79,7 @@ let dailyReportFacts = null;
 let approvedTop10 = [];
 let approvedCompanyNews = [];
 let pendingCandidates = [];
+let rangeFlows = [];
 
 const marketLayerLabels = {
   'supply-performance': '수급·실적',
@@ -160,11 +161,7 @@ function renderCandidateQueue(){
   });
 }
 function renderHeadlineSankey(){
-  const flows = [...approvedTop10, ...approvedCompanyNews].map(item => ({
-    company: item.company,
-    event: item.classification?.event || '확인된 이벤트',
-    signal: item.classification?.type || '기업 이벤트'
-  }));
+  const flows = rangeFlows;
   const target = document.querySelector('#headline-sankey');
   if (!flows.length) {
     target.innerHTML = '<p>승인된 주요 뉴스가 쌓이면, 그 기사만 기반으로 연결도를 표시합니다.</p>';
@@ -226,7 +223,10 @@ function mapDashboardArticle(article){
 }
 async function loadDashboardFromApi(){
   try {
-    const result = await fetch('/api/dashboard');
+    const from = document.querySelector('#sankey-from')?.value;
+    const to = document.querySelector('#sankey-to')?.value;
+    const params = new URLSearchParams(); if (from) params.set('from', from); if (to) params.set('to', to);
+    const result = await fetch(`/api/dashboard?${params}`);
     if (!result.ok) return;
     const payload = await result.json();
     if (payload.status !== 'ok') return;
@@ -234,6 +234,11 @@ async function loadDashboardFromApi(){
     approvedCompanyNews = (payload.companyNews || []).map(mapDashboardArticle)
       .filter(article => !approvedTop10.some(top10 => top10.url === article.url));
     pendingCandidates = (payload.pendingNews || []).map(mapDashboardArticle);
+    rangeFlows = (payload.flows || []).map(event => ({
+      company: event.company_id,
+      event: event.layer_key || (event.trajectory_track === 'technology' ? '기술' : '시장'),
+      signal: event.trajectory_track === 'both' ? '시장·기술' : event.trajectory_track === 'technology' ? '기술 레이어' : '시장 레이어'
+    }));
     news = [...approvedTop10, ...approvedCompanyNews];
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
@@ -310,6 +315,7 @@ function activateView(view){
 }
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
 document.querySelector('#refresh-button').addEventListener('click', () => { renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); loadDashboardFromApi(); });
+document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
 document.querySelector('#run-collection-button').addEventListener('click', async () => {
   const button = document.querySelector('#run-collection-button');
   button.disabled = true; button.textContent = '수집 중…';
@@ -328,5 +334,9 @@ document.querySelector('#run-collection-button').addEventListener('click', async
 const select = document.querySelector('#company-select'); makeSelect(select,currentCompany); select.addEventListener('change', () => { currentCompany = select.value; renderCompany(); });
 document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
 const compareA=document.querySelector('#compare-a'),compareB=document.querySelector('#compare-b'); makeSelect(compareA,'Ronbay'); makeSelect(compareB,'BTR'); compareA.addEventListener('change',renderComparison); compareB.addEventListener('change',renderComparison);
+const sankeyTo = new Date();
+const sankeyFrom = new Date(); sankeyFrom.setDate(sankeyFrom.getDate() - 30);
+document.querySelector('#sankey-from').value = sankeyFrom.toISOString().slice(0, 10);
+document.querySelector('#sankey-to').value = sankeyTo.toISOString().slice(0, 10);
 renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCandidateQueue(); renderCompanyNews(); renderCompany(); renderComparison();
 loadDashboardFromApi();

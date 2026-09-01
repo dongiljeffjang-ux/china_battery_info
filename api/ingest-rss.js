@@ -1,5 +1,6 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { processPendingArticle } from "./process-article.js";
+import { generateDailyReport } from "./generate-daily.js";
 
 const LLM_BATCH_LIMIT = 8;
 
@@ -90,10 +91,14 @@ export default async function handler(request, response) {
     const llmResults = isCronRequest(request) && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL
       ? await processPendingBatch()
       : [];
+    const dailyReport = isCronRequest(request) && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL
+      ? await generateDailyReport()
+      : null;
     return response.status(200).json({
       status: "ok", discovered: candidates.length, stored: storedArticles.length,
       llm_processed: llmResults.filter((result) => result.status === "pending_review").length,
       llm_results: llmResults,
+      daily_report: dailyReport,
       next_step: isCronRequest(request) ? "Review the LLM-classified pending_review items, approve verified facts, then select Top 10." : "Scheduled collection will process up to 8 pending articles with the LLM."
     });
   } catch (error) {

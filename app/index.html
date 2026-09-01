@@ -65,9 +65,9 @@
               <p class="eyebrow">HEADLINE FLOW</p>
               <h2 id="sankey-title">주요 헤드라인 산업 연결도</h2>
             </div>
-            <span class="source-rule">Top 10 외 승인 주요 뉴스도 포함 · 해석·예측 없음</span>
+            <div style="display:flex;gap:8px;align-items:center"><label>From <input id="sankey-from" type="date" /></label><label>To <input id="sankey-to" type="date" /></label><button id="sankey-range-apply" class="secondary-button" type="button">기간 적용</button></div>
           </div>
-          <p>헤드라인에서 확인된 회사 → 사건 유형 → 산업 신호의 연결을 집계합니다.</p>
+          <p>선택 기간 안의 Top 10 제외 LLM 분류 기사에서 회사 → 사건 유형 → 시장·기술 레이어를 집계합니다.</p>
           <div id="headline-sankey" aria-live="polite"></div>
         </section>
 
