@@ -6,6 +6,7 @@
     { "source": "/", "destination": "/app/index.html" },
     { "source": "/styles.css", "destination": "/app/styles.css" },
     { "source": "/access.css", "destination": "/app/access.css" },
+    { "source": "/access-gate.js", "destination": "/app/access-gate.js" },
     { "source": "/app.js", "destination": "/app/app.js" }
   ]
 }
