@@ -140,7 +140,7 @@ flowchart LR
 | 보조 산업 뉴스 | GGII, WeChat 公众号 | RSS/API 부재·반크롤링으로 보조 역할 |
 | 수동 자료 | 특허·출하·점유·캐파 파일 | 유료 원데이터·비상장 재무 공백 보완 |
 
-Finlight, FinancialFilings China, CNINFO Data Service는 비용·약관 검토와 발주자 승인 전에는 연결하지 않는다.
+유료 뉴스·공시 API는 비용·약관 검토와 발주자 승인 전에는 연결하지 않는다. 무료 RSS와 공식 IR/공시 페이지를 우선 사용한다.
 
 ## 8. 품질·운영 요구사항
 

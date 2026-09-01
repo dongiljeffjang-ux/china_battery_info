@@ -71,7 +71,7 @@ flowchart TB
 | 보조 뉴스 | GGII, WeChat 公众号 | 헤드라인/허용된 요약 | 불안정하므로 보조 역할 |
 | 수동 자료 | 특허·캐파·출하 파일 | 조직 권한 파일 | 비상장 재무·유료 원데이터 보완 |
 
-유료 Finlight·FinancialFilings China·CNINFO Data Service는 발주자 승인 전 자동 수집하지 않는다.
+유료 뉴스·공시 API는 승인 전 자동 수집하지 않는다. 무료 RSS와 공식 IR/공시 페이지를 우선 사용한다.
 
 ## 5. 처리 흐름
 

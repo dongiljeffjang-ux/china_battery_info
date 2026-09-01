@@ -1,48 +1,34 @@
-const FINLIGHT_URL = "https://api.finlight.me/v2/articles";
-const QUERY = "宁德时代 OR CATL OR 比亚迪 OR BYD OR 容百科技 OR Ronbay OR 湖南裕能 OR Hunan Yuneng OR 贝特瑞 OR BTR OR 杉杉股份 OR Shanshan OR 璞泰来 OR Putailai OR 中科电气 OR Zhongke Electric";
+const QUERIES = [
+  "宁德时代 OR CATL 电池", "比亚迪 OR BYD 电池",
+  "容百科技 OR Ronbay 正极", "湖南裕能 OR Hunan Yuneng 正极",
+  "贝特瑞 OR BTR 负极", "杉杉股份 OR Shanshan 负极",
+  "璞泰来 OR Putailai 负极", "中科电气 OR Zhongke Electric 负极",
+];
+
+function clean(value) {
+  return value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
+}
+
+function parseRss(xml) {
+  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((match) => {
+    const item = match[1];
+    const field = (name) => clean(item.match(new RegExp(`<${name}>([\\s\\S]*?)<\\/${name}>`))?.[1] || "");
+    return { title: field("title"), url: field("link"), publishedAt: field("pubDate"), snippet: field("description"), source: "Google News RSS", language: "zh" };
+  }).filter((article) => article.title && article.url);
+}
 
 export default async function handler(request, response) {
-  const apiKey = process.env.FINLIGHT_API_KEY;
-  if (!apiKey) {
-    return response.status(503).json({
-      status: "disabled",
-      message: "FINLIGHT_API_KEY가 설정되지 않았습니다.",
-      articles: [],
-    });
-  }
-
   try {
-    const upstream = await fetch(FINLIGHT_URL, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        "X-API-KEY": apiKey,
-      },
-      body: JSON.stringify({
-        query: QUERY,
-        categories: ["business", "technology", "energy", "commodities", "regulation"],
-        orderBy: "publishDate",
-        order: "DESC",
-        pageSize: 100,
-      }),
-    });
-    if (!upstream.ok) {
-      return response.status(502).json({ status: "upstream_error", articles: [] });
-    }
-    const payload = await upstream.json();
-    const articles = (payload.articles || []).map((article) => ({
-      title: article.title,
-      url: article.link,
-      source: article.source,
-      publishedAt: article.publishDate,
-      snippet: article.summary || "",
-      categories: article.categories || [],
-      language: article.language,
+    const results = await Promise.all(QUERIES.map(async (query) => {
+      const params = new URLSearchParams({ q: query, hl: "zh-CN", gl: "CN", ceid: "CN:zh-Hans" });
+      const upstream = await fetch(`https://news.google.com/rss/search?${params}`);
+      if (!upstream.ok) throw new Error(`RSS ${upstream.status}`);
+      return parseRss(await upstream.text());
     }));
+    const unique = [...new Map(results.flat().map((article) => [article.url, article])).values()];
     response.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=3600");
-    return response.status(200).json({ status: "ok", articles });
-  } catch {
-    return response.status(502).json({ status: "upstream_error", articles: [] });
+    return response.status(200).json({ status: "ok", articles: unique });
+  } catch (error) {
+    return response.status(502).json({ status: "upstream_error", message: String(error), articles: [] });
   }
 }
