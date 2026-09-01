@@ -11,11 +11,6 @@ const COMPANIES = [
   { id: "zhongke-electric", name_ko: "중커전기", name_zh: "中科电气", name_en: "Zhongke Electric", type_tags: ["anode"], aliases: ["中科电气", "Zhongke Electric", "Zhongke Xingcheng"] },
 ];
 
-function authorized(request) {
-  const secret = process.env.CRON_SECRET;
-  return Boolean(secret && request.headers.authorization === `Bearer ${secret}`);
-}
-
 function clean(value = "") {
   return value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").trim();
 }
@@ -47,7 +42,6 @@ function companiesFor(item) {
 
 export default async function handler(request, response) {
   if (request.method !== "GET" && request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
-  if (!authorized(request)) return response.status(401).json({ status: "unauthorized" });
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
   try {
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ aliases, ...company }) => company) });
