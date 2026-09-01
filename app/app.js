@@ -95,23 +95,14 @@ const technologyLayerLabels = {
 };
 
 function sectorLabel(sector){ return sector === 'anode' ? '음극재' : '양극재'; }
-function renderSignals(){
-  const cards = [
-    ['Top 10','본문 확인 핵심 뉴스','공식 발표 또는 복수 주요 언론으로 확인'],
-    ['기업 이벤트','증설·가동·인증·출하','회사 전략 변화를 만드는 확정 사실'],
-    ['산업 신호','셀사·소재사 종합','수요처와 소재사의 연결 변화를 함께 확인']
-  ];
-  document.querySelector('#signal-strip').innerHTML = cards.map(([label,value,desc]) => `<article class="signal-card"><div class="signal-label">${label}</div><div class="signal-value">${value}</div><div class="signal-desc">${desc}</div></article>`).join('');
-}
 function renderDailySummary(){
-  const facts = dailyReportFacts || ['전체 수집 후보 중 본문을 확인한 기사만 중요도·확정성·출처 신뢰도 기준으로 Top 10에 올린다.','소재사에서는 증설·가동·고객 인증·양산 출하 같은 실행 사실이, 셀사에서는 캐파·제품·해외 전략이 주요 변화로 확인됐다.','아래 회사별 뉴스는 Top 10 포함 여부와 별개로 해당 기업의 승인된 이벤트를 누적해 보여준다.'];
+  const facts = dailyReportFacts || ['아직 생성된 Daily Report가 없습니다. 수집·분석 1회 실행 후 Top 10 본문 분석 결과와 통합 리포트가 이 영역에 표시됩니다.'];
   document.querySelector('#daily-summary-list').innerHTML = facts.map(fact => `<li>${fact}</li>`).join('');
 }
 function renderTopNews(){
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#news-feed'); target.innerHTML = '';
   if (!approvedTop10.length) {
-    target.innerHTML = '<p>아직 오늘의 Daily 분석 결과가 없습니다. 상단의 수집·분석 1회 실행을 누르면 헤드라인 선별, 본문 분석, 한국어 요약을 순서대로 진행합니다.</p>';
     return;
   }
   approvedTop10.forEach((item, index) => {
@@ -247,7 +238,7 @@ async function loadDashboardFromApi(){
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }
-    renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
+    renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
   } catch {
     // 환경변수 미설정·DB 초기화 전에는 시드 화면을 유지한다.
   }
@@ -341,7 +332,7 @@ function activateView(view){
   document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('is-active',el.dataset.view===view));
 }
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
-document.querySelector('#refresh-button').addEventListener('click', () => { renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); loadDashboardFromApi(); });
+document.querySelector('#refresh-button').addEventListener('click', () => { renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); loadDashboardFromApi(); });
 document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
 document.querySelector('#run-collection-button').addEventListener('click', async () => {
   const button = document.querySelector('#run-collection-button');
@@ -366,5 +357,5 @@ const sankeyTo = new Date();
 const sankeyFrom = new Date(); sankeyFrom.setDate(sankeyFrom.getDate() - 30);
 document.querySelector('#sankey-from').value = sankeyFrom.toISOString().slice(0, 10);
 document.querySelector('#sankey-to').value = sankeyTo.toISOString().slice(0, 10);
-renderSignals(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompany(); renderComparison();
+renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompany(); renderComparison();
 loadDashboardFromApi();
