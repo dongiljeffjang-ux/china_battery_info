@@ -4,7 +4,7 @@ import { processPendingArticle } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
 import { llmConfig } from "../lib/llm-provider.js";
-import { backfillCompanyEvents } from "../lib/event-backfill.js";
+import { backfillCompanyEvents, digestReport } from "../lib/event-backfill.js";
 
 export const maxDuration = 60;
 
@@ -13,6 +13,7 @@ const PROCESS_CONCURRENCY = 3;
 // 60초 함수 안에서 검색 1회 + 추출이 끝나야 하므로 회사당 건수를 낮춘다.
 const BACKFILL_MAX_EVENTS = 12;
 const BACKFILL_SINCE = "2023-01-01";
+const DIGEST_MAX_EVENTS = 10;
 const HIGH_SIGNAL_TERMS = [
   "扩产", "增产", "产能", "投产", "开工", "项目", "签约", "订单", "定点", "认证", "量产", "出货", "交付",
   "营收", "收入", "净利润", "财报", "业绩", "海外", "建厂", "投资", "收购", "合作", "固态", "硅碳", "lmfp",
@@ -78,24 +79,27 @@ async function processSelectedBatch(rows) {
 
 // 과거 시계열 백필. 회사 1곳씩 호출한다.
 // 파이프라인 이벤트와 달리 article_id가 없고 timeline_eligibility가 reference라 구분된다.
-async function runBackfill(response, companyId, sinceParam) {
+async function runBackfill(response, companyId, sinceParam, mode) {
   const company = COMPANIES.find((item) => item.id === companyId);
   if (!company) return response.status(404).json({ status: "unknown_company", company_id: companyId });
   if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
   const since = /^\d{4}-\d{2}-\d{2}$/.test(sinceParam || "") ? sinceParam : BACKFILL_SINCE;
   const until = new Date().toISOString().slice(0, 10);
   try {
-    const { rows, dropped, returned, provider } = await backfillCompanyEvents({ company, since, until, maxEvents: BACKFILL_MAX_EVENTS });
+    const digest = mode === "annual" || mode === "semiannual" || mode === "quarterly";
+    const { rows, dropped, returned, provider, report } = digest
+      ? await digestReport({ company, kind: mode, maxEvents: DIGEST_MAX_EVENTS })
+      : await backfillCompanyEvents({ company, since, until, maxEvents: BACKFILL_MAX_EVENTS });
     const existing = await supabaseRest(`event?select=occurred_at,title_ko&company_id=eq.${encodeURIComponent(companyId)}`);
     const eventKey = (row) => JSON.stringify([row.occurred_at, row.title_ko]);
     const seen = new Set(existing.map(eventKey));
     const fresh = rows.filter((row) => !seen.has(eventKey(row)));
     if (fresh.length) await supabaseRest("event", { method: "POST", prefer: "return=minimal", body: fresh });
-    console.info("[BACKFILL_DONE]", JSON.stringify({ companyId, returned, kept: rows.length, inserted: fresh.length, dropped }));
-    return response.status(200).json({ status: "ok", company_id: companyId, company_name: company.name_ko, since, until, returned, kept: rows.length, inserted: fresh.length, duplicates: rows.length - fresh.length, dropped, provider });
+    console.info("[BACKFILL_DONE]", JSON.stringify({ companyId, mode, returned, kept: rows.length, inserted: fresh.length, dropped }));
+    return response.status(200).json({ status: "ok", mode, company_id: companyId, company_name: company.name_ko, since, until, report: report || null, returned, kept: rows.length, inserted: fresh.length, duplicates: rows.length - fresh.length, dropped, provider });
   } catch (error) {
-    console.error("[BACKFILL_FAILED]", JSON.stringify({ companyId, message: error.message }));
-    return response.status(502).json({ status: "backfill_failed", company_id: companyId, message: error.message });
+    console.error("[BACKFILL_FAILED]", JSON.stringify({ companyId, mode, message: error.message }));
+    return response.status(502).json({ status: "backfill_failed", mode, company_id: companyId, message: error.message });
   }
 }
 
@@ -103,8 +107,15 @@ export default async function handler(request, response) {
   if (request.method !== "GET" && request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
   if (!isCronRequest(request) && !requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
+  // 정기보고서 원문을 읽어 시계열을 채운다. kind는 annual(과거)·semiannual·quarterly(현행).
+  const digestCompanyId = String(request.query?.digest || request.body?.digest || "").trim();
+  if (digestCompanyId) {
+    const requested = String(request.query?.kind || request.body?.kind || "annual").trim();
+    const kind = ["annual", "semiannual", "quarterly"].includes(requested) ? requested : "annual";
+    return runBackfill(response, digestCompanyId, null, kind);
+  }
   const backfillCompanyId = String(request.query?.backfill || request.body?.backfill || "").trim();
-  if (backfillCompanyId) return runBackfill(response, backfillCompanyId, request.query?.since || request.body?.since);
+  if (backfillCompanyId) return runBackfill(response, backfillCompanyId, request.query?.since || request.body?.since, "web");
   let stage = "company_seed";
   try {
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ id, name_ko, name_zh, name_en, type_tags }) => ({ id, name_ko, name_zh, name_en, type_tags })) });

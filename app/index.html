@@ -99,8 +99,9 @@
             <p>최소 최근 3년부터 현재까지, 출처가 확인된 주요 사실을 시간순으로 추적합니다.</p>
           </div>
           <div class="company-actions">
-            <button id="backfill-company" class="secondary-button" type="button">과거 데이터 백필</button>
-            <button id="backfill-all" class="secondary-button" type="button">전체 기업 백필</button>
+            <label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함</label>
+            <button id="digest-company" class="secondary-button" type="button">연차보고서 요약</button>
+            <button id="digest-all" class="secondary-button" type="button">전체 기업 요약</button>
             <button id="export-company-timeline" class="secondary-button" type="button">Excel 내보내기</button>
           </div>
         </div>
@@ -114,10 +115,10 @@
         <section class="snapshot-section" aria-labelledby="snapshot-title">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">THREE-YEAR HISTORY</p>
-              <h2 id="snapshot-title">최근 3년 주요 이벤트</h2>
+              <p class="eyebrow">ANNUAL REPORT DIGEST</p>
+              <h2 id="snapshot-title">연차보고서 핵심 사실</h2>
             </div>
-            <span class="source-rule">해석이 아닌 출처 명시 팩트</span>
+            <span class="source-rule">거래소 공시 출처만 채택</span>
           </div>
           <div id="snapshot-grid" class="snapshot-grid"></div>
         </section>
@@ -161,7 +162,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260902-daily-sections"></script>
+    <script src="./app.js?v=20260902-disclosure-timeline"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

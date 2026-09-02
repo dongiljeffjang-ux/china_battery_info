@@ -267,6 +267,18 @@ async function loadDashboardFromApi(){
   }
 }
 let currentChain = 'cathode';
+let includeSupporting = false;
+
+// 기업 시계열은 공시 원문에서 나온 사실과 핵심 등급 기사만 기본으로 보여준다.
+// 참고 등급 기사와 웹 검색 백필은 '보조 데이터 포함'을 켤 때만 나온다.
+const evidenceLabels = { annual_report: '연차보고서', periodic_report: '반기·분기보고서', article: '언론', web_backfill: '웹 검색' };
+function isPrimaryEvidence(event){
+  if (event.kind === 'annual_report' || event.kind === 'periodic_report') return true;
+  return event.kind === 'article' && event.eligibility === '핵심';
+}
+function visibleEvents(timeline){
+  return includeSupporting ? timeline.events : timeline.events.filter(isPrimaryEvidence);
+}
 // 드롭다운 대신 밸류체인 탭 → 회사 칩으로 고른다. 칩의 아이콘은 중문 법인명 첫 글자다.
 function renderCompanyPicker(){
   const tabs = document.querySelector('#company-chain-tabs');
@@ -327,6 +339,7 @@ function normalizeEvent(event){
     sourceUrl: event.source_url || event.article?.canonical_url || '',
     excerpt: event.original_excerpt || '',
     excerptKo: event.original_excerpt_ko || '',
+    kind: event.evidence_kind || 'article',
     entities: Array.isArray(event.entity_names) ? event.entity_names.filter(Boolean) : []
   };
 }
@@ -418,32 +431,34 @@ async function renderCompany(){
   if (requestedId !== currentCompany) return;
   const state = document.querySelector('#company-timeline-state');
   const notice = timelineNotice(timeline.status);
-  const core = timeline.events.filter(event => event.eligibility === '핵심').length;
+  const shown = visibleEvents(timeline);
+  const hidden = timeline.events.length - shown.length;
   if (state) {
-    state.textContent = notice || (timeline.events.length
-      ? `출처가 확인된 이벤트 ${timeline.events.length}건(핵심 ${core}건)을 표시합니다.`
-      : '아직 확인된 이벤트가 없습니다. 수집·분석을 실행하면 이 화면에 누적됩니다.');
+    state.textContent = notice || (shown.length
+      ? `공시·핵심 근거 이벤트 ${shown.length}건을 표시합니다.${hidden ? ` 보조 데이터 ${hidden}건은 숨겨져 있습니다.` : ''}`
+      : '표시할 공시 기반 이벤트가 없습니다. 연차보고서 요약을 실행하면 이 화면에 채워집니다.');
   }
   renderCompanyEvents(timeline);
   renderLayerMatrix(timeline);
 }
 function renderCompanyEvents(timeline){
   const grid = document.querySelector('#snapshot-grid');
-  if (!timeline.events.length) {
-    grid.innerHTML = `<p>${escapeHtml(timelineNotice(timeline.status) || EMPTY_CELL_NOTE)}</p>`;
+  const events = visibleEvents(timeline).filter(event => event.kind === 'annual_report' || event.kind === 'periodic_report');
+  if (!events.length) {
+    grid.innerHTML = `<p>${escapeHtml(timelineNotice(timeline.status) || '아직 읽어들인 정기보고서가 없습니다. 연차보고서 요약을 실행해 주세요.')}</p>`;
     return;
   }
-  grid.innerHTML = [...timeline.events].sort((a, b) => b.date.localeCompare(a.date)).map(event => {
-    const tags = [event.date, event.group, event.label, event.both ? '시장·기술' : '', event.eligibility, entityLabel(event)].filter(Boolean).join(' · ');
+  grid.innerHTML = [...events].sort((a, b) => b.date.localeCompare(a.date)).map(event => {
+    const tags = [event.date, evidenceLabels[event.kind] || '', event.group, event.label, event.both ? '시장·기술' : '', entityLabel(event)].filter(Boolean).join(' · ');
     return `<article class="snapshot ${event.track}"><span class="snapshot-year">${escapeHtml(tags)}</span><h3>${escapeHtml(event.title)}</h3><ul><li>${escapeHtml(event.fact)}</li>${event.excerptKo ? `<li>원문 번역: ${escapeHtml(event.excerptKo)}</li>` : ''}</ul><p style="margin:0;font-size:12px;color:#617187">${sourceLink(event)}</p></article>`;
   }).join('');
 }
 function renderLayerMatrix(timeline){
   const target = document.querySelector('#dual-track');
-  const events = timeline.events;
+  const events = visibleEvents(timeline);
   const notice = timelineNotice(timeline.status);
   if (!events.length) {
-    target.innerHTML = `<p>${escapeHtml(notice || '선택한 기업에 확인된 이벤트가 아직 없습니다.')}</p>`;
+    target.innerHTML = `<p>${escapeHtml(notice || '선택한 기업에 표시할 공시 기반 이벤트가 아직 없습니다.')}</p>`;
     return;
   }
   const periods = timelinePeriods(events);
@@ -466,61 +481,69 @@ function renderLayerMatrix(timeline){
   const table = `<table style="width:100%;min-width:${periods.length * 190 + 320}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
-// 과거 시계열 백필은 Vercel에서 실행한다. 브라우저·로컬에 LLM 키를 두지 않는다.
-async function requestBackfill(companyId){
-  const result = await fetch(`/api/ingest-rss?backfill=${encodeURIComponent(companyId)}`, { method: 'POST' });
+// 정기보고서 요약은 Vercel에서 실행한다. 서버가 보고서 PDF를 직접 읽는다.
+async function requestDigest(companyId, kind){
+  const result = await fetch(`/api/ingest-rss?digest=${encodeURIComponent(companyId)}&kind=${encodeURIComponent(kind)}`, { method: 'POST' });
   const payload = await result.json().catch(() => ({}));
   if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `HTTP ${result.status}`);
   return payload;
 }
-async function backfillSelectedCompany(){
+async function digestSelectedCompany(){
   if (!currentCompany) return;
-  const button = document.querySelector('#backfill-company');
+  const button = document.querySelector('#digest-company');
   const name = displayName(currentCompany);
-  if (!window.confirm(`${name}의 2023년 이후 과거 사실을 웹 검색으로 찾아 시계열에 채웁니다.\n검색 1회 분량의 LLM 비용이 발생합니다. 진행할까요?`)) return;
-  button.disabled = true; button.textContent = '백필 중…';
+  if (!window.confirm(`${name}의 최신 연차보고서 원문을 읽어 핵심 사실을 시계열에 채웁니다.
+보고서 1건 분량의 LLM 비용이 발생합니다. 진행할까요?`)) return;
+  button.disabled = true; button.textContent = '보고서 읽는 중…';
   try {
-    const payload = await requestBackfill(currentCompany);
+    const payload = await requestDigest(currentCompany, 'annual');
     companyTimelineCache.delete(currentCompany);
     await renderCompany();
-    window.alert(`${name} 백필 완료\n새로 추가 ${payload.inserted}건 · 중복 제외 ${payload.duplicates}건 · 모델 응답 ${payload.returned}건`);
+    window.alert(`${name} 연차보고서 요약 완료
+${payload.report?.title || '보고서'} · ${payload.report?.pages || '?'}쪽
+새로 추가 ${payload.inserted}건 · 중복 제외 ${payload.duplicates}건`);
   } catch (error) {
-    window.alert(`백필에 실패했습니다: ${error.message}`);
+    window.alert(`요약에 실패했습니다: ${error.message}`);
   } finally {
-    button.disabled = false; button.textContent = '과거 데이터 백필';
+    button.disabled = false; button.textContent = '연차보고서 요약';
   }
 }
-async function backfillAllCompanies(){
-  const button = document.querySelector('#backfill-all');
+async function digestAllCompanies(){
+  const button = document.querySelector('#digest-all');
   const targets = companyCatalog.map(company => company.id);
   if (!targets.length) return;
-  if (!window.confirm(`추적 ${targets.length}개사 전체의 과거 사실을 순서대로 채웁니다.\n회사당 검색 1회씩이라 수십 분이 걸리고 그만큼 LLM 비용이 발생합니다.\n이 창을 닫으면 중단됩니다. 진행할까요?`)) return;
+  if (!window.confirm(`추적 ${targets.length}개사의 연차보고서를 순서대로 읽습니다.
+회사당 보고서 1건씩이라 수십 분이 걸리고 그만큼 LLM 비용이 발생합니다.
+이 창을 닫으면 중단됩니다. 진행할까요?`)) return;
   button.disabled = true;
   let inserted = 0;
   const failed = [];
   for (const [index, id] of targets.entries()) {
     button.textContent = `${index + 1}/${targets.length} ${displayName(id)}`;
-    try { inserted += (await requestBackfill(id)).inserted || 0; }
+    try { inserted += (await requestDigest(id, 'annual')).inserted || 0; }
     catch { failed.push(displayName(id)); }
     companyTimelineCache.delete(id);
   }
-  button.disabled = false; button.textContent = '전체 기업 백필';
+  button.disabled = false; button.textContent = '전체 기업 요약';
   await renderCompany();
-  window.alert(`전체 백필 완료\n새로 추가 ${inserted}건${failed.length ? `\n실패 ${failed.length}곳: ${failed.join(', ')}` : ''}`);
+  window.alert(`전체 요약 완료
+새로 추가 ${inserted}건${failed.length ? `
+실패 ${failed.length}곳: ${failed.join(', ')}` : ''}`);
 }
 async function exportCompanyTimeline(){
   if (!currentCompany) { window.alert('내보낼 기업이 선택되지 않았습니다.'); return; }
   const company = companyById(currentCompany);
   const timeline = await loadCompanyTimeline(currentCompany);
-  if (!timeline.events.length) { window.alert(timelineNotice(timeline.status) || '내보낼 확인된 이벤트가 없습니다.'); return; }
-  const rows = [['회사', '발생 법인', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '지역', '시계열 등급', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
-  [...timeline.events].sort((a, b) => a.date.localeCompare(b.date)).forEach(event => {
-    rows.push([company.name_ko, entityLabel(event), event.group, event.label, periodOf(event.date) || event.date.slice(0, 4), event.date, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
+  const events = visibleEvents(timeline);
+  if (!events.length) { window.alert(timelineNotice(timeline.status) || '내보낼 이벤트가 없습니다.'); return; }
+  const rows = [['회사', '발생 법인', '근거', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '지역', '시계열 등급', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
+  [...events].sort((a, b) => a.date.localeCompare(b.date)).forEach(event => {
+    rows.push([company.name_ko, entityLabel(event), evidenceLabels[event.kind] || event.kind, event.group, event.label, periodOf(event.date) || event.date.slice(0, 4), event.date, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
   });
   if (window.XLSX) {
     const sheet = XLSX.utils.aoa_to_sheet(rows);
-    sheet['!cols'] = [{wch:20}, {wch:30}, {wch:8}, {wch:18}, {wch:10}, {wch:12}, {wch:30}, {wch:70}, {wch:14}, {wch:12}, {wch:20}, {wch:55}, {wch:55}, {wch:55}];
-    rows.slice(1).forEach((row, index) => { const cell = sheet[`L${index + 2}`]; if (cell && row[11]) cell.l = { Target: row[11] }; });
+    sheet['!cols'] = [{wch:20}, {wch:30}, {wch:14}, {wch:8}, {wch:18}, {wch:10}, {wch:12}, {wch:30}, {wch:70}, {wch:14}, {wch:12}, {wch:20}, {wch:55}, {wch:55}, {wch:55}];
+    rows.slice(1).forEach((row, index) => { const cell = sheet[`M${index + 2}`]; if (cell && row[12]) cell.l = { Target: row[12] }; });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, '기업 시계열');
     XLSX.writeFile(workbook, `${currentCompany}_timeline.xlsx`);
@@ -562,7 +585,7 @@ async function renderComparison(){
   target.innerHTML = '<p>이벤트를 불러오는 중…</p>';
   const [timelineA, timelineB] = await Promise.all([loadCompanyTimeline(a), loadCompanyTimeline(b)]);
   if (selectA.value !== a || selectB.value !== b) return;
-  const eventsA = timelineA.events, eventsB = timelineB.events;
+  const eventsA = visibleEvents(timelineA), eventsB = visibleEvents(timelineB);
   const dates = [...new Set([...eventsA, ...eventsB].map(event => event.date))].sort().reverse();
   if (!dates.length) {
     target.innerHTML = `<p>${escapeHtml(timelineNotice(timelineA.status) || timelineNotice(timelineB.status) || '두 기업 모두 확인된 이벤트가 없습니다.')}</p>`;
@@ -612,8 +635,15 @@ async function initialize(){
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
-  document.querySelector('#backfill-company').addEventListener('click', backfillSelectedCompany);
-  document.querySelector('#backfill-all').addEventListener('click', backfillAllCompanies);
+  document.querySelector('#digest-company').addEventListener('click', digestSelectedCompany);
+  document.querySelector('#digest-all').addEventListener('click', digestAllCompanies);
+  const supporting = document.querySelector('#include-supporting');
+  supporting.checked = includeSupporting;
+  supporting.addEventListener('change', async () => {
+    includeSupporting = supporting.checked;
+    await renderCompany();
+    await renderComparison();
+  });
   document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
   const sankeyTo = new Date();
   const sankeyFrom = new Date(); sankeyFrom.setDate(sankeyFrom.getDate() - 30);
