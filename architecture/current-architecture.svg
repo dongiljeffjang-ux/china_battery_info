@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1040" viewBox="0 0 1500 1040" role="img" aria-label="China Battery Lens 현재 아키텍처">
+  <defs>
+    <style>
+      text { font-family: Arial, 'Noto Sans KR', sans-serif; fill: #14263d; }
+      .title { font-size: 28px; font-weight: 700; }
+      .subtitle { font-size: 14px; fill: #617187; }
+      .label { font-size: 15px; font-weight: 700; }
+      .small { font-size: 12px; fill: #526277; }
+      .box { stroke: #b9c9da; stroke-width: 1.5; rx: 12; }
+      .flow { stroke: #56728f; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .dashed { stroke-dasharray: 6 5; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#56728f"/></marker>
+  </defs>
+  <rect width="1500" height="1040" fill="#f5f7fa"/>
+  <text x="54" y="58" class="title">China Battery Lens · 현재 서비스 아키텍처</text>
+  <text x="54" y="84" class="subtitle">검색 → 원문 보관 → 교차검증 → Daily / 기업 시계열 / Vector DB</text>
+
+  <rect x="54" y="120" width="210" height="68" class="box" fill="#ffffff"/><text x="159" y="149" text-anchor="middle" class="label">사용자 · Vercel 화면</text><text x="159" y="170" text-anchor="middle" class="small">접근 게이트</text>
+  <rect x="325" y="120" width="220" height="68" class="box" fill="#eaf3fb"/><text x="435" y="149" text-anchor="middle" class="label">수집·분석 1회 실행</text><text x="435" y="170" text-anchor="middle" class="small">Daily · Raw Excel</text>
+  <path d="M264 154 H325" class="flow"/>
+
+  <rect x="610" y="105" width="215" height="82" class="box" fill="#e3f5ed"/><text x="717" y="136" text-anchor="middle" class="label">OpenAI 웹 검색</text><text x="717" y="158" text-anchor="middle" class="small">셀 · 양극재 · 음극재</text>
+  <rect x="610" y="205" width="215" height="82" class="box" fill="#e3f5ed"/><text x="717" y="236" text-anchor="middle" class="label">DeepSeek 웹 검색</text><text x="717" y="258" text-anchor="middle" class="small">동일 대상 · 보조 검색</text>
+  <rect x="610" y="305" width="215" height="82" class="box" fill="#fff3d9"/><text x="717" y="336" text-anchor="middle" class="label">공식 소스</text><text x="717" y="358" text-anchor="middle" class="small">CATL 뉴스룸 · CNINFO</text>
+  <path d="M545 147 H610" class="flow"/><path d="M545 154 H575 V246 H610" class="flow"/><path d="M545 160 H565 V346 H610" class="flow"/>
+
+  <rect x="890" y="195" width="220" height="96" class="box" fill="#ffffff"/><text x="1000" y="228" text-anchor="middle" class="label">URL 중복 제거</text><text x="1000" y="250" text-anchor="middle" class="label">회사·별칭 매칭</text><text x="1000" y="273" text-anchor="middle" class="small">기사 메타데이터 저장</text>
+  <path d="M825 146 H855 V243 H890" class="flow"/><path d="M825 246 H890" class="flow"/><path d="M825 346 H855 V243 H890" class="flow"/>
+
+  <rect x="1175" y="195" width="250" height="96" class="box" fill="#edf2f8"/><text x="1300" y="228" text-anchor="middle" class="label">Supabase · article</text><text x="1300" y="250" text-anchor="middle" class="small">URL · 제목 · 상태 · 원문</text><text x="1300" y="273" text-anchor="middle" class="small">회사 연결</text><path d="M1110 243 H1175" class="flow"/>
+
+  <rect x="1175" y="360" width="250" height="68" class="box" fill="#eaf3fb"/><text x="1300" y="389" text-anchor="middle" class="label">헤드라인 기반 Top 10</text><text x="1300" y="410" text-anchor="middle" class="small">중요도 선별</text><path d="M1300 291 V360" class="flow"/>
+  <rect x="1175" y="475" width="250" height="68" class="box" fill="#ffffff"/><text x="1300" y="504" text-anchor="middle" class="label">기사 원문 확보·보관</text><text x="1300" y="525" text-anchor="middle" class="small">본문 일시 분석 + DB 저장</text><path d="M1300 428 V475" class="flow"/>
+
+  <rect x="850" y="475" width="230" height="68" class="box" fill="#e3f5ed"/><text x="965" y="504" text-anchor="middle" class="label">OpenAI 1차 사실 추출</text><text x="965" y="525" text-anchor="middle" class="small">한국어 요약 · 이벤트</text><path d="M1175 509 H1080" class="flow"/>
+  <rect x="520" y="475" width="230" height="68" class="box" fill="#e3f5ed"/><text x="635" y="504" text-anchor="middle" class="label">DeepSeek 교차검증</text><text x="635" y="525" text-anchor="middle" class="small">본문 사실만 통과</text><path d="M850 509 H750" class="flow"/>
+  <rect x="235" y="465" width="190" height="88" class="box" fill="#eaf3fb"/><text x="330" y="496" text-anchor="middle" class="label">팩트 통과</text><text x="330" y="518" text-anchor="middle" class="small">한국어 제목·요약</text><text x="330" y="537" text-anchor="middle" class="small">키워드·이벤트 저장</text><path d="M520 509 H425" class="flow"/>
+
+  <rect x="54" y="650" width="250" height="92" class="box" fill="#ffffff"/><text x="179" y="681" text-anchor="middle" class="label">Daily 화면</text><text x="179" y="703" text-anchor="middle" class="small">리포트 · Top 10 · 센키</text><text x="179" y="724" text-anchor="middle" class="small">확대·축소 신호</text>
+  <rect x="360" y="650" width="250" height="92" class="box" fill="#ffffff"/><text x="485" y="681" text-anchor="middle" class="label">기업 분석·비교</text><text x="485" y="703" text-anchor="middle" class="small">시장·기술 레이어</text><text x="485" y="724" text-anchor="middle" class="small">분기별 시계열 · Excel</text>
+  <path d="M330 553 V610 H179 V650" class="flow"/><path d="M330 553 V610 H485 V650" class="flow"/>
+
+  <rect x="745" y="650" width="250" height="92" class="box" fill="#fff3d9"/><text x="870" y="681" text-anchor="middle" class="label">원문 청킹</text><text x="870" y="703" text-anchor="middle" class="small">약 1,800자 · 180자 중첩</text><text x="870" y="724" text-anchor="middle" class="small">한국어 요약 헤더 결합</text>
+  <rect x="1050" y="650" width="190" height="92" class="box" fill="#e3f5ed"/><text x="1145" y="681" text-anchor="middle" class="label">OpenAI Embedding</text><text x="1145" y="704" text-anchor="middle" class="small">배치 임베딩</text>
+  <rect x="1295" y="650" width="170" height="92" class="box" fill="#edf2f8"/><text x="1380" y="681" text-anchor="middle" class="label">Vector DB</text><text x="1380" y="703" text-anchor="middle" class="small">knowledge_chunk</text><text x="1380" y="724" text-anchor="middle" class="small">회사·기사·출처</text>
+  <path d="M330 553 V600 H870 V650" class="flow"/><path d="M995 696 H1050" class="flow"/><path d="M1240 696 H1295" class="flow"/>
+
+  <rect x="54" y="840" width="510" height="108" class="box dashed" fill="#ffffff"/><text x="309" y="874" text-anchor="middle" class="label">그룹 마스터 · 확장 진행 항목</text><text x="309" y="901" text-anchor="middle" class="small">모회사 → 배터리 관련 주요 연결·지배 법인 → 중국어·영문 별칭</text><text x="309" y="924" text-anchor="middle" class="small">현재 CATL–BRUNP 1차 적용 · 공식 공시 기준으로 전체 그룹 확장 예정</text>
+  <path d="M564 894 H705 V244 H890" class="flow dashed"/>
+  <text x="760" y="876" class="subtitle">그룹 법인 매칭 결과는 검색·공시 수집과 기업 시계열로 연결</text>
+
+  <rect x="880" y="840" width="250" height="78" class="box" fill="#ffffff"/><text x="1005" y="871" text-anchor="middle" class="label">사용자 피드백</text><text x="1005" y="894" text-anchor="middle" class="small">좋아요 · 싫어요 → article_feedback</text>
+  <path d="M1005 840 V780 H179 V742" class="flow"/>
+  <text x="1150" y="897" class="small">향후 Daily 선별 보조 신호</text>
+</svg>
