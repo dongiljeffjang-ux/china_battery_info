@@ -438,6 +438,48 @@ function renderLayerMatrix(timeline){
   const table = `<table style="width:100%;min-width:${periods.length * 190 + 320}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
+// 과거 시계열 백필은 Vercel에서 실행한다. 브라우저·로컬에 LLM 키를 두지 않는다.
+async function requestBackfill(companyId){
+  const result = await fetch(`/api/ingest-rss?backfill=${encodeURIComponent(companyId)}`, { method: 'POST' });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `HTTP ${result.status}`);
+  return payload;
+}
+async function backfillSelectedCompany(){
+  if (!currentCompany) return;
+  const button = document.querySelector('#backfill-company');
+  const name = displayName(currentCompany);
+  if (!window.confirm(`${name}의 2023년 이후 과거 사실을 웹 검색으로 찾아 시계열에 채웁니다.\n검색 1회 분량의 LLM 비용이 발생합니다. 진행할까요?`)) return;
+  button.disabled = true; button.textContent = '백필 중…';
+  try {
+    const payload = await requestBackfill(currentCompany);
+    companyTimelineCache.delete(currentCompany);
+    await renderCompany();
+    window.alert(`${name} 백필 완료\n새로 추가 ${payload.inserted}건 · 중복 제외 ${payload.duplicates}건 · 모델 응답 ${payload.returned}건`);
+  } catch (error) {
+    window.alert(`백필에 실패했습니다: ${error.message}`);
+  } finally {
+    button.disabled = false; button.textContent = '과거 데이터 백필';
+  }
+}
+async function backfillAllCompanies(){
+  const button = document.querySelector('#backfill-all');
+  const targets = companyCatalog.map(company => company.id);
+  if (!targets.length) return;
+  if (!window.confirm(`추적 ${targets.length}개사 전체의 과거 사실을 순서대로 채웁니다.\n회사당 검색 1회씩이라 수십 분이 걸리고 그만큼 LLM 비용이 발생합니다.\n이 창을 닫으면 중단됩니다. 진행할까요?`)) return;
+  button.disabled = true;
+  let inserted = 0;
+  const failed = [];
+  for (const [index, id] of targets.entries()) {
+    button.textContent = `${index + 1}/${targets.length} ${displayName(id)}`;
+    try { inserted += (await requestBackfill(id)).inserted || 0; }
+    catch { failed.push(displayName(id)); }
+    companyTimelineCache.delete(id);
+  }
+  button.disabled = false; button.textContent = '전체 기업 백필';
+  await renderCompany();
+  window.alert(`전체 백필 완료\n새로 추가 ${inserted}건${failed.length ? `\n실패 ${failed.length}곳: ${failed.join(', ')}` : ''}`);
+}
 async function exportCompanyTimeline(){
   if (!currentCompany) { window.alert('내보낼 기업이 선택되지 않았습니다.'); return; }
   const company = companyById(currentCompany);
@@ -542,6 +584,8 @@ async function initialize(){
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
+  document.querySelector('#backfill-company').addEventListener('click', backfillSelectedCompany);
+  document.querySelector('#backfill-all').addEventListener('click', backfillAllCompanies);
   document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
   const sankeyTo = new Date();
   const sankeyFrom = new Date(); sankeyFrom.setDate(sankeyFrom.getDate() - 30);
