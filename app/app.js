@@ -166,14 +166,23 @@ function renderCandidateQueue(){
 }
 function renderHeadlineSankey(){
   const counts = new Map();
-  rangeFlows.forEach(({company_id, keyword, direction}) => {
+  // 왜 그 방향인지는 서버가 신호마다 판단해 내려준다. 화면은 그 근거를 모아 툴팁으로 보여준다.
+  const reasons = new Map();
+  rangeFlows.forEach(({company_id, keyword, direction, reason, title}) => {
     const normalizedKeyword = normalizeSankeyKeyword(keyword);
     if (!normalizedKeyword || !['positive', 'negative'].includes(direction)) return;
     const key = `${company_id}\u0000${direction}\u0000${normalizedKeyword}`;
     counts.set(key, (counts.get(key) || 0) + 1);
+    if (reason) {
+      const bucket = reasons.get(key) || [];
+      const line = title ? `${reason} (${title})` : reason;
+      if (bucket.length < 3 && !bucket.includes(line)) bucket.push(line);
+      reasons.set(key, bucket);
+    }
   });
   const flows = [...counts.entries()].map(([key, count]) => {
-    const [company, direction, keyword] = key.split('\u0000'); return { company, direction, keyword, count };
+    const [company, direction, keyword] = key.split('\u0000');
+    return { company, direction, keyword, count, reasons: reasons.get(key) || [] };
   });
   const target = document.querySelector('#headline-sankey');
   if (!flows.length) {
@@ -200,13 +209,22 @@ function renderHeadlineSankey(){
     const node = selectedNodes.find(item => item.direction === flow.direction && item.keyword === flow.keyword);
     const ky = nodeY(node) + 12;
     const color = flow.direction === 'positive' ? '#398261' : '#bc5b5b';
-    return `<path d="${curve(164, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58"/>`;
+    const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${flow.reasons.length ? `\n\n${flow.reasons.map(line => `· ${line}`).join('\n')}` : ''}`;
+    return `<path d="${curve(164, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58"><title>${escapeHtml(tip)}</title></path>`;
   }).join('');
   const nodes = (names, x, top, gap, fill, formatter = value => value) => names.map(name => {
     const y = yFor(names, name, top, gap);
     return `<g><rect x="${x}" y="${y}" width="190" height="24" rx="4" fill="${fill}"/><text x="${x + 8}" y="${y + 16}" fill="#14263d" font-size="11" font-weight="700">${formatter(name)}</text></g>`;
   }).join('');
-  const signalNodes = selectedNodes.map(node => `<g><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${node.keyword} · ${node.count}건</text></g>`).join('');
+  const nodeReasons = node => {
+    const lines = visible.filter(flow => flow.direction === node.direction && flow.keyword === node.keyword).flatMap(flow => flow.reasons);
+    const unique = [...new Set(lines)].slice(0, 4);
+    const head = `${node.keyword} · ${node.direction === 'positive' ? '확대' : '축소'} 신호 ${node.count}건`;
+    return unique.length
+      ? `${head}\n\n${unique.map(line => `· ${line}`).join('\n')}`
+      : `${head}\n\n판단 근거가 저장되지 않은 예전 기사입니다. 수집·분석을 다시 실행하면 근거가 채워집니다.`;
+  };
+  const signalNodes = selectedNodes.map(node => `<g><title>${escapeHtml(nodeReasons(node))}</title><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${escapeHtml(node.keyword)} · ${node.count}건</text></g>`).join('');
   target.innerHTML = `<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${nodes(sourceNames, 14, 48, 34, '#eaf3fb', label)}${signalNodes}</svg>`;
 }
 function normalizeSankeyKeyword(value){

@@ -28,10 +28,22 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
   const schema = {
     type: "object",
     additionalProperties: false,
-    required: ["title_ko", "summary_ko", "keywords_ko", "event_title_ko", "event_fact_ko", "original_excerpt", "original_excerpt_ko", "occurred_at", "trajectory_track", "layer_key", "region_scope", "timeline_eligibility", "confidence_note"],
+    required: ["title_ko", "summary_ko", "keywords_ko", "headline_signals", "event_title_ko", "event_fact_ko", "original_excerpt", "original_excerpt_ko", "occurred_at", "trajectory_track", "layer_key", "region_scope", "timeline_eligibility", "confidence_note"],
     properties: {
       title_ko: { type: "string" },
       keywords_ko: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
+      headline_signals: {
+        type: "array", minItems: 1, maxItems: 3,
+        items: {
+          type: "object", additionalProperties: false,
+          required: ["keyword_ko", "direction", "reason_ko"],
+          properties: {
+            keyword_ko: { type: "string" },
+            direction: { type: "string", enum: ["expansion", "contraction", "neutral"] },
+            reason_ko: { type: "string" }
+          }
+        }
+      },
       summary_ko: { type: "string" },
       event_title_ko: { type: "string" },
       event_fact_ko: { type: "string" },
@@ -48,7 +60,7 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
   const input = `${companyContext}\n원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}\n본문:\n${bodyText}`;
   const { data } = await createJsonResponse({
     name: "battery_article_event", schema,
-    instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다. " + LAYER_PROMPT_GUIDE,
+    instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). headline_signals는 이 기사가 산업의 무엇을 확대(expansion) 또는 축소(contraction)시키는 신호인지 신호별로 판단한 것이다. keyword_ko에는 회사명·기관명·부처명·매체명·일반 산업명을 쓰지 않는다(예: 공업정보화부, 리튬전지 산업, 출하량 순위는 신호가 아니다). 생산능력·출하·수주·고객·가격·투자·기술 같은 실제로 늘거나 주는 대상을 쓴다. direction은 본문에 적힌 사실을 근거로 정하고, 판단 근거가 약하면 neutral을 쓴다. reason_ko에는 왜 그 방향인지 본문 사실을 들어 한 문장으로 쓴다. 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다. " + LAYER_PROMPT_GUIDE,
     input, provider
   });
   return data;
@@ -56,16 +68,28 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
 
 async function factCheckArticle(article, bodyText, analysis, provider, companyContext = "") {
   const schema = {
-    type: "object", additionalProperties: false, required: ["verdict", "title_ko", "summary_ko", "keywords_ko", "original_excerpt", "original_excerpt_ko", "reason_ko"],
+    type: "object", additionalProperties: false, required: ["verdict", "title_ko", "summary_ko", "keywords_ko", "headline_signals", "original_excerpt", "original_excerpt_ko", "reason_ko"],
     properties: {
       verdict: { type: "string", enum: ["pass", "reject"] }, title_ko: { type: "string" }, summary_ko: { type: "string" },
       keywords_ko: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
+      headline_signals: {
+        type: "array", minItems: 1, maxItems: 3,
+        items: {
+          type: "object", additionalProperties: false,
+          required: ["keyword_ko", "direction", "reason_ko"],
+          properties: {
+            keyword_ko: { type: "string" },
+            direction: { type: "string", enum: ["expansion", "contraction", "neutral"] },
+            reason_ko: { type: "string" }
+          }
+        }
+      },
       original_excerpt: { type: "string" }, original_excerpt_ko: { type: "string" }, reason_ko: { type: "string" }
     }
   };
   const { data } = await createJsonResponse({
     name: "battery_article_fact_check", schema,
-    instructions: "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 요약의 각 사실이 본문에 직접 있는지 대조한다. 추정·평가·인과관계·본문에 없는 수치·주체가 있으면 reject한다. pass일 때도 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·300자 이내 원문 발췌 및 번역을 다시 작성한다. 제공된 서비스 표준 회사명과 본문 주체가 일치하면 한국어 제목·요약에서 반드시 그 표준명을 유지한다. 키워드에는 회사명을 넣지 않는다.",
+    instructions: "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 요약의 각 사실이 본문에 직접 있는지 대조한다. 추정·평가·인과관계·본문에 없는 수치·주체가 있으면 reject한다. pass일 때도 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·300자 이내 원문 발췌 및 번역을 다시 작성한다. 제공된 서비스 표준 회사명과 본문 주체가 일치하면 한국어 제목·요약에서 반드시 그 표준명을 유지한다. 키워드에는 회사명을 넣지 않는다. headline_signals도 본문에서 확인되는 사실만 남기고 다시 작성한다. 회사명·기관명·부처명·일반 산업명은 신호가 아니므로 넣지 않으며, 본문 근거가 약한 항목은 direction을 neutral로 낮춘다. reason_ko는 본문에 있는 사실만으로 쓴다.",
     input: `${companyContext}\n기사 제목: ${article.title_original}\n본문:\n${bodyText}\n\n1차 분석 결과:\n${JSON.stringify(analysis)}`,
     provider
   });
@@ -102,7 +126,7 @@ export async function processPendingArticle(articleId, companyId) {
   }
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
     method: "PATCH",
-    body: { title_ko: factCheck.title_ko, summary_ko: factCheck.summary_ko, keywords_ko: factCheck.keywords_ko, verification_status: "pending_review", source_tier: `${primaryProvider}_${verifierProvider}_fact_checked`, updated_at: new Date().toISOString() }
+    body: { title_ko: factCheck.title_ko, summary_ko: factCheck.summary_ko, keywords_ko: factCheck.keywords_ko, headline_signals: factCheck.headline_signals || result.headline_signals || [], verification_status: "pending_review", source_tier: `${primaryProvider}_${verifierProvider}_fact_checked`, updated_at: new Date().toISOString() }
   });
   let embedding = { status: "skipped", chunks: 0 };
   try {

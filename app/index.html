@@ -71,7 +71,7 @@
             </div>
             <div style="display:flex;gap:8px;align-items:center"><label>From <input id="sankey-from" type="date" /></label><label>To <input id="sankey-to" type="date" /></label><button id="sankey-range-apply" class="secondary-button" type="button">기간 적용</button></div>
           </div>
-          <p>선택 기간 안의 Top 10 제외 기사 헤드라인에서 확대·축소 신호를 나누고, 같은 의미의 키워드를 묶어 빈도 상위 항목만 표시합니다.</p>
+          <p>선택 기간 안의 Top 10 제외 기사에서 확대·축소 신호를 나누고, 같은 의미의 키워드를 묶어 빈도 상위 항목만 표시합니다. 방향은 본문을 읽은 뒤 신호마다 판단하며, <strong>노드나 선에 마우스를 올리면 그렇게 분류한 근거</strong>가 한국어로 표시됩니다.</p>
           <div id="headline-sankey" aria-live="polite"></div>
         </section>
 
@@ -180,7 +180,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260902-fact-only"></script>
+    <script src="./app.js?v=20260902-signal-reason"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>
