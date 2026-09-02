@@ -3,6 +3,7 @@ import { requireAccess } from "./lib/access.js";
 import { processPendingArticle } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
+import { llmConfig } from "../lib/llm-provider.js";
 
 export const maxDuration = 60;
 
@@ -117,7 +118,7 @@ export default async function handler(request, response) {
       ? await generateDailyReport(processedIds)
       : null;
     return response.status(200).json({
-      status: "ok", search_runs: (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL) || process.env.DEEPSEEK_API_KEY ? 3 : 0, discovered: candidates.length, stored: storedArticles.length,
+      status: "ok", search_runs: (llmConfig("openai") ? 3 : 0) + (llmConfig("deepseek") ? 3 : 0), discovered: candidates.length, stored: storedArticles.length,
       headline_selected: selectedHeadlines.length,
       llm_processed: llmResults.filter((result) => result.status === "pending_review").length,
       outcome_counts: outcomeCounts,

@@ -1,6 +1,6 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { resolveGoogleNewsUrl } from "./lib/google-news.js";
-import { createJsonResponse } from "../lib/llm-provider.js";
+import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 
 const MAX_BODY_CHARS = 30000;
 
@@ -20,7 +20,7 @@ function htmlToText(html) {
     .trim();
 }
 
-async function analyzeArticle(article, bodyText) {
+async function analyzeArticle(article, bodyText, provider) {
   const schema = {
     type: "object",
     additionalProperties: false,
@@ -45,12 +45,12 @@ async function analyzeArticle(article, bodyText) {
   const { data } = await createJsonResponse({
     name: "battery_article_event", schema,
     instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. keywords_ko에는 헤드라인과 본문 요약을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다.",
-    input
+    input, provider
   });
   return data;
 }
 
-async function factCheckArticle(article, bodyText, analysis) {
+async function factCheckArticle(article, bodyText, analysis, provider) {
   const schema = {
     type: "object", additionalProperties: false, required: ["verdict", "title_ko", "summary_ko", "keywords_ko", "original_excerpt", "original_excerpt_ko", "reason_ko"],
     properties: {
@@ -62,7 +62,8 @@ async function factCheckArticle(article, bodyText, analysis) {
   const { data } = await createJsonResponse({
     name: "battery_article_fact_check", schema,
     instructions: "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 요약의 각 사실이 본문에 직접 있는지 대조한다. 추정·평가·인과관계·본문에 없는 수치·주체가 있으면 reject한다. pass일 때도 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·300자 이내 원문 발췌 및 번역을 다시 작성한다.",
-    input: `기사 제목: ${article.title_original}\n본문:\n${bodyText}\n\n1차 분석 결과:\n${JSON.stringify(analysis)}`
+    input: `기사 제목: ${article.title_original}\n본문:\n${bodyText}\n\n1차 분석 결과:\n${JSON.stringify(analysis)}`,
+    provider
   });
   return data;
 }
@@ -78,15 +79,18 @@ export async function processPendingArticle(articleId, companyId) {
   const bodyText = htmlToText(await sourceResponse.text()).slice(0, MAX_BODY_CHARS);
   if (bodyText.length < 500) return { status: "body_too_short" };
 
-  const result = await analyzeArticle(article, bodyText);
-  const factCheck = await factCheckArticle(article, bodyText, result);
+  const primaryProvider = llmConfig("openai") ? "openai" : "deepseek";
+  const verifierProvider = llmConfig("deepseek") ? "deepseek" : primaryProvider;
+  const result = await analyzeArticle(article, bodyText, primaryProvider);
+  const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider);
+  console.info("[ARTICLE_CROSS_CHECK]", JSON.stringify({ articleId, primaryProvider, verifierProvider, verdict: factCheck.verdict }));
   if (factCheck.verdict !== "pass") {
     await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, { method: "PATCH", body: { verification_status: "rejected", source_tier: "fact_check_rejected", updated_at: new Date().toISOString() } });
     return { status: "fact_check_rejected", reason: factCheck.reason_ko };
   }
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
     method: "PATCH",
-    body: { title_ko: factCheck.title_ko, summary_ko: factCheck.summary_ko, keywords_ko: factCheck.keywords_ko, verification_status: "pending_review", source_tier: "web_search_fact_checked", updated_at: new Date().toISOString() }
+    body: { title_ko: factCheck.title_ko, summary_ko: factCheck.summary_ko, keywords_ko: factCheck.keywords_ko, verification_status: "pending_review", source_tier: `${primaryProvider}_${verifierProvider}_fact_checked`, updated_at: new Date().toISOString() }
   });
   if (result.timeline_eligibility !== "exclude" && result.occurred_at) {
     await supabaseRest("event", { method: "POST", body: {
@@ -98,7 +102,7 @@ export async function processPendingArticle(articleId, companyId) {
       timeline_eligibility: result.timeline_eligibility
     } });
   }
-  return { status: "pending_review", analysis: result, fact_check: factCheck };
+  return { status: "pending_review", analysis: result, fact_check: factCheck, primary_provider: primaryProvider, verifier_provider: verifierProvider };
 }
 
 export default async function handler(request, response) {
