@@ -1,7 +1,7 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { flushTraces } from "../lib/tracing.js";
 import { requireAccess } from "./lib/access.js";
-import { processPendingArticle } from "./process-article.js";
+import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
 import { llmConfig } from "../lib/llm-provider.js";
@@ -72,6 +72,7 @@ async function processSelectedBatch(rows) {
         outcomes.push({ articleId: article.id, ...(await processPendingArticle(article.id, companyId)) });
       } catch (error) {
         console.error("[ARTICLE_PROCESS_FAILED]", JSON.stringify({ articleId: article.id, source: article.source_name, message: error.message }));
+        await recordProcessing(article.id, "processing_failed", error.message);
         outcomes.push({ articleId: article.id, status: "processing_failed", message: error.message });
       }
     }

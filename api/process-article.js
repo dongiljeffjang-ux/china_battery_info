@@ -97,6 +97,19 @@ async function factCheckArticle(article, bodyText, analysis, provider, companyCo
   return data;
 }
 
+// 본문 처리 결과를 기사에 남긴다. 실행 직후 응답에만 있던 실패 사유를 나중에도 볼 수 있게 하고,
+// "시도했다 실패"와 "아직 시도한 적 없음"을 구분하기 위함이다. 기록 실패가 처리 실패가 되면 안 된다.
+export async function recordProcessing(articleId, status, note = null) {
+  try {
+    await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
+      method: "PATCH",
+      body: { processing_status: status, processing_note: note ? String(note).slice(0, 500) : null, processed_at: new Date().toISOString() }
+    });
+  } catch (error) {
+    console.error("[PROCESSING_RECORD_FAILED]", JSON.stringify({ articleId, status, message: error.message }));
+  }
+}
+
 export async function processPendingArticle(articleId, companyId) {
   const articles = await supabaseRest(`article?select=id,canonical_url,title_original,source_name,published_at,source_tier&id=eq.${encodeURIComponent(articleId)}&verification_status=eq.pending&limit=1`);
   const article = articles[0];
@@ -104,9 +117,15 @@ export async function processPendingArticle(articleId, companyId) {
   const resolvedUrl = await resolveGoogleNewsUrl(article.canonical_url);
   const sourceResponse = await fetch(resolvedUrl, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ChinaBatteryLens/0.1; research)" } });
   const contentType = sourceResponse.headers.get("content-type") || "";
-  if (!sourceResponse.ok || !contentType.includes("text/html")) return { status: "body_unavailable", contentType };
+  if (!sourceResponse.ok || !contentType.includes("text/html")) {
+    await recordProcessing(articleId, "body_unavailable", `HTTP ${sourceResponse.status} · content-type: ${contentType || "없음"} · ${resolvedUrl}`);
+    return { status: "body_unavailable", contentType };
+  }
   const bodyText = htmlToText(await sourceResponse.text()).slice(0, MAX_BODY_CHARS);
-  if (bodyText.length < 500) return { status: "body_too_short" };
+  if (bodyText.length < 500) {
+    await recordProcessing(articleId, "body_too_short", `본문 ${bodyText.length}자로 최소 500자에 못 미침 · ${resolvedUrl}`);
+    return { status: "body_too_short" };
+  }
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
     method: "PATCH", body: { body_original: bodyText, body_fetched_at: new Date().toISOString(), embedding_status: "pending", updated_at: new Date().toISOString() }
   });
@@ -122,12 +141,12 @@ export async function processPendingArticle(articleId, companyId) {
   const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider, companyContext);
   console.info("[ARTICLE_CROSS_CHECK]", JSON.stringify({ articleId, primaryProvider, verifierProvider, verdict: factCheck.verdict }));
   if (factCheck.verdict !== "pass") {
-    await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, { method: "PATCH", body: { verification_status: "rejected", source_tier: "fact_check_rejected", updated_at: new Date().toISOString() } });
+    await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, { method: "PATCH", body: { verification_status: "rejected", source_tier: "fact_check_rejected", processing_status: "fact_check_rejected", processing_note: String(factCheck.reason_ko || "").slice(0, 500) || null, processed_at: new Date().toISOString(), updated_at: new Date().toISOString() } });
     return { status: "fact_check_rejected", reason: factCheck.reason_ko };
   }
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
     method: "PATCH",
-    body: { title_ko: factCheck.title_ko, summary_ko: factCheck.summary_ko, keywords_ko: factCheck.keywords_ko, headline_signals: factCheck.headline_signals || result.headline_signals || [], verification_status: "pending_review", source_tier: `${primaryProvider}_${verifierProvider}_fact_checked`, updated_at: new Date().toISOString() }
+    body: { title_ko: factCheck.title_ko, summary_ko: factCheck.summary_ko, keywords_ko: factCheck.keywords_ko, headline_signals: factCheck.headline_signals || result.headline_signals || [], verification_status: "pending_review", source_tier: `${primaryProvider}_${verifierProvider}_fact_checked`, processing_status: "ok", processing_note: null, processed_at: new Date().toISOString(), updated_at: new Date().toISOString() }
   });
   let embedding = { status: "skipped", chunks: 0 };
   try {
