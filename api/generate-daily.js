@@ -11,7 +11,7 @@ function isAuthorized(request) {
   return Boolean(secret && request.headers.authorization === `Bearer ${secret}`);
 }
 
-async function selectTop10(candidates) {
+async function selectTop10(candidates, preferenceExamples = []) {
   const schema = {
     type: "object", additionalProperties: false, required: ["summary_ko", "top10"],
     properties: {
@@ -29,8 +29,8 @@ async function selectTop10(candidates) {
   }));
   const { data } = await createJsonResponse({
     name: "daily_top10", schema,
-    instructions: "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. summary_ko는 한국어 1페이지 요약이며, 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다.",
-    input: JSON.stringify(evidence)
+    instructions: "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. 사용자 피드백은 편집 선호의 보조 신호로만 사용하며, 사실성·출처 검증·중요도보다 우선하지 않는다. summary_ko는 한국어 1페이지 요약이며, 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다.",
+    input: JSON.stringify({ candidates: evidence, preference_examples: preferenceExamples })
   });
   return data;
 }
@@ -39,7 +39,17 @@ export async function generateDailyReport(articleIds = []) {
   const idFilter = articleIds.length ? `&id=in.(${articleIds.join(",")})` : "";
   const candidates = await supabaseRest(`article?select=id,title_ko,summary_ko,source_name,published_at,article_company(company(name_ko))&verification_status=eq.pending_review${idFilter}&order=published_at.desc&limit=80`);
   if (!candidates.length) return { status: "no_reviewed_articles" };
-  const result = await selectTop10(candidates);
+  let preferenceExamples = [];
+  try {
+    const feedbackRows = await supabaseRest("article_feedback?select=vote,article(title_ko,summary_ko,keywords_ko)&order=updated_at.desc&limit=100");
+    preferenceExamples = feedbackRows.map((row) => ({
+      preference: row.vote > 0 ? "좋아요" : "싫어요",
+      title_ko: row.article?.title_ko || "", summary_ko: row.article?.summary_ko || "", keywords_ko: row.article?.keywords_ko || []
+    })).filter((row) => row.title_ko || row.summary_ko);
+  } catch (error) {
+    console.error("[FEEDBACK_PROFILE_UNAVAILABLE]", error.message);
+  }
+  const result = await selectTop10(candidates, preferenceExamples);
   const candidateIds = new Set(candidates.map((article) => article.id));
   const selected = result.top10
     .filter((item) => candidateIds.has(item.article_id))

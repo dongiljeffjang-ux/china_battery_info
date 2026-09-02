@@ -65,6 +65,17 @@ create table if not exists public.daily_report (
   status text not null default 'draft' check (status in ('draft', 'approved', 'published'))
 );
 
+-- 브라우저별 좋아요/싫어요를 한 건씩 저장한다. 서비스 API만 접근한다.
+create table if not exists public.article_feedback (
+  id uuid primary key default gen_random_uuid(),
+  article_id uuid not null references public.article(id) on delete cascade,
+  client_key uuid not null,
+  vote smallint not null check (vote in (-1, 1)),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (article_id, client_key)
+);
+
 -- 검증·승인된 지식만 RAG 검색 대상으로 저장한다.
 -- 언론 기사 본문 전체는 넣지 않고, 요약·짧은 근거 발췌·공식 문서 청크만 넣는다.
 create table if not exists public.knowledge_chunk (
@@ -87,6 +98,7 @@ create table if not exists public.knowledge_chunk (
 
 create index if not exists article_published_at_idx on public.article (published_at desc);
 create index if not exists article_top10_idx on public.article (is_top10, top10_rank);
+create index if not exists article_feedback_article_idx on public.article_feedback (article_id, vote);
 create index if not exists event_company_date_idx on public.event (company_id, occurred_at);
 create index if not exists knowledge_chunk_company_date_idx on public.knowledge_chunk (company_id, published_at desc);
 create index if not exists knowledge_chunk_embedding_hnsw_idx on public.knowledge_chunk using hnsw (embedding vector_cosine_ops);
@@ -96,6 +108,7 @@ alter table public.article enable row level security;
 alter table public.article_company enable row level security;
 alter table public.event enable row level security;
 alter table public.daily_report enable row level security;
+alter table public.article_feedback enable row level security;
 alter table public.knowledge_chunk enable row level security;
 
 -- 이미 초기 버전을 실행한 프로젝트에도 근거 열을 추가한다.
@@ -105,8 +118,9 @@ alter table public.event add column if not exists original_excerpt text;
 alter table public.event add column if not exists original_excerpt_ko text;
 alter table public.article add column if not exists keywords_ko text[] not null default '{}';
 
-revoke all on public.company, public.article, public.article_company, public.event, public.daily_report from anon, authenticated;
+revoke all on public.company, public.article, public.article_company, public.event, public.daily_report, public.article_feedback from anon, authenticated;
 revoke all on public.knowledge_chunk from anon, authenticated;
+grant select, insert, update, delete on public.article_feedback to service_role;
 
 -- 검색 RPC는 server-side service_role만 호출한다. 공개 역할에는 실행 권한을 주지 않는다.
 create or replace function public.match_knowledge_chunks(

@@ -99,6 +99,26 @@ function renderDailySummary(){
   const facts = dailyReportFacts || ['아직 생성된 Daily Report가 없습니다. 수집·분석 1회 실행 후 Top 10 본문 분석 결과와 통합 리포트가 이 영역에 표시됩니다.'];
   document.querySelector('#daily-summary-list').innerHTML = facts.map(fact => `<li>${fact}</li>`).join('');
 }
+function feedbackClientKey(){
+  const key = 'cbl_feedback_client_key';
+  let value = localStorage.getItem(key);
+  if (!value) { value = crypto.randomUUID(); localStorage.setItem(key, value); }
+  return value;
+}
+function attachFeedback(node, article){
+  if (!article.id) return;
+  node.querySelectorAll('.feedback-button').forEach(button => button.addEventListener('click', async () => {
+    const vote = button.dataset.vote;
+    const buttons = [...node.querySelectorAll('.feedback-button')];
+    buttons.forEach(item => { item.disabled = true; });
+    try {
+      const result = await fetch('/api/news', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ articleId: article.id, clientKey: feedbackClientKey(), vote }) });
+      if (!result.ok) throw new Error();
+      buttons.forEach(item => item.classList.toggle('is-selected', item.dataset.vote === vote));
+    } catch { window.alert('의견을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'); }
+    finally { buttons.forEach(item => { item.disabled = false; }); }
+  }));
+}
 function renderTopNews(){
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#news-feed'); target.innerHTML = '';
@@ -114,6 +134,7 @@ function renderTopNews(){
     node.querySelector('.news-fact').textContent = item.fact;
     node.querySelector('.impact-reason').textContent = item.why;
     node.querySelector('a').href = item.url;
+    attachFeedback(node, item);
     target.append(node);
   });
 }
@@ -200,6 +221,7 @@ function renderCompanyNews(){
     node.querySelector('.news-fact').textContent = item.fact;
     node.querySelector('.impact-reason').textContent = item.why;
     node.querySelector('a').href = item.url;
+    attachFeedback(node, item);
     target.append(node);
   });
   document.querySelectorAll('[data-news-company]').forEach(button => button.addEventListener('click', () => { currentNewsCompany = button.dataset.newsCompany; renderCompanyNews(); }));
@@ -207,6 +229,7 @@ function renderCompanyNews(){
 function mapDashboardArticle(article){
   const relation = article.article_company?.[0];
   return {
+    id: article.id,
     sector: 'all',
     company: relation?.company_id || '기타',
     date: article.published_at ? article.published_at.slice(0, 10).replaceAll('-', '.') : '날짜 미상',
