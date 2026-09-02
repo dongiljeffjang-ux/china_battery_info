@@ -1,7 +1,7 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { resolveGoogleNewsUrl } from "./lib/google-news.js";
+import { createJsonResponse } from "../lib/llm-provider.js";
 
-const OPENAI_URL = "https://api.openai.com/v1/responses";
 const MAX_BODY_CHARS = 30000;
 
 function isAuthorized(request) {
@@ -21,10 +21,6 @@ function htmlToText(html) {
 }
 
 async function analyzeArticle(article, bodyText) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL;
-  if (!apiKey || !model) throw new Error("LLM_NOT_CONFIGURED");
-
   const schema = {
     type: "object",
     additionalProperties: false,
@@ -46,23 +42,12 @@ async function analyzeArticle(article, bodyText) {
     }
   };
   const input = `원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}\n본문:\n${bodyText}`;
-  const upstream = await fetch(OPENAI_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      store: false,
-      instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. keywords_ko에는 헤드라인과 본문 요약을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다.",
-      input,
-      text: { format: { type: "json_schema", name: "battery_article_event", strict: true, schema } }
-    })
+  const { data } = await createJsonResponse({
+    name: "battery_article_event", schema,
+    instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. keywords_ko에는 헤드라인과 본문 요약을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다.",
+    input
   });
-  if (!upstream.ok) {
-    const detail = (await upstream.text()).replace(/\s+/g, " ").slice(0, 500);
-    throw new Error(`OPENAI_${upstream.status}: ${detail}`);
-  }
-  const payload = await upstream.json();
-  return JSON.parse(payload.output_text);
+  return data;
 }
 
 export async function processPendingArticle(articleId, companyId) {

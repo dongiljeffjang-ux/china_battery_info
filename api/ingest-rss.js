@@ -8,7 +8,6 @@ export const maxDuration = 60;
 
 const TOP10_LIMIT = 10;
 const PROCESS_CONCURRENCY = 3;
-const ANALYZABLE_SOURCES = new Set(["Sina Finance", "China News Finance", "People's Daily Finance", "CATL Newsroom"]);
 const HIGH_SIGNAL_TERMS = [
   "扩产", "增产", "产能", "投产", "开工", "项目", "签约", "订单", "定点", "认证", "量产", "出货", "交付",
   "营收", "收入", "净利润", "财报", "业绩", "海外", "建厂", "投资", "收购", "合作", "固态", "硅碳", "lmfp",
@@ -35,14 +34,14 @@ function headlineScore(article) {
 }
 
 async function selectHeadlineTop10() {
-  const rows = await supabaseRest("article?select=id,title_original,published_at,article_company(company_id)&verification_status=eq.pending&order=published_at.desc&limit=500");
+  const rows = await supabaseRest("article?select=id,title_original,source_name,source_tier,published_at,article_company(company_id)&verification_status=eq.pending&order=published_at.desc&limit=500");
   const unique = new Map();
   for (const article of rows) {
     const key = normalizeHeadline(article.title_original);
     if (key && !unique.has(key)) unique.set(key, article);
   }
   return [...unique.values()]
-    .filter((article) => ANALYZABLE_SOURCES.has(article.source_name))
+    .filter((article) => article.source_tier === "web_search_discovered" || article.source_name === "CATL Newsroom")
     .map((article) => ({ ...article, headline_score: headlineScore(article) }))
     .sort((a, b) => b.headline_score - a.headline_score || new Date(b.published_at) - new Date(a.published_at))
     .slice(0, TOP10_LIMIT);
@@ -80,7 +79,7 @@ export default async function handler(request, response) {
     const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
         source_language: "zh", published_at: new Date(candidate.publishedAt || Date.now()).toISOString(),
-        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : "needs_review"
+        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "deepseek_news" ? "web_search_discovered" : "needs_review"
     }));
     const storedArticles = articleRows.length
       ? await supabaseRest("article?on_conflict=canonical_url", { method: "POST", prefer: "resolution=merge-duplicates,return=representation", body: articleRows })
@@ -95,13 +94,13 @@ export default async function handler(request, response) {
     const immediateAnalysis = request.query?.process === "1" || request.body?.process === true;
     const shouldProcess = isCronRequest(request) || immediateAnalysis;
     const selectedHeadlines = shouldProcess ? await selectHeadlineTop10() : [];
-    const llmResults = shouldProcess && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL
+    const llmResults = shouldProcess && (process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL))
       ? await processSelectedBatch(selectedHeadlines)
       : [];
     const processedIds = llmResults.filter((result) => result.status === "pending_review").map((result) => result.articleId);
     const outcomeCounts = llmResults.reduce((counts, result) => ({ ...counts, [result.status]: (counts[result.status] || 0) + 1 }), {});
     console.info("[INGEST_OUTCOMES]", JSON.stringify({ selected: selectedHeadlines.length, outcomes: outcomeCounts }));
-    const dailyReport = processedIds.length && process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL
+    const dailyReport = processedIds.length && (process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL))
       ? await generateDailyReport(processedIds)
       : null;
     return response.status(200).json({

@@ -31,7 +31,7 @@ python .\pipeline\collect_feeds.py
 
 ## 무료 뉴스 수집
 
-`/api/ingest-rss`와 `/api/news`는 Google News RSS를 사용하지 않습니다. Sina Finance 공개 JSON 피드, 人民网·中新网 재경 RSS, 巨潮资讯(CNINFO) 공식 공시를 결합합니다. 언론·기업 뉴스는 헤드라인 선별 후 원문 확인·한국어 번역 단계로 넘기고, CNINFO 공시는 PDF 원문 링크와 공식 메타데이터를 회사 시계열 근거로 축적합니다.
+`/api/ingest-rss`는 DeepSeek 서버 측 웹 검색으로 중국 배터리 뉴스 후보를 찾고, 실제 원문 URL을 다시 직접 읽은 뒤에만 한국어 요약·분류를 DB에 저장합니다. CNINFO 공식 공시와 CATL 뉴스룸은 별도로 병행 수집합니다. `DEEPSEEK_API_KEY`가 없으면 웹 검색 후보는 만들지 않으며, 기존 OpenAI 설정은 본문 분류·보고서 생성의 대체 수단입니다.
 
 Vercel 배포에서는 별도 뉴스 API 키 없이 `/api/news`를 사용할 수 있습니다.
 
@@ -48,7 +48,7 @@ python pipeline/build_review_queue.py
 ## 서비스 API와 배포 DB
 
 1. Supabase 프로젝트를 만들고 SQL Editor에서 `supabase/schema.sql`을 실행합니다.
-2. Vercel Project Settings → Environment Variables에 `.env.example`의 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `CRON_SECRET`를 입력합니다.
+2. Vercel Project Settings → Environment Variables에 `.env.example`의 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `CRON_SECRET`를 입력합니다. `OPENAI_API_KEY`, `OPENAI_MODEL`은 DeepSeek가 없을 때의 대체 LLM 설정입니다.
 3. 브라우저는 `/api/dashboard`, `/api/company?companyId=Ronbay`만 호출합니다. `SUPABASE_SERVICE_ROLE_KEY`는 Vercel 서버에서만 사용하며 브라우저 코드에 넣지 않습니다.
 
 `POST /api/process-article`는 승인 전 `articleId`, 정규 `companyId`를 받아 원문 HTML을 일시 처리하고, 한국어 요약과 Event 후보를 DB에 저장합니다. 이 API에는 `Authorization: Bearer $CRON_SECRET` 헤더가 필요합니다. 원문 뉴스 본문은 DB에 저장하지 않습니다.

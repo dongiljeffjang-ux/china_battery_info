@@ -1,6 +1,6 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 
-const OPENAI_URL = "https://api.openai.com/v1/responses";
 
 function koreaDate() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -12,9 +12,6 @@ function isAuthorized(request) {
 }
 
 async function selectTop10(candidates) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL;
-  if (!apiKey || !model) throw new Error("LLM_NOT_CONFIGURED");
   const schema = {
     type: "object", additionalProperties: false, required: ["summary_ko", "top10"],
     properties: {
@@ -30,17 +27,12 @@ async function selectTop10(candidates) {
     company: article.article_company?.map((link) => link.company?.name_ko).filter(Boolean),
     title_ko: article.title_ko, summary_ko: article.summary_ko
   }));
-  const upstream = await fetch(OPENAI_URL, {
-    method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model, store: false,
-      instructions: "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. summary_ko는 한국어 1페이지 요약이며, 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다.",
-      input: JSON.stringify(evidence),
-      text: { format: { type: "json_schema", name: "daily_top10", strict: true, schema } }
-    })
+  const { data } = await createJsonResponse({
+    name: "daily_top10", schema,
+    instructions: "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. summary_ko는 한국어 1페이지 요약이며, 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다.",
+    input: JSON.stringify(evidence)
   });
-  if (!upstream.ok) throw new Error(`OPENAI_${upstream.status}`);
-  return JSON.parse((await upstream.json()).output_text);
+  return data;
 }
 
 export async function generateDailyReport(articleIds = []) {
@@ -61,7 +53,7 @@ export async function generateDailyReport(articleIds = []) {
   const reportDate = koreaDate();
   await supabaseRest("daily_report?on_conflict=report_date", {
     method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
-    body: { report_date: reportDate, summary_ko: result.summary_ko, model_name: process.env.OPENAI_MODEL, generated_at: new Date().toISOString(), status: "published" }
+    body: { report_date: reportDate, summary_ko: result.summary_ko, model_name: llmConfig()?.model || null, generated_at: new Date().toISOString(), status: "published" }
   });
   return { status: "published", report_date: reportDate, top10_count: selected.length, selection: selected };
 }
