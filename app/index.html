@@ -80,7 +80,12 @@
               <p class="eyebrow">COMPANY NEWS</p>
               <h2 id="company-news-title">회사별 뉴스</h2>
             </div>
-            <div class="segmented-control" role="group" aria-label="회사 선택" id="company-news-controls"></div>
+            <div class="company-news-filter" aria-label="회사별 뉴스 필터">
+              <div class="segmented-control" role="group" aria-label="밸류체인 선택" id="company-news-value-chain"></div>
+              <label class="company-news-picker">회사 선택
+                <select id="company-news-company" aria-label="뉴스 회사 선택"></select>
+              </label>
+            </div>
           </div>
           <div id="company-news-feed" class="news-feed"></div>
         </section>

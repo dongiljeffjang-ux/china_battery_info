@@ -65,6 +65,12 @@ const companyDisplayNames = {
   putailai: '푸타이라이',
   'zhongke-electric': '중커전기'
 };
+const newsCompanyCatalog = {
+  cell: [['catl','CATL'],['byd','BYD'],['eve-energy','EVE Energy'],['calb','CALB'],['gotion','Gotion High-tech'],['sunwoda','Sunwoda'],['hithium','Hithium'],['rept','REPT BATTERO'],['svolt','SVOLT'],['farasis','Farasis Energy']],
+  cathode: [['ronbay','룽바이(Ronbay)'],['hunan-yuneng','후난위넝'],['dynanonic','Dynanonic'],['xtc-new-energy','XTC New Energy'],['easpring','Easpring'],['zhenhua-new-material','Zhenhua New Material'],['changyuan-lico','Changyuan Lico'],['wanrun-new-energy','Wanrun New Energy'],['lopal','Lopal Tech'],['cnrg','CNGR']],
+  anode: [['btr','BTR'],['shanshan','샨샨'],['putailai','푸타이라이'],['zhongke-electric','중커전기'],['shangtai-technology','Shangtai Technology'],['xiangfenghua','Xiangfenghua'],['kaijin-new-energy','Kaijin New Energy'],['kuntian-new-energy','Kuntian New Energy'],['carbon-one','Carbon One']]
+};
+const valueChainLabels = { cell: '셀사', cathode: '양극재', anode: '음극재' };
 
 const companySourceInfo = {
   CATL: { name: 'CATL 공식 발표', url: source.catl },
@@ -74,6 +80,7 @@ const companySourceInfo = {
 };
 
 let currentCompany = 'Ronbay';
+let currentNewsValueChain = 'cell';
 let currentNewsCompany = 'all';
 let dailyReportFacts = null;
 let approvedTop10 = [];
@@ -223,12 +230,16 @@ function normalizeSankeyKeyword(value){
   return keyword;
 }
 function renderCompanyNews(){
-  const companiesInNews = ['all', ...new Set(approvedCompanyNews.map(item => item.company))];
-  document.querySelector('#company-news-controls').innerHTML = companiesInNews.map(company => `<button class="segment ${company === currentNewsCompany ? 'is-selected' : ''}" data-news-company="${company}">${company === 'all' ? '전체 회사' : companyDisplayNames[company] || company}</button>`).join('');
+  const valueChainTarget = document.querySelector('#company-news-value-chain');
+  const companyTarget = document.querySelector('#company-news-company');
+  valueChainTarget.innerHTML = Object.entries(valueChainLabels).map(([key, label]) => `<button class="segment ${key === currentNewsValueChain ? 'is-selected' : ''}" data-news-value-chain="${key}">${label}</button>`).join('');
+  const companiesInChain = newsCompanyCatalog[currentNewsValueChain] || [];
+  if (!companiesInChain.some(([id]) => id === currentNewsCompany)) currentNewsCompany = 'all';
+  companyTarget.innerHTML = `<option value="all">${valueChainLabels[currentNewsValueChain]} 전체</option>${companiesInChain.map(([id, name]) => `<option value="${id}" ${id === currentNewsCompany ? 'selected' : ''}>${name}</option>`).join('')}`;
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#company-news-feed'); target.innerHTML = '';
-  const filtered = approvedCompanyNews.filter(item => currentNewsCompany === 'all' || item.company === currentNewsCompany);
-  if (!filtered.length) target.innerHTML = '<p>본문 검증과 승인까지 마친 회사별 뉴스가 아직 없습니다.</p>';
+  const filtered = approvedCompanyNews.filter(item => item.valueChain === currentNewsValueChain && (currentNewsCompany === 'all' || item.company === currentNewsCompany));
+  if (!filtered.length) target.innerHTML = `<p>${currentNewsCompany === 'all' ? valueChainLabels[currentNewsValueChain] : companyTarget.selectedOptions[0]?.textContent}의 자동 팩트체크 완료 뉴스가 아직 없습니다.</p>`;
   filtered.forEach(item => {
     const node = template.content.cloneNode(true);
     const sector = node.querySelector('.sector-tag'); sector.textContent = companyDisplayNames[item.company] || item.company; sector.classList.toggle('anode', false);
@@ -241,7 +252,8 @@ function renderCompanyNews(){
     attachFeedback(node, item);
     target.append(node);
   });
-  document.querySelectorAll('[data-news-company]').forEach(button => button.addEventListener('click', () => { currentNewsCompany = button.dataset.newsCompany; renderCompanyNews(); }));
+  document.querySelectorAll('[data-news-value-chain]').forEach(button => button.addEventListener('click', () => { currentNewsValueChain = button.dataset.newsValueChain; currentNewsCompany = 'all'; renderCompanyNews(); }));
+  companyTarget.addEventListener('change', () => { currentNewsCompany = companyTarget.value; renderCompanyNews(); });
 }
 function mapDashboardArticle(article){
   const relation = article.article_company?.[0];
@@ -249,6 +261,7 @@ function mapDashboardArticle(article){
     id: article.id,
     sector: 'all',
     company: relation?.company_id || '기타',
+    valueChain: relation?.company?.type_tags?.[0] || Object.entries(newsCompanyCatalog).find(([, entries]) => entries.some(([id]) => id === relation?.company_id))?.[0] || 'other',
     date: article.published_at ? article.published_at.slice(0, 10).replaceAll('-', '.') : '날짜 미상',
     title: article.title_ko || article.title_original,
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
