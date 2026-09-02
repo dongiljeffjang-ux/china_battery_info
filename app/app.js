@@ -213,7 +213,7 @@ function mapDashboardArticle(article){
     title: article.title_ko || article.title_original,
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
     why: article.is_top10 ? '헤드라인 선별 후 본문 정독·팩트 요약 완료' : article.verification_status === 'pending' ? '미분석 수집 원문' : '분석된 회사 이벤트',
-    confidence: article.verification_status === 'pending_review' ? 'LLM 본문 분류 완료' : article.verification_status === 'pending' ? '미분석' : article.source_tier || '검수 완료',
+    confidence: article.verification_status === 'pending_review' ? '원문 본문 대조 팩트체크 완료' : article.verification_status === 'pending' ? '미분석' : article.source_tier || '검수 완료',
     url: article.canonical_url,
     sourceName: article.source_name,
     classification: classifyCandidate(article)

@@ -31,7 +31,7 @@ python .\pipeline\collect_feeds.py
 
 ## 무료 뉴스 수집
 
-`/api/ingest-rss`는 DeepSeek 서버 측 웹 검색으로 중국 배터리 뉴스 후보를 찾고, 실제 원문 URL을 다시 직접 읽은 뒤에만 한국어 요약·분류를 DB에 저장합니다. CNINFO 공식 공시와 CATL 뉴스룸은 별도로 병행 수집합니다. `DEEPSEEK_API_KEY`가 없으면 웹 검색 후보는 만들지 않으며, 기존 OpenAI 설정은 본문 분류·보고서 생성의 대체 수단입니다.
+`/api/ingest-rss`는 매 실행마다 OpenAI 웹 검색을 셀·양극재·음극재별로 3회 수행해 중국 배터리 뉴스 후보를 찾습니다. 실제 원문 URL을 다시 직접 읽고, 1차 사실 추출과 2차 본문 대조 팩트체크를 모두 통과한 기사만 한국어 요약·분류·Top 10 후보로 DB에 저장합니다. CNINFO 공식 공시와 CATL 뉴스룸은 별도로 병행 수집합니다. OpenAI가 없을 때만 DeepSeek를 대체 검색/분석 LLM으로 사용합니다.
 
 Vercel 배포에서는 별도 뉴스 API 키 없이 `/api/news`를 사용할 수 있습니다.
 

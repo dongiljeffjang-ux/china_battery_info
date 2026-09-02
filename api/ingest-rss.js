@@ -79,7 +79,7 @@ export default async function handler(request, response) {
     const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
         source_language: "zh", published_at: new Date(candidate.publishedAt || Date.now()).toISOString(),
-        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "deepseek_news" ? "web_search_discovered" : "needs_review"
+        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? "web_search_discovered" : "needs_review"
     }));
     const storedArticles = articleRows.length
       ? await supabaseRest("article?on_conflict=canonical_url", { method: "POST", prefer: "resolution=merge-duplicates,return=representation", body: articleRows })
@@ -104,7 +104,7 @@ export default async function handler(request, response) {
       ? await generateDailyReport(processedIds)
       : null;
     return response.status(200).json({
-      status: "ok", discovered: candidates.length, stored: storedArticles.length,
+      status: "ok", search_runs: (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL) || process.env.DEEPSEEK_API_KEY ? 3 : 0, discovered: candidates.length, stored: storedArticles.length,
       headline_selected: selectedHeadlines.length,
       llm_processed: llmResults.filter((result) => result.status === "pending_review").length,
       outcome_counts: outcomeCounts,

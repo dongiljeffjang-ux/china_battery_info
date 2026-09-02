@@ -50,6 +50,23 @@ async function analyzeArticle(article, bodyText) {
   return data;
 }
 
+async function factCheckArticle(article, bodyText, analysis) {
+  const schema = {
+    type: "object", additionalProperties: false, required: ["verdict", "title_ko", "summary_ko", "keywords_ko", "original_excerpt", "original_excerpt_ko", "reason_ko"],
+    properties: {
+      verdict: { type: "string", enum: ["pass", "reject"] }, title_ko: { type: "string" }, summary_ko: { type: "string" },
+      keywords_ko: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
+      original_excerpt: { type: "string" }, original_excerpt_ko: { type: "string" }, reason_ko: { type: "string" }
+    }
+  };
+  const { data } = await createJsonResponse({
+    name: "battery_article_fact_check", schema,
+    instructions: "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 요약의 각 사실이 본문에 직접 있는지 대조한다. 추정·평가·인과관계·본문에 없는 수치·주체가 있으면 reject한다. pass일 때도 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·300자 이내 원문 발췌 및 번역을 다시 작성한다.",
+    input: `기사 제목: ${article.title_original}\n본문:\n${bodyText}\n\n1차 분석 결과:\n${JSON.stringify(analysis)}`
+  });
+  return data;
+}
+
 export async function processPendingArticle(articleId, companyId) {
   const articles = await supabaseRest(`article?select=id,canonical_url,title_original,source_name,published_at,source_tier&id=eq.${encodeURIComponent(articleId)}&verification_status=eq.pending&limit=1`);
   const article = articles[0];
@@ -62,9 +79,14 @@ export async function processPendingArticle(articleId, companyId) {
   if (bodyText.length < 500) return { status: "body_too_short" };
 
   const result = await analyzeArticle(article, bodyText);
+  const factCheck = await factCheckArticle(article, bodyText, result);
+  if (factCheck.verdict !== "pass") {
+    await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, { method: "PATCH", body: { verification_status: "rejected", source_tier: "fact_check_rejected", updated_at: new Date().toISOString() } });
+    return { status: "fact_check_rejected", reason: factCheck.reason_ko };
+  }
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
     method: "PATCH",
-    body: { title_ko: result.title_ko, summary_ko: result.summary_ko, keywords_ko: result.keywords_ko, verification_status: "pending_review", updated_at: new Date().toISOString() }
+    body: { title_ko: factCheck.title_ko, summary_ko: factCheck.summary_ko, keywords_ko: factCheck.keywords_ko, verification_status: "pending_review", source_tier: "web_search_fact_checked", updated_at: new Date().toISOString() }
   });
   if (result.timeline_eligibility !== "exclude" && result.occurred_at) {
     await supabaseRest("event", { method: "POST", body: {
@@ -72,11 +94,11 @@ export async function processPendingArticle(articleId, companyId) {
       title_ko: result.event_title_ko, fact_ko: result.event_fact_ko,
       trajectory_track: result.trajectory_track, layer_key: result.layer_key,
       region_scope: result.region_scope, source_url: resolvedUrl, source_name: article.source_name,
-      original_excerpt: result.original_excerpt, original_excerpt_ko: result.original_excerpt_ko,
+      original_excerpt: factCheck.original_excerpt, original_excerpt_ko: factCheck.original_excerpt_ko,
       timeline_eligibility: result.timeline_eligibility
     } });
   }
-  return { status: "pending_review", analysis: result };
+  return { status: "pending_review", analysis: result, fact_check: factCheck };
 }
 
 export default async function handler(request, response) {
