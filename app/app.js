@@ -33,6 +33,71 @@ let topNewsExpanded = false;
 function companyById(id){ return companyCatalog.find(company => company.id === id) || null; }
 function displayName(id){ return companyById(id)?.name_ko || id; }
 function companiesInValueChain(chain){ return companyCatalog.filter(company => company.value_chain === chain); }
+let tipElement = null;
+function tooltipNode(){
+  if (!tipElement) {
+    tipElement = document.createElement('div');
+    tipElement.className = 'hover-tip';
+    tipElement.hidden = true;
+    document.body.append(tipElement);
+  }
+  return tipElement;
+}
+function showTip(text, x, y){
+  const tip = tooltipNode();
+  tip.textContent = text;
+  tip.hidden = false;
+  const pad = 14;
+  const rect = tip.getBoundingClientRect();
+  const left = Math.min(Math.max(pad, x + 16), window.innerWidth - rect.width - pad);
+  const top = y + rect.height + 24 > window.innerHeight ? y - rect.height - 12 : y + 18;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${Math.max(pad, top)}px`;
+}
+function hideTip(){ if (tipElement) tipElement.hidden = true; }
+document.addEventListener('mouseover', event => {
+  const host = event.target.closest?.('[data-tip]');
+  if (host) showTip(host.getAttribute('data-tip'), event.clientX, event.clientY);
+});
+document.addEventListener('mousemove', event => {
+  const host = event.target.closest?.('[data-tip]');
+  if (host) showTip(host.getAttribute('data-tip'), event.clientX, event.clientY);
+  else hideTip();
+});
+document.addEventListener('mouseleave', hideTip);
+window.addEventListener('scroll', hideTip, { passive: true });
+
+// ── 전체 화면 진행 표시 ──────────────────────────────────────────
+// 수집·분석처럼 수십 초 이상 걸리는 작업 중에는 다른 조작을 막고 진행 상황을 보여준다.
+function busyNode(){
+  let overlay = document.querySelector('#busy-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'busy-overlay';
+    overlay.className = 'busy-overlay';
+    overlay.hidden = true;
+    overlay.innerHTML = '<div class="busy-card" role="status" aria-live="polite"><div class="busy-orbit"><span></span><span></span><span></span></div><p class="busy-title"></p><p class="busy-note"></p><p class="busy-warn">창을 닫거나 새로고침하면 중단됩니다.</p></div>';
+    document.body.append(overlay);
+  }
+  return overlay;
+}
+function showBusy(title, note = ''){
+  const overlay = busyNode();
+  overlay.querySelector('.busy-title').textContent = title;
+  overlay.querySelector('.busy-note').textContent = note;
+  overlay.hidden = false;
+  document.body.classList.add('is-busy');
+}
+function updateBusy(note){
+  const overlay = document.querySelector('#busy-overlay');
+  if (overlay && !overlay.hidden) overlay.querySelector('.busy-note').textContent = note;
+}
+function hideBusy(){
+  const overlay = document.querySelector('#busy-overlay');
+  if (overlay) overlay.hidden = true;
+  document.body.classList.remove('is-busy');
+}
+
 function escapeHtml(value){ return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 const summaryCategoryClass = { '셀': 'cell', '양극재': 'cathode', '음극재': 'anode', '정책·공급망': 'policy' };
 
@@ -42,6 +107,11 @@ const METRIC_PATTERN = new RegExp(`(\\d[\\d,.]*\\s?(?:${METRIC_UNITS.map(unit =>
 function highlightMetrics(text){ return escapeHtml(text).replace(METRIC_PATTERN, '<strong>$1</strong>'); }
 // Daily 요약 항목은 "회사명, 사실 - 수치" 형식으로 생성되므로 회사명만 앞에서 따로 굵게 표시한다.
 function formatSummaryPoint(point){
+  // 같은 회사 사실은 한 항목으로 합쳐 "주체 — 사실" 형태로 내려온다. 주체만 앞에서 굵게 뗀다.
+  const dash = point.indexOf(' — ');
+  if (dash > 0 && dash <= 24) {
+    return `<strong class="pt-company">${escapeHtml(point.slice(0, dash))}</strong><span class="pt-fact">${highlightMetrics(point.slice(dash + 3))}</span>`;
+  }
   const commaIndex = point.indexOf(',');
   if (commaIndex > 0 && commaIndex <= 18) {
     return `<strong class="pt-company">${escapeHtml(point.slice(0, commaIndex))}</strong>${highlightMetrics(point.slice(commaIndex))}`;
@@ -88,16 +158,19 @@ function renderDailyInsight(){
   if (!target) return;
   const sections = parseDailySections(dailyReportInsight || []);
   if (!sections.length) { target.innerHTML = ''; return; }
+  // 해석은 사실 목록과 성격이 다르다. 판단과 근거를 각각 불릿으로 끊으면 조각나 보이므로
+  // 한 문단으로 잇고, 근거는 문단 끝에 덧붙여 판단과 구분만 되게 한다.
   const body = sections.map(section => {
-    const items = section.points.map(point => {
-      const basis = point.match(/^근거:\s*(.+)$/);
-      if (basis) return `<li class="insight-basis">${formatSummaryPoint(basis[1])}</li>`;
+    const blocks = section.points.map(point => {
       const segment = point.match(/^\[([^\]]+)\]\s*(.+)$/);
-      return segment
-        ? `<li><span class="insight-seg">${escapeHtml(segment[1])}</span>${formatSummaryPoint(segment[2])}</li>`
-        : `<li>${formatSummaryPoint(point)}</li>`;
+      const chip = segment ? `<span class="insight-seg">${escapeHtml(segment[1])}</span>` : '';
+      const rest = segment ? segment[2] : point;
+      const split = rest.match(/^(.*?)\s*근거[:：]\s*(.+)$/);
+      const lead = (split ? split[1] : rest).trim();
+      const basis = split ? split[2].trim() : '';
+      return `<p class="insight-point">${chip}${highlightMetrics(lead)}${basis ? `<span class="insight-basis">근거 · ${highlightMetrics(basis)}</span>` : ''}</p>`;
     }).join('');
-    return `<div class="summary-block">${section.category ? `<p class="summary-cat insight">${escapeHtml(section.category)}</p>` : ''}<ul>${items}</ul></div>`;
+    return `<div class="summary-block">${section.category ? `<p class="summary-cat insight">${escapeHtml(section.category)}</p>` : ''}${blocks}</div>`;
   }).join('');
   target.innerHTML = `<div class="insight-head"><p class="eyebrow">INSIGHT</p><h3>한국 배터리사·소재사에 주는 의미</h3><span class="source-rule">사실이 아니라 해석입니다</span></div>${body}`;
 }
@@ -196,9 +269,10 @@ function renderHeadlineSankey(){
     if (!normalizedKeyword || !['positive', 'negative'].includes(direction)) return;
     const key = `${company_id}\u0000${direction}\u0000${normalizedKeyword}`;
     counts.set(key, (counts.get(key) || 0) + 1);
-    if (reason) {
+    if (reason || title) {
+      // 제목과 근거 문장을 줄을 나눠 담는다. 도착지 라벨만 되풀이하면 툴팁이 쓸모없다.
       const bucket = reasons.get(key) || [];
-      const line = title ? `${reason} (${title})` : reason;
+      const line = [title ? `· ${title}` : '', reason ? `  ${reason}` : ''].filter(Boolean).join('\n');
       if (bucket.length < 3 && !bucket.includes(line)) bucket.push(line);
       reasons.set(key, bucket);
     }
@@ -232,8 +306,8 @@ function renderHeadlineSankey(){
     const node = selectedNodes.find(item => item.direction === flow.direction && item.keyword === flow.keyword);
     const ky = nodeY(node) + 12;
     const color = flow.direction === 'positive' ? '#398261' : '#bc5b5b';
-    const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${flow.reasons.length ? `\n\n${flow.reasons.map(line => `· ${line}`).join('\n')}` : ''}`;
-    return `<path d="${curve(164, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58"><title>${escapeHtml(tip)}</title></path>`;
+    const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${flow.reasons.length ? `\n\n${flow.reasons.join('\n\n')}` : ''}`;
+    return `<path d="${curve(164, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58" data-tip="${escapeHtml(tip)}"/>`;
   }).join('');
   const nodes = (names, x, top, gap, fill, formatter = value => value) => names.map(name => {
     const y = yFor(names, name, top, gap);
@@ -244,10 +318,10 @@ function renderHeadlineSankey(){
     const unique = [...new Set(lines)].slice(0, 4);
     const head = `${node.keyword} · ${node.direction === 'positive' ? '확대' : '축소'} 신호 ${node.count}건`;
     return unique.length
-      ? `${head}\n\n${unique.map(line => `· ${line}`).join('\n')}`
-      : `${head}\n\n판단 근거가 저장되지 않은 예전 기사입니다. 수집·분석을 다시 실행하면 근거가 채워집니다.`;
+      ? `${head}\n\n${unique.join('\n\n')}`
+      : `${head}\n\n근거로 쓸 기사 요약이 없습니다. 수집·분석을 다시 실행하면 채워집니다.`;
   };
-  const signalNodes = selectedNodes.map(node => `<g><title>${escapeHtml(nodeReasons(node))}</title><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${escapeHtml(node.keyword)} · ${node.count}건</text></g>`).join('');
+  const signalNodes = selectedNodes.map(node => `<g data-tip="${escapeHtml(nodeReasons(node))}"><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${escapeHtml(node.keyword)} · ${node.count}건</text></g>`).join('');
   target.innerHTML = `<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${nodes(sourceNames, 14, 48, 34, '#eaf3fb', label)}${signalNodes}</svg>`;
 }
 function normalizeSankeyKeyword(value){
@@ -543,7 +617,7 @@ function renderLayerMatrix(timeline){
     // 셀에는 방향과 수치만 남긴다. 설명 문장은 마우스를 올렸을 때만 보여준다.
     return matched.map(event => {
       const tip = [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
-      return `<div class="matrix-item" title="${escapeHtml(tip)}"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+      return `<div class="matrix-item" data-tip="${escapeHtml(tip)}"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('');
   };
   const headCell = 'text-align:left;padding:10px;border-bottom:1px solid #dbe3ec';
@@ -566,6 +640,7 @@ async function digestSelectedCompany(){
   if (!window.confirm(`${name}의 최신 연차보고서 원문을 읽어 핵심 사실을 시계열에 채웁니다.
 보고서 1건 분량의 LLM 비용이 발생합니다. 진행할까요?`)) return;
   button.disabled = true; button.textContent = '보고서 읽는 중…';
+  showBusy(`${name} 연차보고서 읽는 중`, '거래소에서 보고서를 내려받아 핵심 사실을 간추리고 있습니다.');
   try {
     const payload = await requestDigest(currentCompany, 'annual');
     companyTimelineCache.delete(currentCompany);
@@ -576,6 +651,7 @@ ${payload.report?.title || '보고서'} · ${payload.report?.pages || '?'}쪽
   } catch (error) {
     window.alert(`요약에 실패했습니다: ${error.message}`);
   } finally {
+    hideBusy();
     button.disabled = false; button.textContent = '연차보고서 요약';
   }
 }
@@ -587,14 +663,17 @@ async function digestAllCompanies(){
 회사당 보고서 1건씩이라 수십 분이 걸리고 그만큼 LLM 비용이 발생합니다.
 이 창을 닫으면 중단됩니다. 진행할까요?`)) return;
   button.disabled = true;
+  showBusy('전체 기업 연차보고서 요약', `0/${targets.length}`);
   let inserted = 0;
   const failed = [];
   for (const [index, id] of targets.entries()) {
     button.textContent = `${index + 1}/${targets.length} ${displayName(id)}`;
+    updateBusy(`${index + 1}/${targets.length} · ${displayName(id)} · 지금까지 ${inserted}건 추가`);
     try { inserted += (await requestDigest(id, 'annual')).inserted || 0; }
     catch { failed.push(displayName(id)); }
     companyTimelineCache.delete(id);
   }
+  hideBusy();
   button.disabled = false; button.textContent = '전체 기업 요약';
   await renderCompany();
   window.alert(`전체 요약 완료
@@ -656,10 +735,12 @@ async function embedPendingEvents(){
   const button = document.querySelector('#embed-events');
   if (!window.confirm('벡터 DB에 아직 없는 기업 시계열 이벤트를 임베딩합니다.\n임베딩 비용이 발생합니다. 진행할까요?')) return;
   button.disabled = true;
+  showBusy('벡터 임베딩 중', '기업 시계열 이벤트를 검색 가능한 형태로 바꾸고 있습니다.');
   let embedded = 0;
   try {
     for (let pass = 0; pass < 40; pass += 1) {
       button.textContent = `임베딩 중… ${embedded}건`;
+      updateBusy(`지금까지 ${embedded}건 처리`);
       const result = await fetch('/api/embed-event', { method: 'POST' });
       const payload = await result.json().catch(() => ({}));
       if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `HTTP ${result.status}`);
@@ -671,6 +752,7 @@ async function embedPendingEvents(){
   } catch (error) {
     window.alert(`임베딩에 실패했습니다: ${error.message}`);
   } finally {
+    hideBusy();
     button.disabled = false; button.textContent = '벡터 임베딩 채우기';
   }
 }
@@ -749,6 +831,7 @@ document.querySelector('#sankey-range-apply').addEventListener('click', loadDash
 document.querySelector('#run-collection-button').addEventListener('click', async () => {
   const button = document.querySelector('#run-collection-button');
   button.disabled = true; button.textContent = '수집·분석 중…';
+  showBusy('수집·분석 중', '중국어 원문을 검색하고 본문을 정독해 팩트를 확인하고 있습니다. 1~2분 걸립니다.');
   try {
     const result = await fetch('/api/ingest-rss?process=1', { method: 'POST' });
     const payload = await result.json();
@@ -762,6 +845,7 @@ document.querySelector('#run-collection-button').addEventListener('click', async
   } catch (error) {
     window.alert(`수집을 실행하지 못했습니다: ${error.message}`);
   } finally {
+    hideBusy();
     button.disabled = false; button.textContent = '수집·분석 1회 실행';
   }
 });

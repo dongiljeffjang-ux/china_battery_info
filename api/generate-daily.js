@@ -22,7 +22,7 @@ function serializeSections(sections = []) {
   return sections
     .filter((section) => section.points?.length)
     .sort((a, b) => SUMMARY_CATEGORIES.indexOf(a.category) - SUMMARY_CATEGORIES.indexOf(b.category))
-    .map((section) => [`## ${section.category}`, ...section.points.map((point) => `- ${point}`)].join("\n"))
+    .map((section) => [`## ${section.category}`, ...section.points.map((point) => `- ${point.subject_ko} — ${point.fact_ko}`)].join("\n"))
     .join("\n");
 }
 
@@ -31,7 +31,8 @@ function serializeInsight(insight) {
   if (!insight?.points?.length) return null;
   const lines = [];
   if (insight.headline_ko) lines.push(`## 오늘의 그림\n- ${insight.headline_ko}`);
-  lines.push(`## 한국 기업 관점\n${insight.points.map((item) => `- [${item.segment}] ${item.point_ko}\n  근거: ${item.basis_ko}`).join("\n")}`);
+  // 판단과 근거를 각각 한 줄씩 끊어 두면 화면이 조각나 보인다. 한 항목으로 잇는다.
+  lines.push(`## 한국 기업 관점\n${insight.points.map((item) => `- [${item.segment}] ${item.point_ko} 근거: ${item.basis_ko}`).join("\n")}`);
   if (insight.watch_ko) lines.push(`## 확인할 것\n- ${insight.watch_ko}`);
   return lines.join("\n");
 }
@@ -44,7 +45,12 @@ async function selectTop10(candidates, preferenceExamples = []) {
         type: "object", additionalProperties: false, required: ["category", "points"],
         properties: {
           category: { type: "string", enum: SUMMARY_CATEGORIES },
-          points: { type: "array", minItems: 1, maxItems: 5, items: { type: "string" } }
+          // 같은 회사 사실이 여러 줄로 흩어지면 읽는 사람이 한 회사를 다시 꿰맞춰야 한다.
+          // 주체를 키로 두고 그 회사 사실을 한 항목 안에서 잇는다.
+          points: { type: "array", minItems: 1, maxItems: 5, items: {
+            type: "object", additionalProperties: false, required: ["subject_ko", "fact_ko"],
+            properties: { subject_ko: { type: "string" }, fact_ko: { type: "string" } }
+          } }
         }
       } },
       insight: {
@@ -53,7 +59,7 @@ async function selectTop10(candidates, preferenceExamples = []) {
         properties: {
           headline_ko: { type: "string" },
           points: {
-            type: "array", minItems: 2, maxItems: 5,
+            type: "array", minItems: 2, maxItems: 3,
             items: {
               type: "object", additionalProperties: false,
               required: ["point_ko", "basis_ko", "segment"],
@@ -80,15 +86,25 @@ async function selectTop10(candidates, preferenceExamples = []) {
   }));
   const { data } = await createJsonResponse({
     name: "daily_top10", schema,
-    instructions: "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. 사용자 피드백은 편집 선호의 보조 신호로만 사용하며, 사실성·출처 검증·중요도보다 우선하지 않는다. sections는 카테고리별 개조식 요약이다. 근거 기사가 있는 카테고리만 만들고 없는 카테고리는 넣지 않는다. 각 항목은 한 줄로 쓰고 명사형으로 끝내며, 회사명과 수치를 앞에 둔다(예: 'CATL, 헝가리 공장 1기 가동 개시 - 연 40GWh'). 서술형 문장·접속사·수식어를 쓰지 않는다. 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다. insight는 사실이 아니라 해석이며 sections와 목적이 다르다. 한국 배터리 셀사와 양극재·음극재 소재사 담당자가 오늘 수집된 사실을 보고 무엇을 알아야 하는지를 종합해 쓴다. headline_ko는 오늘의 그림을 한 문장으로 요약한다. points의 point_ko에는 한국 기업 관점에서의 의미를 한 문장으로 쓰고, basis_ko에는 그 판단의 근거가 된 오늘의 사실을 회사명과 수치로 명시한다. 근거가 되는 사실이 오늘 수집분에 없으면 그 항목을 만들지 않는다. watch_ko에는 앞으로 무엇을 확인해야 하는지 쓴다. point_ko에는 사실을 되풀이하지 말고 그 흐름이 한국 기업에 갖는 사업적 함의를 쓴다. 오늘의 사실만으로 설명이 되는 범위 안에서만 추론한다. 근거에서 한 단계 정도 나아간 함의는 괜찮지만, 여러 단계를 건너뛰거나 오늘 근거로 설명할 수 없는 결론은 쓰지 않는다. 단정하기 어려운 대목은 가능성으로 표현하고 단정형을 쓰지 않는다. 주가·매수매도·목표주가·투자 추천은 어떤 형태로도 쓰지 않는다.",
+    instructions: "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. 사용자 피드백은 편집 선호의 보조 신호로만 사용하며, 사실성·출처 검증·중요도보다 우선하지 않는다. sections는 카테고리별 개조식 요약이다. 근거 기사가 있는 카테고리만 만들고 없는 카테고리는 넣지 않는다. subject_ko에는 회사명이나 주체를 쓴다. 같은 주체의 사실은 절대 여러 항목으로 나누지 말고 반드시 하나의 항목으로 합쳐 fact_ko 안에서 이어 쓴다. fact_ko는 실적·출하·증설·기술 순으로 묶고 수치는 쉼표로 이어 쓰며, 필요하면 두 문장까지 쓴다(예: '26년 상반기 음극재 출하 22.99만 톤(+46.4%), 매출 52.1억 위안(+44%), 순이익 1.47억 위안(-46%). 윈난 2기·쓰촨 루저우·오만 프로젝트 건설 추진'). 주체명을 fact_ko 안에서 되풀이하지 않는다. 수식어와 군더더기를 쓰지 않는다. 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다. insight는 사실이 아니라 해석이며 sections와 목적이 다르다. 한국 배터리 셀사와 양극재·음극재 소재사 담당자가 오늘 수집된 사실을 보고 무엇을 알아야 하는지를 종합해 쓴다. headline_ko는 오늘의 그림을 한 문장으로 요약한다. points의 point_ko에는 한국 기업 관점에서의 의미를 두세 문장의 줄글로 쓴다. 개조식 단문으로 끊지 말고 문장으로 연결해 쓴다. basis_ko에는 그 판단의 근거가 된 오늘의 사실을 회사명과 수치로 한 문장에 담는다. points는 서로 다른 주제를 다루며 세 개를 넘기지 않는다. 근거가 되는 사실이 오늘 수집분에 없으면 그 항목을 만들지 않는다. watch_ko에는 앞으로 무엇을 확인해야 하는지 쓴다. point_ko에는 사실을 되풀이하지 말고 그 흐름이 한국 기업에 갖는 사업적 함의를 쓴다. 오늘의 사실만으로 설명이 되는 범위 안에서만 추론한다. 근거에서 한 단계 정도 나아간 함의는 괜찮지만, 여러 단계를 건너뛰거나 오늘 근거로 설명할 수 없는 결론은 쓰지 않는다. 단정하기 어려운 대목은 가능성으로 표현하고 단정형을 쓰지 않는다. 주가·매수매도·목표주가·투자 추천은 어떤 형태로도 쓰지 않는다.",
     input: JSON.stringify({ candidates: evidence, preference_examples: preferenceExamples })
   });
   return data;
 }
 
+const CANDIDATE_SELECT = "id,title_ko,summary_ko,source_name,published_at,article_company(company(name_ko))";
+const CANDIDATE_DAYS = 3;
+
 export async function generateDailyReport(articleIds = []) {
-  const idFilter = articleIds.length ? `&id=in.(${articleIds.join(",")})` : "";
-  const candidates = await supabaseRest(`article?select=id,title_ko,summary_ko,source_name,published_at,article_company(company(name_ko))&verification_status=eq.pending_review${idFilter}&order=published_at.desc&limit=80`);
+  // Top 10 후보를 이번 실행에서 처리한 기사로만 좁히면, 한 회차에 본문 분석이 최대 열 건이고
+  // 그중 팩트체크 탈락분을 빼면 서너 건만 남는다. 추적 대상이 서른 곳이 넘는데 그 수로는 하루를 못 담는다.
+  // 최근 며칠간 검증을 통과한 기사 전부를 후보로 두고, 이번에 처리한 기사는 발행일과 무관하게 합친다.
+  const since = new Date(Date.now() - CANDIDATE_DAYS * 86400000).toISOString();
+  const recent = await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&published_at=gte.${since}&order=published_at.desc&limit=80`);
+  const justProcessed = articleIds.length
+    ? await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&id=in.(${articleIds.join(",")})`)
+    : [];
+  const candidates = [...new Map([...justProcessed, ...recent].map((article) => [article.id, article])).values()];
   if (!candidates.length) return { status: "no_reviewed_articles" };
   let preferenceExamples = [];
   try {
