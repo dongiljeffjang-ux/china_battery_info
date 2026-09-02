@@ -2,6 +2,7 @@ import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { resolveGoogleNewsUrl } from "./lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { COMPANIES } from "../lib/china-sources.js";
+import { groupSummary } from "../lib/company-groups.js";
 import { embedVerifiedArticle } from "../lib/vector-ingestion.js";
 import { LAYER_KEYS, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
 
@@ -88,7 +89,10 @@ export async function processPendingArticle(articleId, companyId) {
   const primaryProvider = llmConfig("openai") ? "openai" : "deepseek";
   const verifierProvider = llmConfig("deepseek") ? "deepseek" : primaryProvider;
   const company = COMPANIES.find((item) => item.id === companyId);
-  const companyContext = company ? `서비스 표준 회사명: ${company.name_ko}` : "";
+  const group = company ? groupSummary(company.id) : null;
+  const companyContext = company ? `서비스 표준 회사명: ${company.name_ko}${group ? `
+그룹: ${group.name_ko}
+그룹 포함 검색 법인: ${group.members_ko.join(", ")}` : ""}` : "";
   const result = await analyzeArticle(article, bodyText, primaryProvider, companyContext);
   const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider, companyContext);
   console.info("[ARTICLE_CROSS_CHECK]", JSON.stringify({ articleId, primaryProvider, verifierProvider, verdict: factCheck.verdict }));
