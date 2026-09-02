@@ -238,6 +238,36 @@ async function loadDashboardFromApi(){
     // 환경변수 미설정·DB 초기화 전에는 시드 화면을 유지한다.
   }
 }
+let currentChain = 'cathode';
+// 드롭다운 대신 밸류체인 탭 → 회사 칩으로 고른다. 칩의 아이콘은 중문 법인명 첫 글자다.
+function renderCompanyPicker(){
+  const tabs = document.querySelector('#company-chain-tabs');
+  const chips = document.querySelector('#company-chips');
+  if (!tabs || !chips) return;
+  if (!companyCatalog.length) {
+    tabs.innerHTML = '';
+    chips.innerHTML = '<p class="picker-empty">기업 목록을 불러오지 못했습니다. 접근 세션을 확인한 뒤 새로고침해 주세요.</p>';
+    return;
+  }
+  tabs.innerHTML = Object.entries(valueChainLabels).map(([key, label]) =>
+    `<button class="segment ${key === currentChain ? 'is-selected' : ''}" type="button" data-chain="${key}">${label}<span class="segment-count">${companiesInValueChain(key).length}</span></button>`).join('');
+  chips.innerHTML = companiesInValueChain(currentChain).map(company => {
+    const mark = (company.name_zh || company.name_en || '?').slice(0, 1);
+    const meta = [company.priority ? `SNE ${company.priority}위` : '순위 미확인', company.group ? `계열사 ${company.group.members_ko.length}` : ''].filter(Boolean).join(' · ');
+    const full = [company.name_zh, company.name_en].filter(Boolean).join(' · ');
+    return `<button class="company-chip ${company.value_chain} ${company.id === currentCompany ? 'is-selected' : ''}" type="button" data-company="${escapeHtml(company.id)}" title="${escapeHtml(full)}"><span class="chip-mark">${escapeHtml(mark)}</span><span class="chip-body"><span class="chip-name">${escapeHtml(company.name_ko)}</span><span class="chip-meta">${escapeHtml(meta)}</span></span></button>`;
+  }).join('');
+  tabs.querySelectorAll('[data-chain]').forEach(button => button.addEventListener('click', () => {
+    currentChain = button.dataset.chain;
+    renderCompanyPicker();
+  }));
+  chips.querySelectorAll('[data-company]').forEach(button => button.addEventListener('click', () => {
+    if (button.dataset.company === currentCompany) return;
+    currentCompany = button.dataset.company;
+    renderCompanyPicker();
+    renderCompany();
+  }));
+}
 function makeSelect(select, selected){
   if (!companyCatalog.length) { select.innerHTML = '<option value="">기업 목록 없음</option>'; return; }
   select.innerHTML = companyCatalog.map(company => `<option value="${escapeHtml(company.id)}" ${company.id === selected ? 'selected' : ''}>${escapeHtml(company.name_ko)} · ${escapeHtml(valueChainLabels[company.value_chain] || '기타')}</option>`).join('');
@@ -295,13 +325,21 @@ async function loadCompanyTimeline(companyId){
   if (timeline.status === 'ok') companyTimelineCache.set(companyId, timeline);
   return timeline;
 }
-function quarterOf(date){
+// 과거 연도는 반기로 묶고, 사용자가 보고 있는 당해 연도만 분기로 나눈다.
+// 3년치를 분기로 늘어놓으면 열이 16개가 되어 읽기 어렵다.
+function periodOf(date){
   const match = String(date).match(/^(\d{4})-(\d{2})/);
-  return match ? `${match[1]} Q${Math.floor((Number(match[2]) - 1) / 3) + 1}` : null;
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (year >= new Date().getFullYear()) return `${year} Q${Math.floor((month - 1) / 3) + 1}`;
+  return `${year} ${month <= 6 ? '상반기' : '하반기'}`;
 }
 function periodOrder(period){
-  const match = String(period).match(/^(\d{4}) Q(\d)$/);
-  return match ? Number(match[1]) * 4 + Number(match[2]) : 0;
+  const match = String(period).match(/^(\d{4}) (?:Q(\d)|(상반기|하반기))$/);
+  if (!match) return 0;
+  const slot = match[2] ? Number(match[2]) : (match[3] === '상반기' ? 1 : 3);
+  return Number(match[1]) * 4 + slot;
 }
 // 기본 축은 최근 3년 + 당해 분기이고, 그 밖의 확인된 이벤트가 있으면 해당 분기도 함께 연다.
 function timelinePeriods(events){
@@ -309,13 +347,12 @@ function timelinePeriods(events){
   const endYear = now.getFullYear();
   const endQuarter = Math.floor(now.getMonth() / 3) + 1;
   const periods = new Set();
-  for (let year = endYear - 3; year <= endYear; year += 1) {
-    for (let quarter = 1; quarter <= 4; quarter += 1) {
-      if (year === endYear && quarter > endQuarter) break;
-      periods.add(`${year} Q${quarter}`);
-    }
+  for (let year = endYear - 3; year < endYear; year += 1) {
+    periods.add(`${year} 상반기`);
+    periods.add(`${year} 하반기`);
   }
-  events.forEach(event => { const period = quarterOf(event.date); if (period) periods.add(period); });
+  for (let quarter = 1; quarter <= endQuarter; quarter += 1) periods.add(`${endYear} Q${quarter}`);
+  events.forEach(event => { const period = periodOf(event.date); if (period) periods.add(period); });
   return [...periods].sort((a, b) => periodOrder(a) - periodOrder(b));
 }
 // 그룹 계열사는 모회사 공시로 확인된 것만 등록돼 있으므로 근거 문서를 함께 보여준다.
@@ -391,15 +428,15 @@ function renderLayerMatrix(timeline){
   };
   const rows = [...rowsFor('시장', marketLayerLabels), ...rowsFor('기술', technologyLayerLabels)];
   const cell = (row, period) => {
-    const matched = events.filter(event => row.match(event) && quarterOf(event.date) === period);
+    const matched = events.filter(event => row.match(event) && periodOf(event.date) === period);
     if (!matched.length) return `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`;
     return matched.map(event => `<div style="margin-bottom:8px"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<br><span style="color:#8b5a10;font-size:11px">${escapeHtml(entityLabel(event))}</span>` : ''}<br><span style="color:#526277">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
   };
   const headCell = 'text-align:left;padding:10px;border-bottom:1px solid #dbe3ec';
   const stickyGroup = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:0;background:#fff;z-index:1';
   const stickyLayer = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:58px;background:#fff;z-index:1';
-  const table = `<table style="width:100%;min-width:${periods.length * 170 + 320}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-  target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">빈 칸(—)은 해당 분기에 ${EMPTY_CELL_NOTE}을 뜻합니다. 사건이 없었다는 뜻이 아닙니다.</p>`;
+  const table = `<table style="width:100%;min-width:${periods.length * 190 + 320}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
 async function exportCompanyTimeline(){
   if (!currentCompany) { window.alert('내보낼 기업이 선택되지 않았습니다.'); return; }
@@ -408,7 +445,7 @@ async function exportCompanyTimeline(){
   if (!timeline.events.length) { window.alert(timelineNotice(timeline.status) || '내보낼 확인된 이벤트가 없습니다.'); return; }
   const rows = [['회사', '발생 법인', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '지역', '시계열 등급', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
   [...timeline.events].sort((a, b) => a.date.localeCompare(b.date)).forEach(event => {
-    rows.push([company.name_ko, entityLabel(event), event.group, event.label, quarterOf(event.date) || event.date.slice(0, 4), event.date, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
+    rows.push([company.name_ko, entityLabel(event), event.group, event.label, periodOf(event.date) || event.date.slice(0, 4), event.date, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
   });
   if (window.XLSX) {
     const sheet = XLSX.utils.aoa_to_sheet(rows);
@@ -470,7 +507,7 @@ function activateView(view){
   document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('is-active',el.dataset.view===view));
 }
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
-document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });
+document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompanyPicker(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });
 document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
 document.querySelector('#run-collection-button').addEventListener('click', async () => {
   const button = document.querySelector('#run-collection-button');
@@ -493,16 +530,15 @@ document.querySelector('#run-collection-button').addEventListener('click', async
 });
 async function initialize(){
   await loadCompanyCatalog();
-  const select = document.querySelector('#company-select');
   const compareA = document.querySelector('#compare-a');
   const compareB = document.querySelector('#compare-b');
   const firstIn = chain => companiesInValueChain(chain)[0]?.id || '';
   currentCompany = firstIn('cathode') || companyCatalog[0]?.id || '';
   const compareBId = firstIn('anode') || currentCompany;
-  makeSelect(select, currentCompany);
+  currentChain = companyById(currentCompany)?.value_chain || 'cathode';
+  renderCompanyPicker();
   makeSelect(compareA, currentCompany);
   makeSelect(compareB, compareBId);
-  select.addEventListener('change', () => { currentCompany = select.value; renderCompany(); });
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
