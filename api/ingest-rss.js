@@ -77,7 +77,7 @@ export default async function handler(request, response) {
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
   let stage = "company_seed";
   try {
-    await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ aliases, ...company }) => company) });
+    await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ aliases, cninfo, ...company }) => company) });
     stage = "source_collection";
     const candidates = await discoverChinaSources();
     stage = "company_matching";
