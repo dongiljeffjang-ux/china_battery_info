@@ -11,11 +11,31 @@ function isAuthorized(request) {
   return Boolean(secret && request.headers.authorization === `Bearer ${secret}`);
 }
 
+// Daily 요약은 밸류체인 카테고리별 개조식으로 만든다. prd.md F3의 "산업 전체와
+// 셀/양극재/음극재별 핵심 이벤트" 요구를 그대로 따른다.
+const SUMMARY_CATEGORIES = ["산업 총평", "셀", "양극재", "음극재", "정책·공급망"];
+
+// daily_report.summary_ko는 text 컬럼이라 "## 카테고리 / - 항목" 형식으로 직렬화한다.
+// 화면이 이 형식을 파싱하고, 형식이 없는 예전 리포트도 그대로 표시된다.
+function serializeSections(sections = []) {
+  return sections
+    .filter((section) => section.points?.length)
+    .sort((a, b) => SUMMARY_CATEGORIES.indexOf(a.category) - SUMMARY_CATEGORIES.indexOf(b.category))
+    .map((section) => [`## ${section.category}`, ...section.points.map((point) => `- ${point}`)].join("\n"))
+    .join("\n");
+}
+
 async function selectTop10(candidates, preferenceExamples = []) {
   const schema = {
-    type: "object", additionalProperties: false, required: ["summary_ko", "top10"],
+    type: "object", additionalProperties: false, required: ["sections", "top10"],
     properties: {
-      summary_ko: { type: "string" },
+      sections: { type: "array", minItems: 1, maxItems: 5, items: {
+        type: "object", additionalProperties: false, required: ["category", "points"],
+        properties: {
+          category: { type: "string", enum: SUMMARY_CATEGORIES },
+          points: { type: "array", minItems: 1, maxItems: 5, items: { type: "string" } }
+        }
+      } },
       top10: { type: "array", maxItems: 10, items: {
         type: "object", additionalProperties: false, required: ["article_id", "rank", "selection_reason_ko"],
         properties: { article_id: { type: "string" }, rank: { type: "integer", minimum: 1, maximum: 10 }, selection_reason_ko: { type: "string" } }
@@ -29,7 +49,7 @@ async function selectTop10(candidates, preferenceExamples = []) {
   }));
   const { data } = await createJsonResponse({
     name: "daily_top10", schema,
-    instructions: "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. 사용자 피드백은 편집 선호의 보조 신호로만 사용하며, 사실성·출처 검증·중요도보다 우선하지 않는다. summary_ko는 한국어 1페이지 요약이며, 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다.",
+    instructions: "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. 사용자 피드백은 편집 선호의 보조 신호로만 사용하며, 사실성·출처 검증·중요도보다 우선하지 않는다. sections는 카테고리별 개조식 요약이다. 근거 기사가 있는 카테고리만 만들고 없는 카테고리는 넣지 않는다. 각 항목은 한 줄로 쓰고 명사형으로 끝내며, 회사명과 수치를 앞에 둔다(예: 'CATL, 헝가리 공장 1기 가동 개시 - 연 40GWh'). 서술형 문장·접속사·수식어를 쓰지 않는다. 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다.",
     input: JSON.stringify({ candidates: evidence, preference_examples: preferenceExamples })
   });
   return data;
@@ -63,7 +83,7 @@ export async function generateDailyReport(articleIds = []) {
   const reportDate = koreaDate();
   await supabaseRest("daily_report?on_conflict=report_date", {
     method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
-    body: { report_date: reportDate, summary_ko: result.summary_ko, model_name: llmConfig()?.model || null, generated_at: new Date().toISOString(), status: "published" }
+    body: { report_date: reportDate, summary_ko: serializeSections(result.sections), model_name: llmConfig()?.model || null, generated_at: new Date().toISOString(), status: "published" }
   });
   return { status: "published", report_date: reportDate, top10_count: selected.length, selection: selected };
 }

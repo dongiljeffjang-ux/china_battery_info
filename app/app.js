@@ -31,9 +31,37 @@ function companyById(id){ return companyCatalog.find(company => company.id === i
 function displayName(id){ return companyById(id)?.name_ko || id; }
 function companiesInValueChain(chain){ return companyCatalog.filter(company => company.value_chain === chain); }
 function escapeHtml(value){ return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+const summaryCategoryClass = { '셀': 'cell', '양극재': 'cathode', '음극재': 'anode', '정책·공급망': 'policy' };
+
+// Daily 리포트는 "## 카테고리" 다음에 "- 항목"이 오는 형식으로 저장된다.
+// 형식이 없는 예전 리포트는 카테고리 없는 한 덩어리로 표시한다.
+function parseDailySections(lines){
+  const sections = [];
+  for (const raw of lines) {
+    const line = String(raw).trim();
+    if (!line) continue;
+    const header = line.match(/^#{1,6}\s*(.+)$/);
+    if (header) { sections.push({ category: header[1].trim(), points: [] }); continue; }
+    const point = line.replace(/^[-*·•]\s+/, '').trim();
+    if (!point) continue;
+    if (!sections.length) sections.push({ category: '', points: [] });
+    sections[sections.length - 1].points.push(point);
+  }
+  return sections.filter(section => section.points.length);
+}
 function renderDailySummary(){
-  const facts = dailyReportFacts || ['아직 생성된 Daily Report가 없습니다. 수집·분석 1회 실행 후 Top 10 본문 분석 결과와 통합 리포트가 이 영역에 표시됩니다.'];
-  document.querySelector('#daily-summary-list').innerHTML = facts.map(fact => `<li>${fact}</li>`).join('');
+  const target = document.querySelector('#daily-summary-list');
+  const sections = parseDailySections(dailyReportFacts || []);
+  if (!sections.length) {
+    target.innerHTML = '<p class="summary-empty">아직 생성된 Daily Report가 없습니다. 수집·분석 1회 실행 후 Top 10 본문 분석 결과와 통합 리포트가 이 영역에 표시됩니다.</p>';
+    return;
+  }
+  target.innerHTML = sections.map(section => {
+    const chip = section.category
+      ? `<p class="summary-cat ${summaryCategoryClass[section.category] || ''}">${escapeHtml(section.category)}</p>`
+      : '';
+    return `<div class="summary-block">${chip}<ul>${section.points.map(point => `<li>${escapeHtml(point)}</li>`).join('')}</ul></div>`;
+  }).join('');
 }
 function feedbackClientKey(){
   const key = 'cbl_feedback_client_key';
