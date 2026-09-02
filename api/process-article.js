@@ -1,6 +1,7 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { resolveGoogleNewsUrl } from "./lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
+import { COMPANIES } from "../lib/china-sources.js";
 
 const MAX_BODY_CHARS = 30000;
 
@@ -20,7 +21,7 @@ function htmlToText(html) {
     .trim();
 }
 
-async function analyzeArticle(article, bodyText, provider) {
+async function analyzeArticle(article, bodyText, provider, companyContext = "") {
   const schema = {
     type: "object",
     additionalProperties: false,
@@ -41,16 +42,16 @@ async function analyzeArticle(article, bodyText, provider) {
       confidence_note: { type: "string" }
     }
   };
-  const input = `원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}\n본문:\n${bodyText}`;
+  const input = `${companyContext}\n원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}\n본문:\n${bodyText}`;
   const { data } = await createJsonResponse({
     name: "battery_article_event", schema,
-    instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. keywords_ko에는 헤드라인과 본문 요약을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다.",
+    instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다.",
     input, provider
   });
   return data;
 }
 
-async function factCheckArticle(article, bodyText, analysis, provider) {
+async function factCheckArticle(article, bodyText, analysis, provider, companyContext = "") {
   const schema = {
     type: "object", additionalProperties: false, required: ["verdict", "title_ko", "summary_ko", "keywords_ko", "original_excerpt", "original_excerpt_ko", "reason_ko"],
     properties: {
@@ -61,8 +62,8 @@ async function factCheckArticle(article, bodyText, analysis, provider) {
   };
   const { data } = await createJsonResponse({
     name: "battery_article_fact_check", schema,
-    instructions: "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 요약의 각 사실이 본문에 직접 있는지 대조한다. 추정·평가·인과관계·본문에 없는 수치·주체가 있으면 reject한다. pass일 때도 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·300자 이내 원문 발췌 및 번역을 다시 작성한다.",
-    input: `기사 제목: ${article.title_original}\n본문:\n${bodyText}\n\n1차 분석 결과:\n${JSON.stringify(analysis)}`,
+    instructions: "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 요약의 각 사실이 본문에 직접 있는지 대조한다. 추정·평가·인과관계·본문에 없는 수치·주체가 있으면 reject한다. pass일 때도 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·300자 이내 원문 발췌 및 번역을 다시 작성한다. 제공된 서비스 표준 회사명과 본문 주체가 일치하면 한국어 제목·요약에서 반드시 그 표준명을 유지한다. 키워드에는 회사명을 넣지 않는다.",
+    input: `${companyContext}\n기사 제목: ${article.title_original}\n본문:\n${bodyText}\n\n1차 분석 결과:\n${JSON.stringify(analysis)}`,
     provider
   });
   return data;
@@ -81,8 +82,10 @@ export async function processPendingArticle(articleId, companyId) {
 
   const primaryProvider = llmConfig("openai") ? "openai" : "deepseek";
   const verifierProvider = llmConfig("deepseek") ? "deepseek" : primaryProvider;
-  const result = await analyzeArticle(article, bodyText, primaryProvider);
-  const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider);
+  const company = COMPANIES.find((item) => item.id === companyId);
+  const companyContext = company ? `서비스 표준 회사명: ${company.name_ko}${company.group ? `\n그룹: ${company.group.name_ko}\n그룹 포함 검색 법인: ${company.group.members_ko.join(", ")}` : ""}` : "";
+  const result = await analyzeArticle(article, bodyText, primaryProvider, companyContext);
+  const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider, companyContext);
   console.info("[ARTICLE_CROSS_CHECK]", JSON.stringify({ articleId, primaryProvider, verifierProvider, verdict: factCheck.verdict }));
   if (factCheck.verdict !== "pass") {
     await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, { method: "PATCH", body: { verification_status: "rejected", source_tier: "fact_check_rejected", updated_at: new Date().toISOString() } });

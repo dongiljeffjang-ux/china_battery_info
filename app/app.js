@@ -52,8 +52,8 @@ const companies = {
 };
 
 const companyDisplayNames = {
-  CATL: '닝더스다이(CATL)',
-  catl: '닝더스다이(CATL)',
+  CATL: '닝더스다이 그룹(CATL · BRUNP)',
+  catl: '닝더스다이 그룹(CATL · BRUNP)',
   Ronbay: '룽바이(Ronbay)',
   ronbay: '룽바이(Ronbay)',
   BTR: '베이터루이(BTR)',
@@ -66,7 +66,7 @@ const companyDisplayNames = {
   'zhongke-electric': '중커전기'
 };
 const newsCompanyCatalog = {
-  cell: [['catl','CATL'],['byd','BYD'],['eve-energy','EVE Energy'],['calb','CALB'],['gotion','Gotion High-tech'],['sunwoda','Sunwoda'],['hithium','Hithium'],['rept','REPT BATTERO'],['svolt','SVOLT'],['farasis','Farasis Energy']],
+  cell: [['catl','닝더스다이 그룹 (CATL · BRUNP)'],['byd','BYD'],['eve-energy','EVE Energy'],['calb','CALB'],['gotion','Gotion High-tech'],['sunwoda','Sunwoda'],['hithium','Hithium'],['rept','REPT BATTERO'],['svolt','SVOLT'],['farasis','Farasis Energy']],
   cathode: [['ronbay','룽바이(Ronbay)'],['hunan-yuneng','후난위넝'],['dynanonic','Dynanonic'],['xtc-new-energy','XTC New Energy'],['easpring','Easpring'],['zhenhua-new-material','Zhenhua New Material'],['changyuan-lico','Changyuan Lico'],['wanrun-new-energy','Wanrun New Energy'],['lopal','Lopal Tech'],['cnrg','CNGR']],
   anode: [['btr','BTR'],['shanshan','샨샨'],['putailai','푸타이라이'],['zhongke-electric','중커전기'],['shangtai-technology','Shangtai Technology'],['xiangfenghua','Xiangfenghua'],['kaijin-new-energy','Kaijin New Energy'],['kuntian-new-energy','Kuntian New Energy'],['carbon-one','Carbon One']]
 };
