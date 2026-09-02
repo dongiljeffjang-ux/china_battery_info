@@ -475,7 +475,7 @@ function renderCompanyEvents(timeline){
   }
   grid.innerHTML = [...events].sort((a, b) => b.date.localeCompare(a.date)).map(event => {
     const tags = [event.date, evidenceLabels[event.kind] || '', event.group, event.label, event.both ? '시장·기술' : '', entityLabel(event)].filter(Boolean).join(' · ');
-    return `<article class="snapshot ${event.track}"><span class="snapshot-year">${escapeHtml(tags)}</span><h3>${escapeHtml(event.title)}</h3><ul><li>${escapeHtml(event.fact)}</li>${event.excerptKo ? `<li>원문 번역: ${escapeHtml(event.excerptKo)}</li>` : ''}</ul><p style="margin:0;font-size:12px;color:#617187">${sourceLink(event)}</p></article>`;
+    return `<article class="snapshot ${event.track}"><span class="snapshot-year">${escapeHtml(tags)}</span><h3>${escapeHtml(event.title)}</h3><ul><li>${escapeHtml(event.fact)}</li></ul><p style="margin:0;font-size:12px;color:#617187">${sourceLink(event)}</p></article>`;
   }).join('');
 }
 function renderLayerMatrix(timeline){
