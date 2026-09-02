@@ -25,6 +25,11 @@ function normalizeHeadline(title = "") {
   return title.toLowerCase().replace(/\s+/g, " ").replace(/[\p{P}\p{S}]/gu, "").trim();
 }
 
+function safePublishedAt(value) {
+  const parsed = new Date(value || Date.now());
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
 function headlineScore(article) {
   const title = (article.title_original || "").toLowerCase();
   const highSignals = HIGH_SIGNAL_TERMS.filter((term) => title.includes(term)).length;
@@ -70,17 +75,21 @@ export default async function handler(request, response) {
   if (request.method !== "GET" && request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
   if (!isCronRequest(request) && !requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
+  let stage = "company_seed";
   try {
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ aliases, ...company }) => company) });
+    stage = "source_collection";
     const candidates = await discoverChinaSources();
+    stage = "company_matching";
     const matchedCandidates = candidates
       .map((candidate) => ({ candidate, companies: companiesFor(candidate) }))
       .filter(({ companies }) => companies.length);
     const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
-        source_language: "zh", published_at: new Date(candidate.publishedAt || Date.now()).toISOString(),
+        source_language: "zh", published_at: safePublishedAt(candidate.publishedAt),
         verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? "web_search_discovered" : "needs_review"
     }));
+    stage = "article_storage";
     const storedArticles = articleRows.length
       ? await supabaseRest("article?on_conflict=canonical_url", { method: "POST", prefer: "resolution=merge-duplicates,return=representation", body: articleRows })
       : [];
@@ -88,18 +97,22 @@ export default async function handler(request, response) {
     const companyLinks = matchedCandidates.flatMap(({ candidate, companies }) =>
       companies.map((company) => ({ article_id: idByUrl.get(candidate.url), company_id: company.id }))
     ).filter((link) => link.article_id);
+    stage = "company_linking";
     if (companyLinks.length) {
       await supabaseRest("article_company?on_conflict=article_id,company_id", { method: "POST", prefer: "resolution=ignore-duplicates,return=minimal", body: companyLinks });
     }
+    stage = "headline_selection";
     const immediateAnalysis = request.query?.process === "1" || request.body?.process === true;
     const shouldProcess = isCronRequest(request) || immediateAnalysis;
     const selectedHeadlines = shouldProcess ? await selectHeadlineTop10() : [];
+    stage = "article_analysis";
     const llmResults = shouldProcess && (process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL))
       ? await processSelectedBatch(selectedHeadlines)
       : [];
     const processedIds = llmResults.filter((result) => result.status === "pending_review").map((result) => result.articleId);
     const outcomeCounts = llmResults.reduce((counts, result) => ({ ...counts, [result.status]: (counts[result.status] || 0) + 1 }), {});
     console.info("[INGEST_OUTCOMES]", JSON.stringify({ selected: selectedHeadlines.length, outcomes: outcomeCounts }));
+    stage = "daily_report";
     const dailyReport = processedIds.length && (process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL))
       ? await generateDailyReport(processedIds)
       : null;
@@ -113,6 +126,7 @@ export default async function handler(request, response) {
       next_step: shouldProcess ? "Headline-based Top 10 selection, body reading, Korean fact summarization, and Daily report generation have run." : "Use process=1 or the scheduled cron to run the Daily analysis."
     });
   } catch (error) {
-    return response.status(502).json({ status: "ingestion_failed", message: error.message });
+    console.error("[INGESTION_FAILED]", JSON.stringify({ stage, message: error.message }));
+    return response.status(502).json({ status: "ingestion_failed", stage, message: error.message });
   }
 }

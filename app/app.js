@@ -340,7 +340,7 @@ document.querySelector('#run-collection-button').addEventListener('click', async
   try {
     const result = await fetch('/api/ingest-rss?process=1', { method: 'POST' });
     const payload = await result.json();
-    if (!result.ok) throw new Error(payload.status || '요청 실패');
+    if (!result.ok) throw new Error([payload.status, payload.stage, payload.message].filter(Boolean).join(' · ') || '요청 실패');
     const outcomes = Object.entries(payload.outcome_counts || {}).map(([status, count]) => `${status} ${count}건`).join(' / ');
     window.alert(`Daily 분석 완료: 발견 ${payload.discovered}건 / 저장 ${payload.stored}건 / 헤드라인 Top ${payload.headline_selected || 0}건 / 본문 처리 ${payload.llm_processed || 0}건${outcomes ? `\n처리 결과: ${outcomes}` : ''}\n첫 화면을 최신 결과로 갱신합니다.`);
     await loadDashboardFromApi();
