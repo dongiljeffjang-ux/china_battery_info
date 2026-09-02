@@ -119,6 +119,15 @@ function formatSummaryPoint(point){
   return highlightMetrics(point);
 }
 
+// 기사 팩트 요약도 개조식("- 항목")으로 내려온다. 카테고리 헤더가 없을 뿐 파싱 방식은 같다.
+// 개조식 이전에 저장된 옛 기사는 줄바꿈 없는 문장 하나로 오는데, 이때도 한 줄짜리 항목으로 그냥 보여준다.
+function renderFactHtml(text){
+  const lines = String(text || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
+  const points = parseDailySections(lines).flatMap(section => section.points);
+  if (!points.length) return '';
+  return `<ul class="fact-list">${points.map(point => `<li>${formatSummaryPoint(point)}</li>`).join('')}</ul>`;
+}
+
 // Daily 리포트는 "## 카테고리" 다음에 "- 항목"이 오는 형식으로 저장된다.
 // 형식이 없는 예전 리포트는 카테고리 없는 한 덩어리로 표시한다.
 function parseDailySections(lines){
@@ -218,7 +227,7 @@ function renderTopNews(){
     const confidenceTag = node.querySelector('.confidence-tag'); confidenceTag.textContent = item.confidence; confidenceTag.title = item.confidenceTitle || '';
     node.querySelector('time').textContent = item.date;
     node.querySelector('h3').textContent = `${displayName(item.company)} · ${item.title}`;
-    node.querySelector('.news-fact').innerHTML = highlightMetrics(item.fact);
+    node.querySelector('.news-fact').innerHTML = renderFactHtml(item.fact);
     node.querySelector('.impact-reason').textContent = item.why;
     node.querySelector('a').href = item.url;
     attachFeedback(node, item);
@@ -356,7 +365,7 @@ function renderCompanyNews(){
     const confidenceTag = node.querySelector('.confidence-tag'); confidenceTag.textContent = item.confidence; confidenceTag.title = item.confidenceTitle || '';
     node.querySelector('time').textContent = item.date;
     node.querySelector('h3').textContent = item.title;
-    node.querySelector('.news-fact').innerHTML = highlightMetrics(item.fact);
+    node.querySelector('.news-fact').innerHTML = renderFactHtml(item.fact);
     node.querySelector('.impact-reason').textContent = item.why;
     node.querySelector('a').href = item.url;
     attachFeedback(node, item);
@@ -880,10 +889,14 @@ async function initialize(){
     await renderComparison();
   });
   document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
-  const sankeyTo = new Date();
-  const sankeyFrom = new Date(); sankeyFrom.setDate(sankeyFrom.getDate() - 30);
-  document.querySelector('#sankey-from').value = sankeyFrom.toISOString().slice(0, 10);
-  document.querySelector('#sankey-to').value = sankeyTo.toISOString().slice(0, 10);
+  // toISOString은 UTC 날짜를 준다. 한국은 UTC+9라 오전에는 하루 뒤처진 날짜가 잡혀
+  // 오늘 기사가 기간에서 빠진다. 현지 날짜 구성요소로 직접 만든다.
+  const localDate = (offsetDays) => {
+    const day = new Date(); day.setDate(day.getDate() + offsetDays);
+    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  };
+  document.querySelector('#sankey-from').value = localDate(-30);
+  document.querySelector('#sankey-to').value = localDate(0);
   renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
   await loadDashboardFromApi();
   await renderCompany();
