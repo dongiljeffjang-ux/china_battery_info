@@ -530,6 +530,29 @@ async function digestAllCompanies(){
 새로 추가 ${inserted}건${failed.length ? `
 실패 ${failed.length}곳: ${failed.join(', ')}` : ''}`);
 }
+// 이벤트를 벡터 DB에 채운다. 남은 건수가 0이 될 때까지 배치로 반복한다.
+async function embedPendingEvents(){
+  const button = document.querySelector('#embed-events');
+  if (!window.confirm('벡터 DB에 아직 없는 기업 시계열 이벤트를 임베딩합니다.\n임베딩 비용이 발생합니다. 진행할까요?')) return;
+  button.disabled = true;
+  let embedded = 0;
+  try {
+    for (let pass = 0; pass < 40; pass += 1) {
+      button.textContent = `임베딩 중… ${embedded}건`;
+      const result = await fetch('/api/embed-event', { method: 'POST' });
+      const payload = await result.json().catch(() => ({}));
+      if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `HTTP ${result.status}`);
+      embedded += payload.embedded || 0;
+      if (!payload.remaining) { window.alert(`벡터 임베딩 완료\n이번에 추가 ${embedded}건 · 남은 이벤트 0건`); return; }
+      if (!payload.embedded) { window.alert(`더 이상 임베딩되지 않습니다. 남은 이벤트 ${payload.remaining}건`); return; }
+    }
+    window.alert(`임베딩 ${embedded}건을 처리했습니다. 남은 건이 있으면 다시 실행해 주세요.`);
+  } catch (error) {
+    window.alert(`임베딩에 실패했습니다: ${error.message}`);
+  } finally {
+    button.disabled = false; button.textContent = '벡터 임베딩 채우기';
+  }
+}
 async function exportCompanyTimeline(){
   if (!currentCompany) { window.alert('내보낼 기업이 선택되지 않았습니다.'); return; }
   const company = companyById(currentCompany);
@@ -637,6 +660,7 @@ async function initialize(){
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
   document.querySelector('#digest-company').addEventListener('click', digestSelectedCompany);
   document.querySelector('#digest-all').addEventListener('click', digestAllCompanies);
+  document.querySelector('#embed-events').addEventListener('click', embedPendingEvents);
   const supporting = document.querySelector('#include-supporting');
   supporting.checked = includeSupporting;
   supporting.addEventListener('change', async () => {

@@ -5,6 +5,7 @@ import { generateDailyReport } from "./generate-daily.js";
 import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
 import { llmConfig } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport } from "../lib/event-backfill.js";
+import { embedEvents } from "../lib/vector-ingestion.js";
 
 export const maxDuration = 60;
 
@@ -94,9 +95,18 @@ async function runBackfill(response, companyId, sinceParam, mode) {
     const eventKey = (row) => JSON.stringify([row.occurred_at, row.title_ko]);
     const seen = new Set(existing.map(eventKey));
     const fresh = rows.filter((row) => !seen.has(eventKey(row)));
-    if (fresh.length) await supabaseRest("event", { method: "POST", prefer: "return=minimal", body: fresh });
+    // 적재와 동시에 벡터 검색 대상으로 만든다. 회사별 시계열을 나중에 검색·연관 분석에 쓰려면 필수다.
+    let embedded = 0;
+    if (fresh.length) {
+      const stored = await supabaseRest("event", { method: "POST", prefer: "return=representation", body: fresh });
+      try {
+        embedded = (await embedEvents((stored || []).map((row) => ({ ...row, company_name_ko: company.name_ko })))).chunks;
+      } catch (error) {
+        console.error("[EVENT_EMBEDDING_FAILED]", JSON.stringify({ companyId, message: error.message }));
+      }
+    }
     console.info("[BACKFILL_DONE]", JSON.stringify({ companyId, mode, returned, kept: rows.length, inserted: fresh.length, dropped }));
-    return response.status(200).json({ status: "ok", mode, company_id: companyId, company_name: company.name_ko, since, until, report: report || null, returned, kept: rows.length, inserted: fresh.length, duplicates: rows.length - fresh.length, dropped, provider });
+    return response.status(200).json({ status: "ok", mode, company_id: companyId, company_name: company.name_ko, since, until, report: report || null, returned, kept: rows.length, inserted: fresh.length, embedded, duplicates: rows.length - fresh.length, dropped, provider });
   } catch (error) {
     console.error("[BACKFILL_FAILED]", JSON.stringify({ companyId, mode, message: error.message }));
     return response.status(502).json({ status: "backfill_failed", mode, company_id: companyId, message: error.message });
