@@ -1,4 +1,5 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { flushTraces } from "../lib/tracing.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { embedDailyReport } from "../lib/vector-ingestion.js";
 
@@ -158,4 +159,6 @@ export default async function handler(request, response) {
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
   try { return response.status(200).json(await generateDailyReport()); }
   catch (error) { return response.status(502).json({ status: "generation_failed", message: error.message }); }
+  // 서버리스 함수는 응답 직후 종료돼 배경 전송이 유실된다. 끝나기 전에 반드시 보낸다.
+  finally { await flushTraces(); }
 }

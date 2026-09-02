@@ -1,4 +1,5 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { flushTraces } from "../lib/tracing.js";
 import { resolveGoogleNewsUrl } from "./lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { COMPANIES } from "../lib/china-sources.js";
@@ -174,5 +175,8 @@ export default async function handler(request, response) {
     return response.status(result.status === "pending_review" ? 200 : 422).json(result);
   } catch (error) {
     return response.status(502).json({ status: "processing_failed", message: error.message });
+  } finally {
+    // 서버리스 함수는 응답 직후 종료돼 배경 전송이 유실된다. 끝나기 전에 반드시 보낸다.
+    await flushTraces();
   }
 }
