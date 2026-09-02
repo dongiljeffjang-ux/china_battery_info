@@ -1,54 +1,63 @@
-# China Battery Lens MVP
+# China Battery Lens
 
-중국 양극재·음극재 Daily 인텔리전스와 기업별 시장/기술 2축 시계열을 확인하는 정적 MVP입니다.
+중국 배터리 셀·양극재·음극재 기업의 뉴스·공시를 수집하고, 원문 대조 한국어 Daily·기업 시계열·벡터 지식으로 제공하는 내부 서비스입니다.
 
-## 실행
+## 운영 주소
 
-PowerShell에서 다음을 실행합니다.
+- 서비스: https://china-battery-lens.vercel.app/
+- 저장소: https://github.com/dongiljeffjang-ux/china_battery_info
+
+## 로컬 실행
+
+정적 UI 확인:
 
 ```powershell
 Set-Location C:\Users\POSCOFUTUREM\Documents\china_info\app
 python -m http.server 8080
 ```
 
-브라우저에서 `http://localhost:8080`을 엽니다.
+로컬 정적 서버에는 Vercel `/api/*`가 없으므로 실제 수집·DB 기능은 운영 배포 또는 Vercel 개발 환경에서 확인합니다.
 
-## 현재 범위
+## 현재 운영 흐름
 
-- Daily: LLM 1페이지 요약 보고서, 전체 뉴스 기반 본문 확인 Top 10, 회사별 승인 뉴스와 출처 링크
-- 기업 분석: 최소 최근 3년부터 현재까지의 레이어×시간 매트릭스와 Excel 내보내기
-- 기업 비교: 두 기업을 좌·우에 두고, 중앙 시간축의 같은 시점에서 전체 사실 이벤트를 비교
-
-현재 데이터는 화면과 상호작용 검증을 위한 시드 데이터입니다. 다음 단계에서 RSS·검색 RSS 수집, 기사 정독·번역, 저장소, 관리자 검수 흐름을 연결합니다.
-
-## 뉴스 후보 수집
-
-```powershell
-python .\pipeline\collect_feeds.py
+```text
+OpenAI 검색 3회 + DeepSeek 중국 현지 검색 3회 + 공식 소스
+→ URL 중복 제거·회사/그룹 별칭 매칭
+→ 헤드라인 Top 10
+→ 원문 확보·보관
+→ OpenAI 사실 추출 + DeepSeek 교차검증
+→ 한국어 Daily·회사 이벤트
+→ 원문 청킹·배치 임베딩·Supabase pgvector 저장
 ```
 
-`data/article_candidates.json`에 RSS 메타데이터 후보만 저장합니다. 뉴스 본문을 저장하지 않으며, 소스별 수집 실패는 전체 실행을 중단하지 않습니다.
+## 설정
 
-## 무료 뉴스 수집
+1. Supabase 새 프로젝트에서 `supabase/schema.sql`을 실행합니다.
+2. Vercel 환경변수에 `.env.example`의 키 이름을 등록합니다.
+3. GitHub `main` 푸시가 `china-battery-lens` Vercel 프로젝트의 운영 배포를 트리거합니다.
 
-`/api/ingest-rss`는 매 실행마다 OpenAI 웹 검색을 셀·양극재·음극재별로 3회 수행해 중국 배터리 뉴스 후보를 찾습니다. 실제 원문 URL을 다시 직접 읽고, 1차 사실 추출과 2차 본문 대조 팩트체크를 모두 통과한 기사만 한국어 요약·분류·Top 10 후보로 DB에 저장합니다. CNINFO 공식 공시와 CATL 뉴스룸은 별도로 병행 수집합니다. OpenAI가 없을 때만 DeepSeek를 대체 검색/분석 LLM으로 사용합니다.
+비밀값은 저장소에 커밋하지 않습니다. `SUPABASE_SERVICE_ROLE_KEY`, LLM 키, `APP_ACCESS_KEY`, `CRON_SECRET`은 서버 환경변수로만 사용합니다.
 
-Vercel 배포에서는 별도 뉴스 API 키 없이 `/api/news`를 사용할 수 있습니다.
+## 문서
 
-후보를 정독 검수 큐로 적재하려면 다음을 실행합니다.
+- Claude 작업 시작: `CLAUDE.md`
+- 상세 인수인계: `docs/HANDOFF.md`
+- 제품 요구: `prd.md`
+- 시스템 설계: `architecture.md`
+- 데이터 모델: `data-model.md`
+- 향후 계획: `plan.md`
+- 현재 아키텍처 그림: `architecture/current-architecture.svg`
+
+## 빠른 검증
 
 ```powershell
-python pipeline/build_review_queue.py
+node --check app/app.js
+node --check lib/china-sources.js
+node --check lib/llm-provider.js
+node --check lib/vector-ingestion.js
+node --check api/ingest-rss.js
+node --check api/process-article.js
+git diff --check
 ```
 
-`data/china_battery_lens.sqlite`에는 기사 메타데이터·정규 기업 ID·시점별 출처 정책만 저장됩니다. 본문 취득과 한국어 요약은 승인된 큐 항목의 후속 단계입니다.
-
-수집기는 최신 결과를 `data/article_candidates.json`에 쓰고, 같은 결과를 `data/archives/YYYY-MM-DD/article_candidates.json`에도 일별 스냅샷으로 보관합니다. DB의 `ingestion_run`과 `candidate_observation`은 해당 일자에 관측한 후보를 누적 기록합니다.
-
-## 서비스 API와 배포 DB
-
-1. Supabase 프로젝트를 만들고 SQL Editor에서 `supabase/schema.sql`을 실행합니다.
-2. Vercel Project Settings → Environment Variables에 `.env.example`의 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_THINKING`, `CRON_SECRET`를 입력합니다. `DEEPSEEK_THINKING=false`는 비용을 낮추는 기본값이며, `true`로 바꾸면 저강도 추론을 켭니다. `OPENAI_API_KEY`, `OPENAI_MODEL`은 DeepSeek가 없을 때의 대체 LLM 설정입니다.
-3. 브라우저는 `/api/dashboard`, `/api/company?companyId=Ronbay`만 호출합니다. `SUPABASE_SERVICE_ROLE_KEY`는 Vercel 서버에서만 사용하며 브라우저 코드에 넣지 않습니다.
-
-`POST /api/process-article`는 승인 전 `articleId`, 정규 `companyId`를 받아 원문 HTML을 일시 처리하고, 한국어 요약과 Event 후보를 DB에 저장합니다. 이 API에는 `Authorization: Bearer $CRON_SECRET` 헤더가 필요합니다. 원문 뉴스 본문은 DB에 저장하지 않습니다.
+현재 상태와 남은 작업은 `docs/HANDOFF.md`를 단일 기준으로 봅니다.

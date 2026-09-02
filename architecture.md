@@ -1,5 +1,7 @@
 # 시스템 설계
 
+> 이 문서에는 초기 설계와 목표 구조가 함께 있다. 현재 배포 구현은 `docs/HANDOFF.md`와 `architecture/current-architecture.svg`를 우선한다.
+
 ## 1. 설계 개요
 
 수집, 정독·번역, 집계, 제품 제공 계층을 분리한다. 사이트별 수집 방식이나 LLM 공급자 변경은 내부 Adapter로 흡수한다. 이 설계는 소스 추가와 모델 교체가 화면과 분석 로직에 전파되지 않게 하며, MVP는 GitHub Actions·Supabase·Vercel의 무료 티어에서 시작한다.

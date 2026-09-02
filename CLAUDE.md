@@ -1,0 +1,38 @@
+# China Battery Lens — Claude 작업 지침
+
+이 저장소는 중국 배터리 셀·양극재·음극재 기업의 뉴스·공시를 수집하고, 한국어 팩트 리포트·기업 시계열·벡터 지식으로 제공하는 내부 서비스다.
+
+## 작업 시작
+
+1. `docs/HANDOFF.md`에서 운영 상태·배포·미완료 항목을 읽는다.
+2. 제품 요구를 바꿀 때 `prd.md`, 데이터 구조를 바꿀 때 `data-model.md`, 파이프라인을 바꿀 때 `architecture.md`를 확인한다.
+3. 수정 전 `git status --short`를 확인하고 사용자 변경을 보존한다.
+4. JavaScript 수정 후 `node --check <파일>`과 `git diff --check`를 실행한다.
+
+## 제품 불변조건
+
+- 사용자 표시 언어는 한국어다. 중국어·영어 원문과 회사 별칭은 검색·근거용이다.
+- 사실만 표시한다. 전망·인과·투자 추천을 만들지 않는다.
+- 원문 URL·매체·날짜·원문 발췌를 유지한다.
+- 자동 본문 대조 통과 상태는 현재 `pending_review`라는 레거시 이름을 쓰지만 사람 승인을 뜻하지 않는다.
+- Daily Top 10과 기업 시계열 중요성은 별도 개념이다.
+- 기업 시계열은 시장/기술 레이어를 행, `YYYY Q1~Q4`를 열로 표시한다.
+- 그룹 검색은 모회사와 공식적으로 확인된 배터리 관련 주요 계열사를 포함한다. 추정 계열사를 넣지 않는다.
+
+## 구현 가드레일
+
+- Vercel Hobby 함수 수 제한 때문에 새 `api/*.js` 파일을 추가하기 전에 기존 API 재사용을 검토한다. 공유 코드는 루트 `lib/`에 둔다.
+- 브라우저에 `SUPABASE_SERVICE_ROLE_KEY`, LLM 키, `CRON_SECRET`, `APP_ACCESS_KEY`를 노출하지 않는다.
+- 운영 배포는 GitHub `main` 푸시가 Vercel을 트리거한다. 로컬 폴더에서 별도 Vercel 프로젝트를 만들지 않는다.
+- Supabase 스키마 변경은 재실행 가능한 SQL을 `supabase/`에 추가하고 SQL Editor 실행 여부를 사용자에게 확인한다.
+- `.env`와 실제 키는 커밋하지 않는다.
+
+## 핵심 문서
+
+- 현재 인수인계: `docs/HANDOFF.md`
+- 제품 요구: `prd.md`
+- 데이터 모델: `data-model.md`
+- 시스템 설계: `architecture.md`
+- 계획: `plan.md`
+- 현재 그림: `architecture/current-architecture.svg`
+
