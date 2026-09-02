@@ -24,8 +24,10 @@ comment on column public.event.occurred_basis is
 create index if not exists event_occurred_precision_idx
   on public.event (company_id, occurred_precision, occurred_at desc);
 
+-- 기존 연차보고서 이벤트는 보고 기간 말일에 일괄로 들어갔다. 실제 시점을 확인하기 전까지는
+-- 연 단위로만 신뢰한다고 표시한다. occurred_basis는 "재확인을 마쳤다"는 표시로 쓰므로
+-- 여기서는 비워 둔다. 시점 재확인이 이 값이 빈 이벤트를 골라 처리한다.
 update public.event
-   set occurred_precision = 'year',
-       occurred_basis = coalesce(occurred_basis, '연차보고서 기간 말일로 일괄 지정됨. 실제 시점 미확인.')
+   set occurred_precision = 'year'
  where evidence_kind = 'annual_report'
    and occurred_at in ('2025-12-31', '2025-06-30', '2024-12-31');
