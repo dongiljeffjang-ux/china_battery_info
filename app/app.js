@@ -516,13 +516,17 @@ function renderLayerMatrix(timeline){
   const cell = (row, period) => {
     const matched = events.filter(event => row.match(event) && periodOf(event.date) === period);
     if (!matched.length) return `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`;
-    return matched.map(event => `<div style="margin-bottom:8px"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<br><span style="color:#8b5a10;font-size:11px">${escapeHtml(entityLabel(event))}</span>` : ''}<br><span style="color:#526277">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
+    // 셀에는 방향과 수치만 남긴다. 설명 문장은 마우스를 올렸을 때만 보여준다.
+    return matched.map(event => {
+      const tip = [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
+      return `<div class="matrix-item" title="${escapeHtml(tip)}"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+    }).join('');
   };
   const headCell = 'text-align:left;padding:10px;border-bottom:1px solid #dbe3ec';
   const stickyGroup = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:0;background:#fff;z-index:1';
   const stickyLayer = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:58px;background:#fff;z-index:1';
-  const table = `<table style="width:100%;min-width:${periods.length * 190 + 320}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-  target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
+  const table = `<table style="width:100%;min-width:${periods.length * 168 + 300}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:150px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 칸에는 방향과 수치만 적었습니다. 자세한 사실은 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
 // 정기보고서 요약은 Vercel에서 실행한다. 서버가 보고서 PDF를 직접 읽는다.
 async function requestDigest(companyId, kind){
