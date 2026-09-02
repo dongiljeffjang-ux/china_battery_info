@@ -20,7 +20,7 @@ export default async function handler(request, response) {
     const from = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.from || "") ? request.query.from : "2000-01-01";
     const to = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.to || "") ? request.query.to : "2100-01-01";
     const [reports, top10, companyNews, pendingNews, flowEvents] = await Promise.all([
-      dashboardQuery("report", "daily_report?select=report_date,summary_ko,generated_at,status&status=eq.published&order=report_date.desc&limit=1"),
+      dashboardQuery("report", "daily_report?select=report_date,summary_ko,insight_ko,generated_at,status&status=eq.published&order=report_date.desc&limit=1"),
       dashboardQuery("top10", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,top10_rank,article_company(company_id,company(name_ko,type_tags))&is_top10=eq.true&verification_status=in.(pending_review,approved)&order=top10_rank.asc&limit=10"),
       dashboardQuery("company_news", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=in.(pending_review,approved)&order=published_at.desc&limit=100"),
       dashboardQuery("raw_pending", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.pending&order=published_at.desc&limit=100"),
