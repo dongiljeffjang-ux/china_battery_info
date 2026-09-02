@@ -47,7 +47,10 @@ function headlineScore(article) {
 }
 
 async function selectHeadlineTop10() {
-  const rows = await supabaseRest("article?select=id,title_original,source_name,source_tier,published_at,article_company(company_id)&verification_status=eq.pending&order=published_at.desc&limit=500");
+  // 본문을 못 가져온 기사는 다시 집어도 같은 결과다. 한 회차 본문 분석 예산이 열 건뿐이라
+  // 죽은 URL이 그 자리를 계속 차지하면 새 기사가 밀린다. body_unavailable과 body_too_short는
+  // URL 자체가 쓸모없다는 뜻이므로 제외하고, processing_failed는 일시적 오류일 수 있어 다시 시도한다.
+  const rows = await supabaseRest("article?select=id,title_original,source_name,source_tier,published_at,article_company(company_id)&verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)&order=published_at.desc&limit=500");
   const unique = new Map();
   for (const article of rows) {
     const key = normalizeHeadline(article.title_original);

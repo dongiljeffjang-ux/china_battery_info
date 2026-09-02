@@ -4,6 +4,10 @@ import { requireAccess } from "./lib/access.js";
 import { COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
 import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
+import { buildCompareReport } from "../lib/compare-report.js";
+
+// 비교 리포트는 LLM 두 번(작성 + 웹 검증)을 부르므로 기본 10초로는 끝나지 않는다.
+export const maxDuration = 60;
 
 const VALUE_CHAINS = ["cell", "cathode", "anode"];
 
@@ -51,9 +55,48 @@ async function runAsk(request, response) {
   }
 }
 
+// 비교 화면에 실제로 표시된 이벤트를 그대로 근거로 삼는다. 서버가 다시 조회하면
+// 화면에 보이는 것과 리포트 내용이 어긋날 수 있다. 대신 길이와 건수는 서버에서 자른다.
+function cleanEvents(list) {
+  return (Array.isArray(list) ? list : [])
+    .slice(0, 60)
+    .map((event) => ({
+      date: String(event?.date || "").slice(0, 10),
+      title: String(event?.title || "").slice(0, 160),
+      fact: String(event?.fact || "").slice(0, 400),
+      sourceName: String(event?.sourceName || "").slice(0, 80)
+    }))
+    .filter((event) => event.title);
+}
+
+async function runCompareReport(request, response) {
+  const idA = String(request.body?.companyA || "").trim();
+  const idB = String(request.body?.companyB || "").trim();
+  const a = COMPANIES.find((item) => item.id === idA);
+  const b = COMPANIES.find((item) => item.id === idB);
+  if (!a || !b) return response.status(404).json({ status: "unknown_company" });
+  if (idA === idB) return response.status(400).json({ status: "invalid_request", message: "서로 다른 두 회사를 골라 주세요." });
+  const eventsA = cleanEvents(request.body?.eventsA);
+  const eventsB = cleanEvents(request.body?.eventsB);
+  if (!eventsA.length && !eventsB.length) return response.status(400).json({ status: "no_evidence", message: "비교 화면에 근거로 쓸 이벤트가 없습니다." });
+  try {
+    const result = await buildCompareReport({ nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB });
+    console.info("[COMPARE_REPORT]", JSON.stringify({ idA, idB, events: eventsA.length + eventsB.length, status: result.verification_status }));
+    return response.status(200).json({
+      status: "ok", company_a: a.name_ko, company_b: b.name_ko,
+      events_a: eventsA.length, events_b: eventsB.length,
+      generated_at: new Date().toISOString(), ...result
+    });
+  } catch (error) {
+    console.error("[COMPARE_REPORT_FAILED]", JSON.stringify({ idA, idB, message: error.message }));
+    return response.status(502).json({ status: "report_failed", message: error.message });
+  }
+}
+
 async function handleRequest(request, response) {
   if (!requireAccess(request, response)) return;
   if (request.method === "POST") {
+    if (String(request.body?.mode || "") === "compare_report") return runCompareReport(request, response);
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
     return runAsk(request, response);
   }

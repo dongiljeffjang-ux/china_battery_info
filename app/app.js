@@ -27,6 +27,7 @@ let approvedTop10 = [];
 let approvedCompanyNews = [];
 let pendingCandidates = [];
 let rangeFlows = [];
+let lastComparison = null;
 const TOP_NEWS_PREVIEW = 4;
 let topNewsExpanded = false;
 
@@ -815,6 +816,109 @@ async function exportRawNews(){
   } catch { window.alert('Raw data Excel을 만들지 못했습니다.'); }
   finally { button.disabled = false; button.textContent = 'Raw data Excel'; }
 }
+// 비교 리포트를 A4 한 장으로 인쇄용 창에 띄운다.
+// 서버가 PDF 바이트를 만들지 않는 이유는 한글 PDF에 CJK 폰트를 통째로 실어야 하기 때문이다.
+// 브라우저 인쇄는 시스템 폰트를 그대로 쓰므로 한글이 깨지지 않고, 사용자가 PDF로 저장할 수 있다.
+function compareReportHtml(payload){
+  const r = payload.report || {};
+  const insight = r.korea_insight || {};
+  const check = r.verification || {};
+  const para = (label, text) => text ? `<p class="row"><span class="lbl">${escapeHtml(label)}</span>${escapeHtml(text)}</p>` : '';
+  const points = (insight.points || []).map(item =>
+    `<p class="row"><span class="seg">${escapeHtml(item.segment || '')}</span>${escapeHtml(item.point_ko || '')}<span class="basis">근거 · ${escapeHtml(item.basis_ko || '')}</span></p>`).join('');
+  const fixes = (check.corrections || []).map(item =>
+    `<li><s>${escapeHtml(item.original_ko || '')}</s> → <strong>${escapeHtml(item.corrected_ko || '')}</strong><span class="basis">${escapeHtml(item.reason_ko || '')}</span></li>`).join('');
+  const added = (check.added_evidence || []).map(item =>
+    `<li>${escapeHtml(item.fact_ko || '')}<span class="basis">${escapeHtml(item.source_name || '')} · ${escapeHtml(item.source_url || '')}</span></li>`).join('');
+  const stamp = new Date(payload.generated_at || Date.now()).toLocaleString('ko-KR');
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(payload.company_a)} vs ${escapeHtml(payload.company_b)} 비교 리포트</title><style>
+@page{size:A4;margin:14mm}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;font-size:10px;line-height:1.62;color:#14263d}
+header{border-bottom:2px solid #10365f;padding-bottom:7px;margin-bottom:11px}
+.eyebrow{margin:0;font-size:8px;font-weight:800;letter-spacing:1.1px;color:#1674c5}
+h1{margin:3px 0 4px;font-size:16px;letter-spacing:-.3px}
+.meta{margin:0;font-size:8.5px;color:#617187}
+h2{margin:11px 0 5px;font-size:11px;color:#10365f;border-left:3px solid #1674c5;padding-left:7px}
+h2.insight{border-color:#8b5a10;color:#8b5a10}
+h2.check{border-color:#0c6b4e;color:#0c6b4e}
+.row{margin:0 0 5px}
+.lbl{display:inline-block;min-width:74px;font-weight:800;color:#10365f}
+.seg{display:inline-block;margin-right:5px;padding:0 5px;border:1px solid #e4dcc8;border-radius:9px;font-size:8px;font-weight:800;color:#8b5a10}
+.basis{display:block;margin-top:1px;font-size:8.5px;color:#617187}
+ul{margin:0;padding-left:14px}
+li{margin-bottom:3px}
+.none{margin:0;font-size:9px;color:#617187}
+footer{margin-top:12px;padding-top:6px;border-top:1px solid #dbe3ec;font-size:8px;color:#617187}
+@media screen{body{max-width:186mm;margin:18px auto;padding:0 14px}}
+</style></head><body>
+<header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
+<h1>${escapeHtml(payload.company_a)} vs ${escapeHtml(payload.company_b)}</h1>
+<p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
+${r.headline_ko ? `<p class="row"><strong>${escapeHtml(r.headline_ko)}</strong></p>` : ''}
+<h2>1. 전략 비교</h2>
+${para(payload.company_a, r.strategy?.a_ko)}
+${para(payload.company_b, r.strategy?.b_ko)}
+${para('대비', r.strategy?.contrast_ko)}
+<h2>2. 시계열 비교</h2>
+${para(payload.company_a, r.timeline?.a_ko)}
+${para(payload.company_b, r.timeline?.b_ko)}
+${para('갈린 지점', r.timeline?.divergence_ko)}
+<h2 class="insight">3. 한국 배터리사·소재사 관점 (해석)</h2>
+${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
+${insight.watch_ko ? para('확인할 것', insight.watch_ko) : ''}
+<h2 class="check">4. 웹 검증</h2>
+<p class="row">${escapeHtml(check.checked_ko || '검증 정보 없음')}</p>
+${fixes ? `<p class="row"><span class="lbl">수정</span></p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>'}
+${added ? `<p class="row"><span class="lbl">추가 근거</span></p><ul>${added}</ul>` : ''}
+<footer>1~2장은 수집된 사실 정리이고 3장은 해석입니다. 투자 판단 자료가 아닙니다.
+${payload.verification_status === 'draft_only' ? ' 웹 검증에 실패해 초안 상태입니다.' : ''}
+${(payload.searched_sources || []).length ? ` 검색 참조 ${payload.searched_sources.length}건.` : ''}</footer>
+</body></html>`;
+}
+
+async function generateCompareReport(){
+  if (!lastComparison || (!lastComparison.eventsA.length && !lastComparison.eventsB.length)) {
+    window.alert('비교할 이벤트가 화면에 없습니다. 두 기업을 고른 뒤 다시 시도해 주세요.');
+    return;
+  }
+  // 새 창은 클릭 직후에 열어야 한다. 요청을 기다린 뒤 열면 팝업 차단에 걸린다.
+  const printWindow = window.open('', '_blank');
+  if (printWindow) printWindow.document.write('<!doctype html><meta charset="utf-8"><title>비교 리포트 생성 중</title><p style="font-family:sans-serif;padding:24px;color:#617187">비교 리포트를 만들고 있습니다. 창을 닫지 마세요.</p>');
+  const button = document.querySelector('#compare-report');
+  button.disabled = true;
+  showBusy('비교 리포트 생성 중', 'LLM이 두 기업을 비교하고, 웹 검색으로 사실관계를 한 번 대조합니다. 1분 정도 걸립니다.');
+  try {
+    const response = await fetch('/api/company', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'compare_report',
+        companyA: lastComparison.a, companyB: lastComparison.b,
+        eventsA: lastComparison.eventsA.map(event => ({ date: event.date, title: event.title, fact: event.fact, sourceName: event.sourceName })),
+        eventsB: lastComparison.eventsB.map(event => ({ date: event.date, title: event.title, fact: event.fact, sourceName: event.sourceName }))
+      })
+    });
+    const payload = await response.json();
+    if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
+    const html = compareReportHtml(payload);
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => printWindow.print(), 400);
+    } else {
+      window.alert('팝업이 차단됐습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도해 주세요.');
+    }
+  } catch (error) {
+    if (printWindow) printWindow.close();
+    window.alert(`비교 리포트를 만들지 못했습니다: ${error.message}`);
+  } finally {
+    hideBusy();
+    button.disabled = false;
+  }
+}
+
 async function renderComparison(){
   const target = document.querySelector('#comparison-grid');
   const selectA = document.querySelector('#compare-a');
@@ -825,6 +929,8 @@ async function renderComparison(){
   const [timelineA, timelineB] = await Promise.all([loadCompanyTimeline(a), loadCompanyTimeline(b)]);
   if (selectA.value !== a || selectB.value !== b) return;
   const eventsA = visibleEvents(timelineA), eventsB = visibleEvents(timelineB);
+  // 리포트는 화면에 그려진 것과 같은 근거를 써야 한다. 여기서 확정된 목록을 그대로 보관한다.
+  lastComparison = { a, b, eventsA, eventsB };
   const dates = [...new Set([...eventsA, ...eventsB].map(event => event.date))].sort().reverse();
   if (!dates.length) {
     target.innerHTML = `<p>${escapeHtml(timelineNotice(timelineA.status) || timelineNotice(timelineB.status) || '두 기업 모두 확인된 이벤트가 없습니다.')}</p>`;
@@ -873,6 +979,7 @@ async function initialize(){
   renderCompanyPicker();
   makeSelect(compareA, currentCompany);
   makeSelect(compareB, compareBId);
+  document.querySelector('#compare-report').addEventListener('click', generateCompareReport);
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
