@@ -22,6 +22,7 @@ let currentCompany = '';
 let currentNewsValueChain = 'cell';
 let currentNewsCompany = 'all';
 let dailyReportFacts = null;
+let dailyReportInsight = null;
 let approvedTop10 = [];
 let approvedCompanyNews = [];
 let pendingCandidates = [];
@@ -77,6 +78,28 @@ function renderDailySummary(){
       : '';
     return `<div class="summary-block">${chip}<ul>${section.points.map(point => `<li>${formatSummaryPoint(point)}</li>`).join('')}</ul></div>`;
   }).join('');
+  renderDailyInsight();
+}
+
+// 해석은 사실이 아니다. prd.md의 "사실, 해석, 추정을 구분한다"에 따라 영역을 나누고
+// 판단의 근거가 된 사실을 항목마다 함께 보여준다.
+function renderDailyInsight(){
+  const target = document.querySelector('#daily-insight');
+  if (!target) return;
+  const sections = parseDailySections(dailyReportInsight || []);
+  if (!sections.length) { target.innerHTML = ''; return; }
+  const body = sections.map(section => {
+    const items = section.points.map(point => {
+      const basis = point.match(/^근거:\s*(.+)$/);
+      if (basis) return `<li class="insight-basis">${formatSummaryPoint(basis[1])}</li>`;
+      const segment = point.match(/^\[([^\]]+)\]\s*(.+)$/);
+      return segment
+        ? `<li><span class="insight-seg">${escapeHtml(segment[1])}</span>${formatSummaryPoint(segment[2])}</li>`
+        : `<li>${formatSummaryPoint(point)}</li>`;
+    }).join('');
+    return `<div class="summary-block">${section.category ? `<p class="summary-cat insight">${escapeHtml(section.category)}</p>` : ''}<ul>${items}</ul></div>`;
+  }).join('');
+  target.innerHTML = `<div class="insight-head"><p class="eyebrow">INSIGHT</p><h3>한국 배터리사·소재사에 주는 의미</h3><span class="source-rule">사실이 아니라 해석입니다</span></div>${body}`;
 }
 function feedbackClientKey(){
   const key = 'cbl_feedback_client_key';
@@ -304,6 +327,7 @@ async function loadDashboardFromApi(){
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }
+    dailyReportInsight = payload.report?.insight_ko ? payload.report.insight_ko.split(/\n+/).filter(Boolean) : null;
     renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
   } catch {
     // 환경변수 미설정·DB 초기화 전에는 시드 화면을 유지한다.
