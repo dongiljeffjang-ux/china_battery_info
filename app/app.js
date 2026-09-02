@@ -1,93 +1,4 @@
-const source = {
-  catl: 'https://www.catl.com/en/news/6773.html',
-  byd: 'https://www.byd.com/mea/news-list/BYD%20Unveils%202nd%20Generation%20Blade%20Battery%20and%20FLASH%20Charging%20Technology',
-  ronbay: 'https://dataclouds.cninfo.com.cn/shgonggao/hsomarket/2026/20260429/8cca73c706de46c8b79911eef8974ae7.PDF',
-  btr: 'https://dataclouds.cninfo.com.cn/sjother2/bse_onmarket/2026/20260424/90c2206e3ff011f18c72fa163e296ac0.pdf',
-  shanshan: 'https://static.cninfo.com.cn/finalpage/2026-08-28/1225521372.PDF'
-};
-
-let news = [
-  {sector:'cathode', company:'Ronbay', date:'2026.04.29', title:'구이저우 전구체·양극재 증설 착수', fact:'연 52만 톤 전구체와 연 34만 톤 양극재 생산능력 건설을 시작했다고 공시.', why:'양극재 공급능력·제품 포트폴리오 변화', confidence:'거래소 공시', url:source.ronbay},
-  {sector:'anode', company:'BTR', date:'2026.06.23', title:'인도네시아 음극재 1기 가동, 모로코 프로젝트 착수', fact:'인도네시아 연 8만 톤 음극재 프로젝트가 가동됐고, 모로코 음극·양극 프로젝트를 시작했다고 발표.', why:'해외 공급망과 현지 생산 변화', confidence:'회사 공식', url:source.btr},
-  {sector:'cathode', company:'CATL', date:'2026.03.10', title:'글로벌 생산능력 772GWh·건설 중 321GWh 공개', fact:'CATL이 2025년 연차보고서에서 글로벌 캐파와 건설 중 캐파를 공개.', why:'소재 수요처의 중장기 투자 신호', confidence:'회사 공식', url:source.catl},
-  {sector:'anode', company:'Shanshan', date:'2026.08.28', title:'중국 음극재 출하량 48% 증가·가동률 80% 이상', fact:'Shanshan 반기보고서가 GGII 인용으로 출하·가동률 변화를 제시.', why:'음극재 업황·가동률 변화', confidence:'거래소 공시', url:source.shanshan},
-  {sector:'cathode', company:'BYD', date:'2026.03.05', title:'2세대 블레이드 배터리와 FLASH 충전 공개', fact:'BYD가 2세대 블레이드 배터리와 2만 개 FLASH 충전소 건설 계획을 발표.', why:'LFP 수요처의 제품·충전 전략 변화', confidence:'회사 공식', url:source.byd},
-  {sector:'anode', company:'BTR', date:'2026.04.24', title:'CVD 실리콘탄소 제품 양산 출하 사실 공시', fact:'글로벌 주요 동력 고객 인정을 받아 CVD 실리콘탄소 제품을 양산 출하했다고 공시.', why:'실리콘 음극의 고객·출하 팩트', confidence:'거래소 공시', url:source.btr}
-];
-
-const headlineFlows = [
-  {company:'Ronbay', event:'증설·생산', signal:'양극재 공급'},
-  {company:'BTR', event:'해외 생산', signal:'음극재 공급'},
-  {company:'CATL', event:'캐파 공개', signal:'셀 수요 신호'},
-  {company:'Shanshan', event:'출하·가동률', signal:'음극재 수급'},
-  {company:'BYD', event:'제품·충전', signal:'셀 수요 신호'},
-  {company:'BTR', event:'양산 출하', signal:'음극재 기술 상업화'}
-];
-
-const companies = {
-  CATL: {
-    type:'셀 · 수요처', region:'중국 + 해외', description:'양극·음극 소재 수요를 좌우하는 글로벌 배터리 셀사. 소재 페이지에서는 수요처 변화의 공통 신호로 표시.',
-    snapshots:[['3년 전','글로벌 생산능력 확장과 LFP·삼원계 병행'],['1년 전','H주 상장 및 해외 시장 확대'],['현재','772GWh 생산능력·321GWh 건설 중 캐파 공개']],
-    market:[['2025.05','H주 상장','해외상장 외국주식(H주) 상장 사실 공시.','customer-commercialization'],['2026.03','생산능력 공개','글로벌 생산능력 772GWh, 건설 중 321GWh 공개.','investment-production'],['2026.05','해외 협력','위통과 60개국 이상 공동 해외 확장 MOU 체결.','regional-overseas']],
-    tech:[['2026.03','연구개발 투자 공개','2025년 R&D 221억 위안, 10년 누적 900억 위안 이상 공개.','technology-development'],['2026.03','재활용 실적 공개','사용후 배터리 21만 톤 재활용, 리튬염 2.4만 톤 재생 사실 공개.','technology-development']]
-  },
-  Ronbay: {
-    type:'양극재 · 삼원계/LFP/LMFP', region:'중국 · 유럽 · 북미', description:'고니켈·중니켈·LFP·LMFP·나트륨 양극재를 병행하는 중국 양극재사.',
-    snapshots:[['3년 전','고니켈·삼원계 중심 제품 구조'],['1년 전','LMFP·나트륨 양극과 유럽 생산 준비'],['현재','구이저우 LFP·전구체 증설 및 폴란드 고니켈 라인 추진']],
-    market:[['2025.08','고니켈 대형 라인 가동','월 1,200~1,400톤 유효 생산능력의 고니켈 대형 라인 가동 공시.','investment-production'],['2026.04','구이저우 증설','연 52만 톤 전구체·34만 톤 양극재 건설 시작 공시.','investment-production'],['2026.04','폴란드 생산','폴란드 1기 2.5만 톤 고니켈 라인 하반기 완공·인증 예정 공시.','regional-overseas']],
-    tech:[['2025.08','LMFP 고객 인증','LMFP 순수계가 해외 셀 고객 정점 인증을 받았다고 공시.','technology-development'],['2025.10','중니켈 고전압 인증','글로벌 핵심 고객의 인증 단계를 통과했다고 공시.','technology-development'],['2026.04','중니켈 규모 출하 예정','핵심 고객 심사를 통과했고 2분기 규모 출하 예상 공시.','technology-development']]
-  },
-  BTR: {
-    type:'음극재 · 인조흑연/실리콘', region:'중국 · 아시아 · 유럽', description:'천연·인조·실리콘계 음극재를 중심으로 해외 생산기지를 늘리는 중국 소재사.',
-    snapshots:[['3년 전','흑연 음극 중심의 통합 공급망'],['1년 전','실리콘계 음극 고객 공급망 진입 사실 공개'],['현재','인도네시아 가동·모로코 프로젝트와 CVD 실리콘탄소 출하 공개']],
-    market:[['2025.05','국내외 고객 병행','국내·해외 시장을 동등하게 중시하고 해외 현지 공급망을 활용한다고 공시.','regional-overseas'],['2026.06','인도네시아 가동','연 8만 톤 음극재 프로젝트 가동 및 글로벌 고객 공급 사실 발표.','investment-production'],['2026.06','모로코 프로젝트','연 6만 톤 음극재·5만 톤 양극재 프로젝트 시작 발표.','regional-overseas']],
-    tech:[['2025.05','실리콘계 국제표준','BTR 주도 실리콘계 음극 국제표준 발표 사실 공개.','technology-ip-standard'],['2026.04','CVD 실리콘탄소 출하','글로벌 주요 동력 고객 인정을 받아 양산 출하했다고 공시.','technology-development'],['2026.06','고체전지 소재 공개','유럽 행사에서 고니켈 양극·실리콘 음극·고체전해질 솔루션 공개.','technology-material-chemistry']]
-  },
-  Shanshan: {
-    type:'음극재 · 인조흑연/실리콘', region:'중국 + 해외', description:'인조·천연흑연, 실리콘계, 하드카본 음극재를 보유한 중국 음극재사.',
-    snapshots:[['3년 전','흑연 음극 중심 제품 구조'],['1년 전','음극재 수급 조정 구간'],['현재','ESS·수출·상용차 수요를 반영한 가동률 개선 팩트 공개']],
-    market:[['2026.08','출하 산업 통계','중국 음극재 출하량 191만 톤·전년 대비 48% 증가를 공시에서 인용.','supply-performance'],['2026.08','가동률 변화','업계 가동률이 2025년 약 70%에서 80% 이상으로 올랐다고 공시에서 인용.','supply-performance'],['2026.08','수급·가격 설명','우수 생산능력의 단기 부족과 제품 가격 안정화를 설명.','supply-performance']],
-    tech:[['2026.08','제품군 공개','인조·천연흑연, 실리콘계, 하드카본 제품군을 공시.','technology-material-chemistry'],['2026.08','고객 요구 변화','기술 지표·배치 일관성·공급 보장·비용 관리 요구를 언급.','technology-process-performance']]
-  }
-};
-
-const companyDisplayNames = {
-  CATL: '닝더스다이 그룹(CATL · BRUNP)',
-  catl: '닝더스다이 그룹(CATL · BRUNP)',
-  Ronbay: '룽바이(Ronbay)',
-  ronbay: '룽바이(Ronbay)',
-  BTR: '베이터루이(BTR)',
-  btr: '베이터루이(BTR)',
-  Shanshan: '산산(Shanshan)'
-  ,shanshan: '산산(Shanshan)',
-  byd: 'BYD',
-  'hunan-yuneng': '후난위넝',
-  putailai: '푸타이라이',
-  'zhongke-electric': '중커전기'
-};
-const newsCompanyCatalog = {
-  cell: [['catl','닝더스다이 그룹 (CATL · BRUNP)'],['byd','BYD'],['eve-energy','EVE Energy'],['calb','CALB'],['gotion','Gotion High-tech'],['sunwoda','Sunwoda'],['hithium','Hithium'],['rept','REPT BATTERO'],['svolt','SVOLT'],['farasis','Farasis Energy']],
-  cathode: [['ronbay','룽바이(Ronbay)'],['hunan-yuneng','후난위넝'],['dynanonic','Dynanonic'],['xtc-new-energy','XTC New Energy'],['easpring','Easpring'],['zhenhua-new-material','Zhenhua New Material'],['changyuan-lico','Changyuan Lico'],['wanrun-new-energy','Wanrun New Energy'],['lopal','Lopal Tech'],['cnrg','CNGR']],
-  anode: [['btr','BTR'],['shanshan','샨샨'],['putailai','푸타이라이'],['zhongke-electric','중커전기'],['shangtai-technology','Shangtai Technology'],['xiangfenghua','Xiangfenghua'],['kaijin-new-energy','Kaijin New Energy'],['kuntian-new-energy','Kuntian New Energy'],['carbon-one','Carbon One']]
-};
 const valueChainLabels = { cell: '셀사', cathode: '양극재', anode: '음극재' };
-
-const companySourceInfo = {
-  CATL: { name: 'CATL 공식 발표', url: source.catl },
-  Ronbay: { name: '거래소 공시', url: source.ronbay },
-  BTR: { name: '거래소 공시', url: source.btr },
-  Shanshan: { name: '거래소 공시', url: source.shanshan }
-};
-
-let currentCompany = 'Ronbay';
-let currentNewsValueChain = 'cell';
-let currentNewsCompany = 'all';
-let dailyReportFacts = null;
-let approvedTop10 = [];
-let approvedCompanyNews = [];
-let pendingCandidates = [];
-let rangeFlows = [];
-
 const marketLayerLabels = {
   'supply-performance': '수급·실적',
   'investment-production': '투자·생산기반',
@@ -100,8 +11,26 @@ const technologyLayerLabels = {
   'technology-ip-standard': 'IP·표준',
   'technology-development': '개발·인증·양산'
 };
+const layerLabels = { ...marketLayerLabels, ...technologyLayerLabels };
+const UNCLASSIFIED_LAYER = 'unclassified';
+const EMPTY_CELL_NOTE = '확인된 이벤트 없음';
 
-function sectorLabel(sector){ return sector === 'anode' ? '음극재' : '양극재'; }
+// 회사 마스터와 기업 시계열은 /api/company에서만 받는다. 화면에 시드 데이터를 두지 않는다.
+let companyCatalog = [];
+const companyTimelineCache = new Map();
+let currentCompany = '';
+let currentNewsValueChain = 'cell';
+let currentNewsCompany = 'all';
+let dailyReportFacts = null;
+let approvedTop10 = [];
+let approvedCompanyNews = [];
+let pendingCandidates = [];
+let rangeFlows = [];
+
+function companyById(id){ return companyCatalog.find(company => company.id === id) || null; }
+function displayName(id){ return companyById(id)?.name_ko || id; }
+function companiesInValueChain(chain){ return companyCatalog.filter(company => company.value_chain === chain); }
+function escapeHtml(value){ return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function renderDailySummary(){
   const facts = dailyReportFacts || ['아직 생성된 Daily Report가 없습니다. 수집·분석 1회 실행 후 Top 10 본문 분석 결과와 통합 리포트가 이 영역에 표시됩니다.'];
   document.querySelector('#daily-summary-list').innerHTML = facts.map(fact => `<li>${fact}</li>`).join('');
@@ -140,7 +69,7 @@ function renderTopNews(){
     const sector = node.querySelector('.sector-tag'); sector.textContent = `TOP ${index + 1}`; sector.classList.toggle('anode', false);
     node.querySelector('.confidence-tag').textContent = item.confidence;
     node.querySelector('time').textContent = item.date;
-    node.querySelector('h3').textContent = `${companyDisplayNames[item.company] || item.company} · ${item.title}`;
+    node.querySelector('h3').textContent = `${displayName(item.company)} · ${item.title}`;
     node.querySelector('.news-fact').textContent = item.fact;
     node.querySelector('.impact-reason').textContent = item.why;
     node.querySelector('a').href = item.url;
@@ -176,7 +105,7 @@ function renderCandidateQueue(){
     const sector = node.querySelector('.sector-tag'); sector.textContent = `${item.classification.type} · ${item.classification.event}`;
     node.querySelector('.confidence-tag').textContent = '수집 후보';
     node.querySelector('time').textContent = item.date;
-    node.querySelector('h3').textContent = `${companyDisplayNames[item.company] || item.company} · ${item.title}`;
+    node.querySelector('h3').textContent = `${displayName(item.company)} · ${item.title}`;
     node.querySelector('.news-fact').textContent = `분류 근거: 회사 별칭 매칭 / 제목 키워드 ‘${item.classification.event}’. 원문 본문과 출처 신뢰도는 아직 검증하지 않았습니다.`;
     node.querySelector('.impact-reason').textContent = `출처: ${item.sourceName || 'RSS'}`;
     node.querySelector('a').href = item.url;
@@ -211,7 +140,7 @@ function renderHeadlineSankey(){
   const negativeNodes = selectedNodes.filter(node => node.direction === 'negative');
   const height = Math.max(300, sourceNames.length * 34 + 70, selectedNodes.length * 34 + 112);
   const yFor = (names, name, top, gap) => top + names.indexOf(name) * gap;
-  const label = name => companyDisplayNames[name] || name;
+  const label = displayName;
   const curve = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 130} ${y1}, ${x2 - 130} ${y2}, ${x2} ${y2}`;
   const nodeY = node => node.direction === 'positive' ? 62 + positiveNodes.indexOf(node) * 34 : 96 + positiveNodes.length * 34 + negativeNodes.indexOf(node) * 34;
   const links = visible.map(flow => {
@@ -247,16 +176,16 @@ function renderCompanyNews(){
   const valueChainTarget = document.querySelector('#company-news-value-chain');
   const companyTarget = document.querySelector('#company-news-company');
   valueChainTarget.innerHTML = Object.entries(valueChainLabels).map(([key, label]) => `<button class="segment ${key === currentNewsValueChain ? 'is-selected' : ''}" data-news-value-chain="${key}">${label}</button>`).join('');
-  const companiesInChain = newsCompanyCatalog[currentNewsValueChain] || [];
-  if (!companiesInChain.some(([id]) => id === currentNewsCompany)) currentNewsCompany = 'all';
-  companyTarget.innerHTML = `<option value="all">${valueChainLabels[currentNewsValueChain]} 전체</option>${companiesInChain.map(([id, name]) => `<option value="${id}" ${id === currentNewsCompany ? 'selected' : ''}>${name}</option>`).join('')}`;
+  const companiesInChain = companiesInValueChain(currentNewsValueChain);
+  if (!companiesInChain.some(company => company.id === currentNewsCompany)) currentNewsCompany = 'all';
+  companyTarget.innerHTML = `<option value="all">${valueChainLabels[currentNewsValueChain]} 전체</option>${companiesInChain.map(company => `<option value="${escapeHtml(company.id)}" ${company.id === currentNewsCompany ? 'selected' : ''}>${escapeHtml(company.name_ko)}</option>`).join('')}`;
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#company-news-feed'); target.innerHTML = '';
   const filtered = approvedCompanyNews.filter(item => item.valueChain === currentNewsValueChain && (currentNewsCompany === 'all' || item.company === currentNewsCompany));
   if (!filtered.length) target.innerHTML = `<p>${currentNewsCompany === 'all' ? valueChainLabels[currentNewsValueChain] : companyTarget.selectedOptions[0]?.textContent}의 자동 팩트체크 완료 뉴스가 아직 없습니다.</p>`;
   filtered.forEach(item => {
     const node = template.content.cloneNode(true);
-    const sector = node.querySelector('.sector-tag'); sector.textContent = companyDisplayNames[item.company] || item.company; sector.classList.toggle('anode', false);
+    const sector = node.querySelector('.sector-tag'); sector.textContent = displayName(item.company); sector.classList.toggle('anode', false);
     node.querySelector('.confidence-tag').textContent = item.confidence;
     node.querySelector('time').textContent = item.date;
     node.querySelector('h3').textContent = item.title;
@@ -275,7 +204,7 @@ function mapDashboardArticle(article){
     id: article.id,
     sector: 'all',
     company: relation?.company_id || '기타',
-    valueChain: relation?.company?.type_tags?.[0] || Object.entries(newsCompanyCatalog).find(([, entries]) => entries.some(([id]) => id === relation?.company_id))?.[0] || 'other',
+    valueChain: relation?.company?.type_tags?.[0] || companyById(relation?.company_id)?.value_chain || 'other',
     date: article.published_at ? article.published_at.slice(0, 10).replaceAll('-', '.') : '날짜 미상',
     title: article.title_ko || article.title_original,
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
@@ -301,7 +230,6 @@ async function loadDashboardFromApi(){
       .filter(article => !approvedTop10.some(top10 => top10.url === article.url));
     pendingCandidates = (payload.pendingNews || []).map(mapDashboardArticle);
     rangeFlows = payload.flows || [];
-    news = [...approvedTop10, ...approvedCompanyNews];
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }
@@ -311,53 +239,182 @@ async function loadDashboardFromApi(){
   }
 }
 function makeSelect(select, selected){
-  select.innerHTML = Object.keys(companies).map(name => `<option value="${name}" ${name === selected ? 'selected' : ''}>${companyDisplayNames[name]} · ${companies[name].type}</option>`).join('');
+  if (!companyCatalog.length) { select.innerHTML = '<option value="">기업 목록 없음</option>'; return; }
+  select.innerHTML = companyCatalog.map(company => `<option value="${escapeHtml(company.id)}" ${company.id === selected ? 'selected' : ''}>${escapeHtml(company.name_ko)} · ${escapeHtml(valueChainLabels[company.value_chain] || '기타')}</option>`).join('');
 }
-function renderCompany(){
-  const company = companies[currentCompany];
-  document.querySelector('#company-profile').innerHTML = `<div><p class="eyebrow" style="color:#b6dcff">${company.type}</p><h2>${companyDisplayNames[currentCompany]}</h2><p>${company.description}</p></div><div class="company-badges"><span class="company-badge">${company.region}</span><span class="company-badge">팩트 기반</span></div>`;
-  const majorEvents = [
-    ...company.market.map(([date, title, fact, layer]) => ({date, title, fact, track: 'market', label: marketLayerLabels[layer], layer})),
-    ...company.tech.map(([date, title, fact, layer]) => ({date, title, fact, track: 'tech', label: technologyLayerLabels[layer], layer}))
-  ].sort((a, b) => a.date.localeCompare(b.date));
-  document.querySelector('#snapshot-grid').innerHTML = majorEvents.map(event => `<article class="snapshot ${event.track}"><span class="snapshot-year">${event.date} · ${event.label}</span><h3>${event.title}</h3><ul><li>${event.fact}</li></ul></article>`).join('');
-  renderLayerMatrix(company);
+async function loadCompanyCatalog(){
+  try {
+    const result = await fetch('/api/company', { cache: 'no-store' });
+    const payload = await result.json();
+    if (payload.status === 'ok' && Array.isArray(payload.companies)) companyCatalog = payload.companies;
+  } catch {
+    // 회사 마스터를 못 불러와도 Daily 화면은 그대로 동작한다.
+  }
 }
-function renderLayerMatrix(company){
-  const periods = ['2023 Q1','2023 Q2','2023 Q3','2023 Q4','2024 Q1','2024 Q2','2024 Q3','2024 Q4','2025 Q1','2025 Q2','2025 Q3','2025 Q4','2026 Q1','2026 Q2','2026 Q3','2026 Q4'];
-  const layers = [
-    ['시장', '수급·실적', 'supply-performance'], ['시장', '투자·생산기반', 'investment-production'], ['시장', '고객·상업화', 'customer-commercialization'], ['시장', '지역·해외전략', 'regional-overseas'],
-    ['기술', '소재·화학계', 'technology-material-chemistry'], ['기술', '공정·성능', 'technology-process-performance'], ['기술', 'IP·표준', 'technology-ip-standard'], ['기술', '개발·인증·양산', 'technology-development']
-  ];
-  const events = [
-    ...company.market.map(([date, title, fact, layer]) => ({date, title, fact, layer})),
-    ...company.tech.map(([date, title, fact, layer]) => ({date, title, fact, layer}))
-  ];
-  const quarterOf = date => {
-    const match = String(date).match(/^(\d{4})[.-](\d{2})/);
-    return match ? `${match[1]} Q${Math.floor((Number(match[2]) - 1) / 3) + 1}` : null;
+function normalizeEvent(event){
+  const layer = layerLabels[event.layer_key] ? event.layer_key : UNCLASSIFIED_LAYER;
+  const group = layer === UNCLASSIFIED_LAYER
+    ? (event.trajectory_track === 'technology' ? '기술' : '시장')
+    : (marketLayerLabels[layer] ? '시장' : '기술');
+  return {
+    date: String(event.occurred_at || '').slice(0, 10),
+    group, layer, track: group === '기술' ? 'tech' : 'market',
+    label: layerLabels[layer] || '미분류',
+    both: event.trajectory_track === 'both',
+    title: event.title_ko || '제목 미상',
+    fact: event.fact_ko || '',
+    region: event.region_scope || '',
+    eligibility: event.timeline_eligibility === 'core' ? '핵심' : event.timeline_eligibility === 'reference' ? '참고' : '',
+    sourceName: event.source_name || event.article?.source_name || '출처 미상',
+    sourceUrl: event.source_url || event.article?.canonical_url || '',
+    excerpt: event.original_excerpt || '',
+    excerptKo: event.original_excerpt_ko || ''
   };
-  const cells = (layer, period) => events.filter(event => event.layer === layer && quarterOf(event.date) === period).map(event => `<div style="margin-bottom:8px"><strong>${event.title}</strong><br><span style="color:#526277">${event.fact}</span></div>`).join('') || '<span style="color:#9aa7b6">—</span>';
-  document.querySelector('#dual-track').innerHTML = `<div style="overflow-x:auto"><table style="width:100%;min-width:2940px;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec;position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec;position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec;white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${layers.map(([group, label, layer]) => `<tr><td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;color:${group === '시장' ? '#236aa6' : '#8b5a10'};position:sticky;left:0;background:#fff;z-index:1">${group}</td><td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:58px;background:#fff;z-index:1">${label}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cells(layer, period)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
-function exportCompanyTimeline(){
-  const company = companies[currentCompany];
-  const sourceInfo = companySourceInfo[currentCompany] || { name: '출처 검수 대기', url: '' };
-  const rows = [['회사', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
-  const addRow = (group, label, date, title, fact) => { const month = Number(date.slice(5, 7)); const period = month ? `${date.slice(0, 4)} Q${Math.floor((month - 1) / 3) + 1}` : date.slice(0, 4); rows.push([companyDisplayNames[currentCompany], group, label, period, date, title, fact, sourceInfo.name, sourceInfo.url, '시드 데이터: 원문 발췌 미적재', '시드 데이터: 한국어 번역 미적재']); };
-  company.market.forEach(([date, title, fact, layer]) => addRow('시장', marketLayerLabels[layer], date, title, fact));
-  company.tech.forEach(([date, title, fact, layer]) => addRow('기술', technologyLayerLabels[layer], date, title, fact));
+function timelineNotice(status){
+  if (status === 'ok') return '';
+  if (status === 'not_configured') return 'Supabase 환경변수가 설정되지 않아 이벤트를 불러오지 못했습니다.';
+  if (status === 'access_required') return '접근 세션이 만료됐습니다. 다시 입장한 뒤 새로고침해 주세요.';
+  if (status === 'unknown_company') return '회사 마스터에 없는 기업입니다.';
+  return '이벤트를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
+}
+async function loadCompanyTimeline(companyId){
+  if (companyTimelineCache.has(companyId)) return companyTimelineCache.get(companyId);
+  let payload = null;
+  try {
+    const result = await fetch(`/api/company?companyId=${encodeURIComponent(companyId)}&_=${Date.now()}`, { cache: 'no-store' });
+    payload = await result.json();
+  } catch {
+    payload = null;
+  }
+  const timeline = {
+    status: payload?.status || 'load_failed',
+    events: (payload?.events || []).map(normalizeEvent).filter(event => /^\d{4}-\d{2}-\d{2}$/.test(event.date))
+  };
+  if (timeline.status === 'ok') companyTimelineCache.set(companyId, timeline);
+  return timeline;
+}
+function quarterOf(date){
+  const match = String(date).match(/^(\d{4})-(\d{2})/);
+  return match ? `${match[1]} Q${Math.floor((Number(match[2]) - 1) / 3) + 1}` : null;
+}
+function periodOrder(period){
+  const match = String(period).match(/^(\d{4}) Q(\d)$/);
+  return match ? Number(match[1]) * 4 + Number(match[2]) : 0;
+}
+// 기본 축은 최근 3년 + 당해 분기이고, 그 밖의 확인된 이벤트가 있으면 해당 분기도 함께 연다.
+function timelinePeriods(events){
+  const now = new Date();
+  const endYear = now.getFullYear();
+  const endQuarter = Math.floor(now.getMonth() / 3) + 1;
+  const periods = new Set();
+  for (let year = endYear - 3; year <= endYear; year += 1) {
+    for (let quarter = 1; quarter <= 4; quarter += 1) {
+      if (year === endYear && quarter > endQuarter) break;
+      periods.add(`${year} Q${quarter}`);
+    }
+  }
+  events.forEach(event => { const period = quarterOf(event.date); if (period) periods.add(period); });
+  return [...periods].sort((a, b) => periodOrder(a) - periodOrder(b));
+}
+// 그룹 계열사는 모회사 공시로 확인된 것만 등록돼 있으므로 근거 문서를 함께 보여준다.
+function groupLine(group){
+  if (!group) return '';
+  const members = (group.members_ko || []).join(', ');
+  const source = group.source?.url
+    ? `<a href="${escapeHtml(group.source.url)}" target="_blank" rel="noreferrer">${escapeHtml(group.source.doc_ko || '공식 공시')}</a>`
+    : escapeHtml(group.source?.doc_ko || '근거 문서 미등록');
+  return `<p style="font-size:12px">그룹 계열사 ${(group.members_ko || []).length}곳: ${escapeHtml(members)}<br>근거: ${source}</p>`;
+}
+function sourceLink(event, fontSize){
+  if (!event.sourceUrl) return escapeHtml(event.sourceName);
+  return `<a href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer"${fontSize ? ` style="font-size:${fontSize}"` : ''}>${escapeHtml(event.sourceName)}</a>`;
+}
+async function renderCompany(){
+  const profile = document.querySelector('#company-profile');
+  const grid = document.querySelector('#snapshot-grid');
+  const matrix = document.querySelector('#dual-track');
+  if (!currentCompany) {
+    profile.innerHTML = '<div><h2>추적 기업 목록을 불러오지 못했습니다</h2><p>접근 세션과 네트워크 상태를 확인한 뒤 새로고침해 주세요.</p></div>';
+    grid.innerHTML = ''; matrix.innerHTML = '';
+    return;
+  }
+  const requestedId = currentCompany;
+  const company = companyById(requestedId);
+  const names = [company.name_zh, company.name_en].filter(Boolean).join(' · ');
+  profile.innerHTML = `<div><p class="eyebrow" style="color:#b6dcff">${escapeHtml(valueChainLabels[company.value_chain] || '추적 기업')}</p><h2>${escapeHtml(company.name_ko)}</h2><p>${escapeHtml(names)}</p>${groupLine(company.group)}<p id="company-timeline-state">이벤트를 불러오는 중…</p></div><div class="company-badges">${company.group ? `<span class="company-badge">${escapeHtml(company.group.name_ko)}</span>` : ''}<span class="company-badge">출처 확인 이벤트만 표시</span></div>`;
+  grid.innerHTML = ''; matrix.innerHTML = '';
+  const timeline = await loadCompanyTimeline(requestedId);
+  if (requestedId !== currentCompany) return;
+  const state = document.querySelector('#company-timeline-state');
+  const notice = timelineNotice(timeline.status);
+  const core = timeline.events.filter(event => event.eligibility === '핵심').length;
+  if (state) {
+    state.textContent = notice || (timeline.events.length
+      ? `출처가 확인된 이벤트 ${timeline.events.length}건(핵심 ${core}건)을 표시합니다.`
+      : '아직 확인된 이벤트가 없습니다. 수집·분석을 실행하면 이 화면에 누적됩니다.');
+  }
+  renderCompanyEvents(timeline);
+  renderLayerMatrix(timeline);
+}
+function renderCompanyEvents(timeline){
+  const grid = document.querySelector('#snapshot-grid');
+  if (!timeline.events.length) {
+    grid.innerHTML = `<p>${escapeHtml(timelineNotice(timeline.status) || EMPTY_CELL_NOTE)}</p>`;
+    return;
+  }
+  grid.innerHTML = [...timeline.events].sort((a, b) => b.date.localeCompare(a.date)).map(event => {
+    const tags = [event.date, event.group, event.label, event.both ? '시장·기술' : '', event.eligibility].filter(Boolean).join(' · ');
+    return `<article class="snapshot ${event.track}"><span class="snapshot-year">${escapeHtml(tags)}</span><h3>${escapeHtml(event.title)}</h3><ul><li>${escapeHtml(event.fact)}</li>${event.excerptKo ? `<li>원문 번역: ${escapeHtml(event.excerptKo)}</li>` : ''}</ul><p style="margin:0;font-size:12px;color:#617187">${sourceLink(event)}</p></article>`;
+  }).join('');
+}
+function renderLayerMatrix(timeline){
+  const target = document.querySelector('#dual-track');
+  const events = timeline.events;
+  const notice = timelineNotice(timeline.status);
+  if (!events.length) {
+    target.innerHTML = `<p>${escapeHtml(notice || '선택한 기업에 확인된 이벤트가 아직 없습니다.')}</p>`;
+    return;
+  }
+  const periods = timelinePeriods(events);
+  const rowsFor = (group, labels) => {
+    const rows = Object.entries(labels).map(([key, label]) => ({ group, label, match: event => event.layer === key }));
+    if (events.some(event => event.layer === UNCLASSIFIED_LAYER && event.group === group)) {
+      rows.push({ group, label: '미분류', match: event => event.layer === UNCLASSIFIED_LAYER && event.group === group });
+    }
+    return rows;
+  };
+  const rows = [...rowsFor('시장', marketLayerLabels), ...rowsFor('기술', technologyLayerLabels)];
+  const cell = (row, period) => {
+    const matched = events.filter(event => row.match(event) && quarterOf(event.date) === period);
+    if (!matched.length) return `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`;
+    return matched.map(event => `<div style="margin-bottom:8px"><strong>${escapeHtml(event.title)}</strong><br><span style="color:#526277">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
+  };
+  const headCell = 'text-align:left;padding:10px;border-bottom:1px solid #dbe3ec';
+  const stickyGroup = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:0;background:#fff;z-index:1';
+  const stickyLayer = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:58px;background:#fff;z-index:1';
+  const table = `<table style="width:100%;min-width:${periods.length * 170 + 320}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">빈 칸(—)은 해당 분기에 ${EMPTY_CELL_NOTE}을 뜻합니다. 사건이 없었다는 뜻이 아닙니다.</p>`;
+}
+async function exportCompanyTimeline(){
+  if (!currentCompany) { window.alert('내보낼 기업이 선택되지 않았습니다.'); return; }
+  const company = companyById(currentCompany);
+  const timeline = await loadCompanyTimeline(currentCompany);
+  if (!timeline.events.length) { window.alert(timelineNotice(timeline.status) || '내보낼 확인된 이벤트가 없습니다.'); return; }
+  const rows = [['회사', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '지역', '시계열 등급', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
+  [...timeline.events].sort((a, b) => a.date.localeCompare(b.date)).forEach(event => {
+    rows.push([company.name_ko, event.group, event.label, quarterOf(event.date) || event.date.slice(0, 4), event.date, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
+  });
   if (window.XLSX) {
     const sheet = XLSX.utils.aoa_to_sheet(rows);
-    sheet['!cols'] = [{wch:20}, {wch:10}, {wch:20}, {wch:10}, {wch:12}, {wch:28}, {wch:70}, {wch:18}, {wch:55}, {wch:55}, {wch:55}];
-    rows.slice(1).forEach((row, index) => { sheet[`I${index + 2}`].l = { Target: row[8] }; });
+    sheet['!cols'] = [{wch:20}, {wch:8}, {wch:18}, {wch:10}, {wch:12}, {wch:30}, {wch:70}, {wch:14}, {wch:12}, {wch:20}, {wch:55}, {wch:55}, {wch:55}];
+    rows.slice(1).forEach((row, index) => { const cell = sheet[`K${index + 2}`]; if (cell && row[10]) cell.l = { Target: row[10] }; });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, '기업 시계열');
     XLSX.writeFile(workbook, `${currentCompany}_timeline.xlsx`);
     return;
   }
-  const escapeCell = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const table = rows.map((row, index) => `<tr>${row.map(value => `<${index ? 'td' : 'th'}>${escapeCell(value)}</${index ? 'td' : 'th'}>`).join('')}</tr>`).join('');
+  const table = rows.map((row, index) => `<tr>${row.map(value => `<${index ? 'td' : 'th'}>${escapeHtml(value)}</${index ? 'td' : 'th'}>`).join('')}</tr>`).join('');
   const blob = new Blob([`<html><head><meta charset="utf-8"></head><body><table border="1">${table}</table></body></html>`], {type:'application/vnd.ms-excel;charset=utf-8'});
   const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${currentCompany}_timeline.xls`; document.body.append(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
 }
@@ -384,26 +441,31 @@ async function exportRawNews(){
   } catch { window.alert('Raw data Excel을 만들지 못했습니다.'); }
   finally { button.disabled = false; button.textContent = 'Raw data Excel'; }
 }
-function comparisonTimeline(company){
-  const item = companies[company];
-  return [...item.market, ...item.tech].map(([date, title, fact]) => ({date, title, fact}));
-}
-function renderComparison(){
-  const a = document.querySelector('#compare-a').value;
-  const b = document.querySelector('#compare-b').value;
-  const eventsA = comparisonTimeline(a);
-  const eventsB = comparisonTimeline(b);
+async function renderComparison(){
+  const target = document.querySelector('#comparison-grid');
+  const selectA = document.querySelector('#compare-a');
+  const selectB = document.querySelector('#compare-b');
+  const a = selectA.value, b = selectB.value;
+  if (!a || !b) { target.innerHTML = '<p>비교할 기업 목록을 불러오지 못했습니다.</p>'; return; }
+  target.innerHTML = '<p>이벤트를 불러오는 중…</p>';
+  const [timelineA, timelineB] = await Promise.all([loadCompanyTimeline(a), loadCompanyTimeline(b)]);
+  if (selectA.value !== a || selectB.value !== b) return;
+  const eventsA = timelineA.events, eventsB = timelineB.events;
   const dates = [...new Set([...eventsA, ...eventsB].map(event => event.date))].sort().reverse();
-  const eventsAt = (events, date) => events.filter(event => event.date === date).map(event => `<div style="margin-bottom:7px"><strong>${event.title}</strong><br><span style="color:#526277;font-size:12px">${event.fact}</span></div>`).join('');
-  const eventCell = (events, date, side) => `<div style="min-height:54px;padding:10px 12px;background:${eventsAt(events, date) ? '#ffffff' : 'transparent'};border:${eventsAt(events, date) ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:13px">${eventsAt(events, date) || '<span style="color:#9aa7b6">—</span>'}</div>`;
-  document.querySelector('#comparison-grid').innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:900px"><div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:end;margin-bottom:14px"><div><p class="eyebrow">기업 A</p><h2>${companyDisplayNames[a]}</h2></div><div style="text-align:center;color:#617187;font-size:12px">공통 시간축<br>↑ 최근</div><div style="text-align:right"><p class="eyebrow">기업 B</p><h2>${companyDisplayNames[b]}</h2></div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'left')}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'right')}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
+  if (!dates.length) {
+    target.innerHTML = `<p>${escapeHtml(timelineNotice(timelineA.status) || timelineNotice(timelineB.status) || '두 기업 모두 확인된 이벤트가 없습니다.')}</p>`;
+    return;
+  }
+  const eventsAt = (events, date) => events.filter(event => event.date === date).map(event => `<div style="margin-bottom:7px"><strong>${escapeHtml(event.title)}</strong><br><span style="color:#526277;font-size:12px">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
+  const eventCell = (events, date, side) => { const html = eventsAt(events, date); return `<div style="min-height:54px;padding:10px 12px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:13px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
+  target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:900px"><div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:end;margin-bottom:14px"><div><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2></div><div style="text-align:center;color:#617187;font-size:12px">공통 시간축<br>↑ 최근</div><div style="text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2></div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'left')}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'right')}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
 }
 function activateView(view){
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('is-visible', el.id === view));
   document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('is-active',el.dataset.view===view));
 }
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
-document.querySelector('#refresh-button').addEventListener('click', () => { renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); loadDashboardFromApi(); });
+document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });
 document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
 document.querySelector('#run-collection-button').addEventListener('click', async () => {
   const button = document.querySelector('#run-collection-button');
@@ -414,20 +476,39 @@ document.querySelector('#run-collection-button').addEventListener('click', async
     if (!result.ok) throw new Error([payload.status, payload.stage, payload.message].filter(Boolean).join(' · ') || '요청 실패');
     const outcomes = Object.entries(payload.outcome_counts || {}).map(([status, count]) => `${status} ${count}건`).join(' / ');
     window.alert(`Daily 분석 완료: 발견 ${payload.discovered}건 / 저장 ${payload.stored}건 / 헤드라인 Top ${payload.headline_selected || 0}건 / 본문 처리 ${payload.llm_processed || 0}건${outcomes ? `\n처리 결과: ${outcomes}` : ''}\n첫 화면을 최신 결과로 갱신합니다.`);
+    companyTimelineCache.clear();
     await loadDashboardFromApi();
+    await renderCompany();
+    await renderComparison();
   } catch (error) {
     window.alert(`수집을 실행하지 못했습니다: ${error.message}`);
   } finally {
     button.disabled = false; button.textContent = '수집·분석 1회 실행';
   }
 });
-const select = document.querySelector('#company-select'); makeSelect(select,currentCompany); select.addEventListener('change', () => { currentCompany = select.value; renderCompany(); });
-document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
-document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
-const compareA=document.querySelector('#compare-a'),compareB=document.querySelector('#compare-b'); makeSelect(compareA,'Ronbay'); makeSelect(compareB,'BTR'); compareA.addEventListener('change',renderComparison); compareB.addEventListener('change',renderComparison);
-const sankeyTo = new Date();
-const sankeyFrom = new Date(); sankeyFrom.setDate(sankeyFrom.getDate() - 30);
-document.querySelector('#sankey-from').value = sankeyFrom.toISOString().slice(0, 10);
-document.querySelector('#sankey-to').value = sankeyTo.toISOString().slice(0, 10);
-renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompany(); renderComparison();
-loadDashboardFromApi();
+async function initialize(){
+  await loadCompanyCatalog();
+  const select = document.querySelector('#company-select');
+  const compareA = document.querySelector('#compare-a');
+  const compareB = document.querySelector('#compare-b');
+  const firstIn = chain => companiesInValueChain(chain)[0]?.id || '';
+  currentCompany = firstIn('cathode') || companyCatalog[0]?.id || '';
+  const compareBId = firstIn('anode') || currentCompany;
+  makeSelect(select, currentCompany);
+  makeSelect(compareA, currentCompany);
+  makeSelect(compareB, compareBId);
+  select.addEventListener('change', () => { currentCompany = select.value; renderCompany(); });
+  compareA.addEventListener('change', renderComparison);
+  compareB.addEventListener('change', renderComparison);
+  document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
+  document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
+  const sankeyTo = new Date();
+  const sankeyFrom = new Date(); sankeyFrom.setDate(sankeyFrom.getDate() - 30);
+  document.querySelector('#sankey-from').value = sankeyFrom.toISOString().slice(0, 10);
+  document.querySelector('#sankey-to').value = sankeyTo.toISOString().slice(0, 10);
+  renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
+  await loadDashboardFromApi();
+  await renderCompany();
+  await renderComparison();
+}
+initialize();

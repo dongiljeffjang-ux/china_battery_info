@@ -3,6 +3,7 @@ import { resolveGoogleNewsUrl } from "./lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { COMPANIES } from "../lib/china-sources.js";
 import { embedVerifiedArticle } from "../lib/vector-ingestion.js";
+import { LAYER_KEYS, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
 
 const MAX_BODY_CHARS = 30000;
 
@@ -37,7 +38,7 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
       original_excerpt_ko: { type: "string" },
       occurred_at: { type: ["string", "null"] },
       trajectory_track: { type: "string", enum: ["market", "technology", "both"] },
-      layer_key: { type: ["string", "null"] },
+      layer_key: { type: "string", enum: LAYER_KEYS },
       region_scope: { type: ["string", "null"] },
       timeline_eligibility: { type: "string", enum: ["core", "reference", "exclude"] },
       confidence_note: { type: "string" }
@@ -46,7 +47,7 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
   const input = `${companyContext}\n원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}\n본문:\n${bodyText}`;
   const { data } = await createJsonResponse({
     name: "battery_article_event", schema,
-    instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다.",
+    instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다. " + LAYER_PROMPT_GUIDE,
     input, provider
   });
   return data;
@@ -87,7 +88,7 @@ export async function processPendingArticle(articleId, companyId) {
   const primaryProvider = llmConfig("openai") ? "openai" : "deepseek";
   const verifierProvider = llmConfig("deepseek") ? "deepseek" : primaryProvider;
   const company = COMPANIES.find((item) => item.id === companyId);
-  const companyContext = company ? `서비스 표준 회사명: ${company.name_ko}${company.group ? `\n그룹: ${company.group.name_ko}\n그룹 포함 검색 법인: ${company.group.members_ko.join(", ")}` : ""}` : "";
+  const companyContext = company ? `서비스 표준 회사명: ${company.name_ko}` : "";
   const result = await analyzeArticle(article, bodyText, primaryProvider, companyContext);
   const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider, companyContext);
   console.info("[ARTICLE_CROSS_CHECK]", JSON.stringify({ articleId, primaryProvider, verifierProvider, verdict: factCheck.verdict }));
@@ -116,7 +117,7 @@ export async function processPendingArticle(articleId, companyId) {
     await supabaseRest("event", { method: "POST", body: {
       company_id: companyId, article_id: articleId, occurred_at: result.occurred_at,
       title_ko: result.event_title_ko, fact_ko: result.event_fact_ko,
-      trajectory_track: result.trajectory_track, layer_key: result.layer_key,
+      trajectory_track: result.trajectory_track, layer_key: normalizeLayerKey(result.layer_key),
       region_scope: result.region_scope, source_url: resolvedUrl, source_name: article.source_name,
       original_excerpt: factCheck.original_excerpt, original_excerpt_ko: factCheck.original_excerpt_ko,
       timeline_eligibility: result.timeline_eligibility
