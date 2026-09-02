@@ -58,6 +58,7 @@ create table if not exists public.event (
   original_excerpt text,
   original_excerpt_ko text,
   timeline_eligibility text not null check (timeline_eligibility in ('core', 'reference', 'exclude')),
+  entity_names text[] not null default '{}',
   created_at timestamptz not null default now()
 );
 
@@ -108,6 +109,7 @@ create index if not exists article_top10_idx on public.article (is_top10, top10_
 create index if not exists article_embedding_retry_idx on public.article (embedding_status, published_at desc) where body_original is not null;
 create index if not exists article_feedback_article_idx on public.article_feedback (article_id, vote);
 create index if not exists event_company_date_idx on public.event (company_id, occurred_at);
+create index if not exists event_entity_names_idx on public.event using gin (entity_names);
 create index if not exists knowledge_chunk_company_date_idx on public.knowledge_chunk (company_id, published_at desc);
 create index if not exists knowledge_chunk_embedding_hnsw_idx on public.knowledge_chunk using hnsw (embedding vector_cosine_ops);
 
@@ -125,6 +127,7 @@ alter table public.event add column if not exists source_name text;
 alter table public.event add column if not exists original_excerpt text;
 alter table public.event add column if not exists original_excerpt_ko text;
 alter table public.article add column if not exists keywords_ko text[] not null default '{}';
+alter table public.event add column if not exists entity_names text[] not null default '{}';
 
 revoke all on public.company, public.article, public.article_company, public.event, public.daily_report, public.article_feedback from anon, authenticated;
 revoke all on public.knowledge_chunk from anon, authenticated;

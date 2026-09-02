@@ -2,9 +2,9 @@ import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { resolveGoogleNewsUrl } from "./lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { COMPANIES } from "../lib/china-sources.js";
-import { groupSummary } from "../lib/company-groups.js";
+import { groupSummary, matchGroupEntities } from "../lib/company-groups.js";
 import { embedVerifiedArticle } from "../lib/vector-ingestion.js";
-import { LAYER_KEYS, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
+import { LAYER_ENUM, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
 
 const MAX_BODY_CHARS = 30000;
 
@@ -39,7 +39,7 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
       original_excerpt_ko: { type: "string" },
       occurred_at: { type: ["string", "null"] },
       trajectory_track: { type: "string", enum: ["market", "technology", "both"] },
-      layer_key: { type: "string", enum: LAYER_KEYS },
+      layer_key: { type: "string", enum: LAYER_ENUM },
       region_scope: { type: ["string", "null"] },
       timeline_eligibility: { type: "string", enum: ["core", "reference", "exclude"] },
       confidence_note: { type: "string" }
@@ -118,7 +118,13 @@ export async function processPendingArticle(articleId, companyId) {
     embedding = { status: "failed", chunks: 0 };
   }
   if (result.timeline_eligibility !== "exclude" && result.occurred_at) {
+    // 발생 법인은 등록된 계열사 별칭 매칭으로만 정한다. 본문 전체가 아니라 이벤트 문장과
+    // 근거 발췌만 대조해 각주·목록에 스치듯 나온 계열사가 섞이지 않게 한다.
+    const entityNames = matchGroupEntities(companyId, [
+      article.title_original, result.event_title_ko, result.event_fact_ko, factCheck.original_excerpt
+    ].filter(Boolean).join(" "));
     await supabaseRest("event", { method: "POST", body: {
+      entity_names: entityNames,
       company_id: companyId, article_id: articleId, occurred_at: result.occurred_at,
       title_ko: result.event_title_ko, fact_ko: result.event_fact_ko,
       trajectory_track: result.trajectory_track, layer_key: normalizeLayerKey(result.layer_key),

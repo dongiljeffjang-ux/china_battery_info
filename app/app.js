@@ -268,7 +268,8 @@ function normalizeEvent(event){
     sourceName: event.source_name || event.article?.source_name || '출처 미상',
     sourceUrl: event.source_url || event.article?.canonical_url || '',
     excerpt: event.original_excerpt || '',
-    excerptKo: event.original_excerpt_ko || ''
+    excerptKo: event.original_excerpt_ko || '',
+    entities: Array.isArray(event.entity_names) ? event.entity_names.filter(Boolean) : []
   };
 }
 function timelineNotice(status){
@@ -326,6 +327,10 @@ function groupLine(group){
     : escapeHtml(group.source?.doc_ko || '근거 문서 미등록');
   return `<p style="font-size:12px">그룹 계열사 ${(group.members_ko || []).length}곳: ${escapeHtml(members)}<br>근거: ${source}</p>`;
 }
+// 계열사에서 일어난 사실은 모회사 사실과 섞이지 않게 발생 법인을 병기한다.
+function entityLabel(event){
+  return event.entities.length ? event.entities.join(' · ') : '';
+}
 function sourceLink(event, fontSize){
   if (!event.sourceUrl) return escapeHtml(event.sourceName);
   return `<a href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer"${fontSize ? ` style="font-size:${fontSize}"` : ''}>${escapeHtml(event.sourceName)}</a>`;
@@ -364,7 +369,7 @@ function renderCompanyEvents(timeline){
     return;
   }
   grid.innerHTML = [...timeline.events].sort((a, b) => b.date.localeCompare(a.date)).map(event => {
-    const tags = [event.date, event.group, event.label, event.both ? '시장·기술' : '', event.eligibility].filter(Boolean).join(' · ');
+    const tags = [event.date, event.group, event.label, event.both ? '시장·기술' : '', event.eligibility, entityLabel(event)].filter(Boolean).join(' · ');
     return `<article class="snapshot ${event.track}"><span class="snapshot-year">${escapeHtml(tags)}</span><h3>${escapeHtml(event.title)}</h3><ul><li>${escapeHtml(event.fact)}</li>${event.excerptKo ? `<li>원문 번역: ${escapeHtml(event.excerptKo)}</li>` : ''}</ul><p style="margin:0;font-size:12px;color:#617187">${sourceLink(event)}</p></article>`;
   }).join('');
 }
@@ -388,7 +393,7 @@ function renderLayerMatrix(timeline){
   const cell = (row, period) => {
     const matched = events.filter(event => row.match(event) && quarterOf(event.date) === period);
     if (!matched.length) return `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`;
-    return matched.map(event => `<div style="margin-bottom:8px"><strong>${escapeHtml(event.title)}</strong><br><span style="color:#526277">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
+    return matched.map(event => `<div style="margin-bottom:8px"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<br><span style="color:#8b5a10;font-size:11px">${escapeHtml(entityLabel(event))}</span>` : ''}<br><span style="color:#526277">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
   };
   const headCell = 'text-align:left;padding:10px;border-bottom:1px solid #dbe3ec';
   const stickyGroup = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:0;background:#fff;z-index:1';
@@ -401,14 +406,14 @@ async function exportCompanyTimeline(){
   const company = companyById(currentCompany);
   const timeline = await loadCompanyTimeline(currentCompany);
   if (!timeline.events.length) { window.alert(timelineNotice(timeline.status) || '내보낼 확인된 이벤트가 없습니다.'); return; }
-  const rows = [['회사', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '지역', '시계열 등급', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
+  const rows = [['회사', '발생 법인', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '지역', '시계열 등급', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
   [...timeline.events].sort((a, b) => a.date.localeCompare(b.date)).forEach(event => {
-    rows.push([company.name_ko, event.group, event.label, quarterOf(event.date) || event.date.slice(0, 4), event.date, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
+    rows.push([company.name_ko, entityLabel(event), event.group, event.label, quarterOf(event.date) || event.date.slice(0, 4), event.date, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
   });
   if (window.XLSX) {
     const sheet = XLSX.utils.aoa_to_sheet(rows);
-    sheet['!cols'] = [{wch:20}, {wch:8}, {wch:18}, {wch:10}, {wch:12}, {wch:30}, {wch:70}, {wch:14}, {wch:12}, {wch:20}, {wch:55}, {wch:55}, {wch:55}];
-    rows.slice(1).forEach((row, index) => { const cell = sheet[`K${index + 2}`]; if (cell && row[10]) cell.l = { Target: row[10] }; });
+    sheet['!cols'] = [{wch:20}, {wch:30}, {wch:8}, {wch:18}, {wch:10}, {wch:12}, {wch:30}, {wch:70}, {wch:14}, {wch:12}, {wch:20}, {wch:55}, {wch:55}, {wch:55}];
+    rows.slice(1).forEach((row, index) => { const cell = sheet[`L${index + 2}`]; if (cell && row[11]) cell.l = { Target: row[11] }; });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, '기업 시계열');
     XLSX.writeFile(workbook, `${currentCompany}_timeline.xlsx`);
@@ -456,7 +461,7 @@ async function renderComparison(){
     target.innerHTML = `<p>${escapeHtml(timelineNotice(timelineA.status) || timelineNotice(timelineB.status) || '두 기업 모두 확인된 이벤트가 없습니다.')}</p>`;
     return;
   }
-  const eventsAt = (events, date) => events.filter(event => event.date === date).map(event => `<div style="margin-bottom:7px"><strong>${escapeHtml(event.title)}</strong><br><span style="color:#526277;font-size:12px">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
+  const eventsAt = (events, date) => events.filter(event => event.date === date).map(event => `<div style="margin-bottom:7px"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<br><span style="color:#8b5a10;font-size:11px">${escapeHtml(entityLabel(event))}</span>` : ''}<br><span style="color:#526277;font-size:12px">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
   const eventCell = (events, date, side) => { const html = eventsAt(events, date); return `<div style="min-height:54px;padding:10px 12px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:13px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
   target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:900px"><div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:end;margin-bottom:14px"><div><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2></div><div style="text-align:center;color:#617187;font-size:12px">공통 시간축<br>↑ 최근</div><div style="text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2></div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'left')}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'right')}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
 }

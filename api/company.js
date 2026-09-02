@@ -30,7 +30,7 @@ function sortedCatalog() {
   });
 }
 
-const EVENT_SELECT = "id,occurred_at,title_ko,fact_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,article(canonical_url,source_name,source_tier)";
+const EVENT_SELECT = "id,occurred_at,title_ko,fact_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,article(canonical_url,source_name,source_tier)";
 
 export default async function handler(request, response) {
   if (!requireAccess(request, response)) return;
