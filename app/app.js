@@ -324,7 +324,7 @@ function renderCompany(){
   renderLayerMatrix(company);
 }
 function renderLayerMatrix(company){
-  const years = ['2023', '2024', '2025', '2026'];
+  const periods = ['2023 Q1','2023 Q2','2023 Q3','2023 Q4','2024 Q1','2024 Q2','2024 Q3','2024 Q4','2025 Q1','2025 Q2','2025 Q3','2025 Q4','2026 Q1','2026 Q2','2026 Q3','2026 Q4'];
   const layers = [
     ['시장', '수급·실적', 'supply-performance'], ['시장', '투자·생산기반', 'investment-production'], ['시장', '고객·상업화', 'customer-commercialization'], ['시장', '지역·해외전략', 'regional-overseas'],
     ['기술', '소재·화학계', 'technology-material-chemistry'], ['기술', '공정·성능', 'technology-process-performance'], ['기술', 'IP·표준', 'technology-ip-standard'], ['기술', '개발·인증·양산', 'technology-development']
@@ -333,14 +333,18 @@ function renderLayerMatrix(company){
     ...company.market.map(([date, title, fact, layer]) => ({date, title, fact, layer})),
     ...company.tech.map(([date, title, fact, layer]) => ({date, title, fact, layer}))
   ];
-  const cells = (layer, year) => events.filter(event => event.layer === layer && event.date.startsWith(year)).map(event => `<div style="margin-bottom:8px"><strong>${event.title}</strong><br><span style="color:#526277">${event.fact}</span></div>`).join('') || '<span style="color:#9aa7b6">—</span>';
-  document.querySelector('#dual-track').innerHTML = `<div style="overflow-x:auto"><table style="width:100%;min-width:920px;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec">구분</th><th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec">레이어</th>${years.map(year => `<th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec">${year}</th>`).join('')}</tr></thead><tbody>${layers.map(([group, label, layer]) => `<tr><td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;color:${group === '시장' ? '#236aa6' : '#8b5a10'}">${group}</td><td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700">${label}</td>${years.map(year => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cells(layer, year)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const quarterOf = date => {
+    const match = String(date).match(/^(\d{4})[.-](\d{2})/);
+    return match ? `${match[1]} Q${Math.floor((Number(match[2]) - 1) / 3) + 1}` : null;
+  };
+  const cells = (layer, period) => events.filter(event => event.layer === layer && quarterOf(event.date) === period).map(event => `<div style="margin-bottom:8px"><strong>${event.title}</strong><br><span style="color:#526277">${event.fact}</span></div>`).join('') || '<span style="color:#9aa7b6">—</span>';
+  document.querySelector('#dual-track').innerHTML = `<div style="overflow-x:auto"><table style="width:100%;min-width:2940px;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec;position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec;position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="text-align:left;padding:10px;border-bottom:1px solid #dbe3ec;white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${layers.map(([group, label, layer]) => `<tr><td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;color:${group === '시장' ? '#236aa6' : '#8b5a10'};position:sticky;left:0;background:#fff;z-index:1">${group}</td><td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:58px;background:#fff;z-index:1">${label}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:170px">${cells(layer, period)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function exportCompanyTimeline(){
   const company = companies[currentCompany];
   const sourceInfo = companySourceInfo[currentCompany] || { name: '출처 검수 대기', url: '' };
   const rows = [['회사', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
-  const addRow = (group, label, date, title, fact) => rows.push([companyDisplayNames[currentCompany], group, label, date.slice(0, 4), date, title, fact, sourceInfo.name, sourceInfo.url, '시드 데이터: 원문 발췌 미적재', '시드 데이터: 한국어 번역 미적재']);
+  const addRow = (group, label, date, title, fact) => { const month = Number(date.slice(5, 7)); const period = month ? `${date.slice(0, 4)} Q${Math.floor((month - 1) / 3) + 1}` : date.slice(0, 4); rows.push([companyDisplayNames[currentCompany], group, label, period, date, title, fact, sourceInfo.name, sourceInfo.url, '시드 데이터: 원문 발췌 미적재', '시드 데이터: 한국어 번역 미적재']); };
   company.market.forEach(([date, title, fact, layer]) => addRow('시장', marketLayerLabels[layer], date, title, fact));
   company.tech.forEach(([date, title, fact, layer]) => addRow('기술', technologyLayerLabels[layer], date, title, fact));
   if (window.XLSX) {
