@@ -120,9 +120,12 @@ function attachFeedback(node, article){
     buttons.forEach(item => { item.disabled = true; });
     try {
       const result = await fetch('/api/news', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ articleId: article.id, clientKey: feedbackClientKey(), vote }) });
-      if (!result.ok) throw new Error();
+      if (!result.ok) {
+        const payload = await result.json().catch(() => ({}));
+        throw new Error(`${result.status}${payload.status ? ` · ${payload.status}` : ''}`);
+      }
       buttons.forEach(item => item.classList.toggle('is-selected', item.dataset.vote === vote));
-    } catch { window.alert('의견을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.'); }
+    } catch (error) { window.alert(`의견을 저장하지 못했습니다. ${error.message || '응답을 확인할 수 없습니다.'}`); }
     finally { buttons.forEach(item => { item.disabled = false; }); }
   }));
 }

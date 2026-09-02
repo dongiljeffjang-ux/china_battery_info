@@ -18,6 +18,7 @@ export default async function handler(request, response) {
       });
       return response.status(200).json({ status: "saved", vote: saved?.[0]?.vote || vote });
     } catch (error) {
+      console.error("[FEEDBACK_SAVE_FAILED]", JSON.stringify({ articleId, message: error.message }));
       return response.status(502).json({ status: "feedback_save_failed", message: error.message });
     }
   }
