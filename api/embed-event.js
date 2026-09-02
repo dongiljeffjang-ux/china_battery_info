@@ -17,7 +17,8 @@ function flatten(event) {
 }
 
 export default async function handler(request, response) {
-  if (request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
+  // Vercel Cron은 GET으로 호출한다. 그 밖의 GET은 막는다.
+  if (request.method !== "POST" && !(request.method === "GET" && isCronRequest(request))) return response.status(405).json({ status: "method_not_allowed" });
   if (!isCronRequest(request) && !requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
 

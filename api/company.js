@@ -2,6 +2,7 @@ import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { requireAccess } from "./lib/access.js";
 import { COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
 import { groupSummary } from "../lib/company-groups.js";
+import { answerFromKnowledge } from "../lib/knowledge-search.js";
 
 const VALUE_CHAINS = ["cell", "cathode", "anode"];
 
@@ -32,8 +33,29 @@ function sortedCatalog() {
 
 const EVENT_SELECT = "id,occurred_at,title_ko,fact_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier)";
 
+// 근거 인용 질의응답. 새 함수 파일을 만들지 않으려고 기업 API에 붙였다.
+async function runAsk(request, response) {
+  const question = String(request.body?.question || request.query?.question || "").trim();
+  if (question.length < 2) return response.status(400).json({ status: "invalid_request", message: "질문을 입력해 주세요." });
+  if (question.length > 500) return response.status(400).json({ status: "invalid_request", message: "질문이 너무 깁니다." });
+  const companyId = String(request.body?.companyId || request.query?.companyId || "").trim();
+  if (companyId && !COMPANIES.some((item) => item.id === companyId)) return response.status(404).json({ status: "unknown_company" });
+  try {
+    const result = await answerFromKnowledge({ question, companyId: companyId || null });
+    console.info("[KNOWLEDGE_ASK]", JSON.stringify({ companyId: companyId || "all", matched: result.matched, sufficient: result.sufficient }));
+    return response.status(200).json({ status: "ok", question, company_id: companyId || null, ...result });
+  } catch (error) {
+    console.error("[KNOWLEDGE_ASK_FAILED]", JSON.stringify({ message: error.message }));
+    return response.status(502).json({ status: "ask_failed", message: error.message });
+  }
+}
+
 export default async function handler(request, response) {
   if (!requireAccess(request, response)) return;
+  if (request.method === "POST") {
+    if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
+    return runAsk(request, response);
+  }
   const companyId = String(request.query.companyId || "").trim();
   if (!companyId) return response.status(200).json({ status: "ok", selection_basis: SELECTION_BASIS, companies: sortedCatalog() });
 

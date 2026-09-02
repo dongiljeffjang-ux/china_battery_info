@@ -530,6 +530,56 @@ async function digestAllCompanies(){
 새로 추가 ${inserted}건${failed.length ? `
 실패 ${failed.length}곳: ${failed.join(', ')}` : ''}`);
 }
+// 벡터 지식에 질문한다. 근거가 없으면 답을 만들지 않고 무엇을 확인할지 안내받는다.
+async function askKnowledge(event){
+  event.preventDefault();
+  const input = document.querySelector('#ask-input');
+  const button = document.querySelector('#ask-submit');
+  const target = document.querySelector('#ask-result');
+  const question = input.value.trim();
+  if (question.length < 2) return;
+  const scoped = document.querySelector('#ask-scope-company').checked && currentCompany;
+  button.disabled = true; button.textContent = '찾는 중…';
+  target.innerHTML = '<p class="ask-empty">근거를 검색하고 있습니다…</p>';
+  try {
+    const result = await fetch('/api/company', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, companyId: scoped ? currentCompany : null })
+    });
+    const payload = await result.json().catch(() => ({}));
+    if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `HTTP ${result.status}`);
+    target.innerHTML = renderAskResult(payload, scoped);
+  } catch (error) {
+    target.innerHTML = `<p class="ask-empty">${escapeHtml(`답변을 가져오지 못했습니다: ${error.message}`)}</p>`;
+  } finally {
+    button.disabled = false; button.textContent = '찾기';
+  }
+}
+function renderAskResult(payload, scoped){
+  const parts = [];
+  const scopeNote = scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`;
+  if (payload.sufficient && payload.answer_ko) {
+    parts.push(`<p class="ask-answer">${escapeHtml(payload.answer_ko)}</p>`);
+  }
+  if (payload.conflicts_ko) {
+    parts.push(`<div class="ask-block"><p class="ask-label conflict">상충하는 근거</p><p class="ask-answer">${escapeHtml(payload.conflicts_ko)}</p></div>`);
+  }
+  if (payload.guidance_ko) {
+    parts.push(`<div class="ask-block"><p class="ask-label guide">${payload.sufficient ? '더 확인할 것' : '근거가 부족합니다 · 확인할 것'}</p><p class="ask-answer">${escapeHtml(payload.guidance_ko)}</p></div>`);
+  }
+  if (payload.sources?.length) {
+    const items = payload.sources.map(source => {
+      const head = [displayName(source.company_id), source.published_at, source.source_name].filter(Boolean).join(' · ');
+      const link = source.source_url ? ` <a href="${escapeHtml(source.source_url)}" target="_blank" rel="noreferrer">원문</a>` : '';
+      return `<li><span class="n">${source.n}</span>${escapeHtml(head)}${link}<br>${escapeHtml(source.excerpt)}</li>`;
+    }).join('');
+    parts.push(`<div class="ask-block"><p class="ask-label">근거 ${payload.sources.length}건</p><ul class="ask-sources">${items}</ul></div>`);
+  }
+  parts.push(`<p class="ask-empty" style="margin-top:10px">${escapeHtml(scopeNote)}</p>`);
+  return parts.join('');
+}
+
 // 이벤트를 벡터 DB에 채운다. 남은 건수가 0이 될 때까지 배치로 반복한다.
 async function embedPendingEvents(){
   const button = document.querySelector('#embed-events');
@@ -661,6 +711,7 @@ async function initialize(){
   document.querySelector('#digest-company').addEventListener('click', digestSelectedCompany);
   document.querySelector('#digest-all').addEventListener('click', digestAllCompanies);
   document.querySelector('#embed-events').addEventListener('click', embedPendingEvents);
+  document.querySelector('#ask-form').addEventListener('submit', askKnowledge);
   const supporting = document.querySelector('#include-supporting');
   supporting.checked = includeSupporting;
   supporting.addEventListener('change', async () => {

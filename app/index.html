@@ -107,6 +107,22 @@
           </div>
         </div>
 
+        <section class="ask-panel" aria-labelledby="ask-title">
+          <div class="ask-head">
+            <div>
+              <p class="eyebrow">EVIDENCE SEARCH</p>
+              <h2 id="ask-title">수집된 근거에 물어보기</h2>
+            </div>
+            <label class="ask-scope"><input type="checkbox" id="ask-scope-company"> 선택한 기업으로 한정</label>
+          </div>
+          <p class="ask-note">지금까지 수집·정리된 공시 근거에서만 답합니다. 근거가 없으면 답을 만들지 않고 무엇을 확인해야 하는지 안내합니다.</p>
+          <form id="ask-form" class="ask-form">
+            <input id="ask-input" type="text" maxlength="500" autocomplete="off" placeholder="예: 실리콘 음극을 양산 출하한 회사는 어디인가">
+            <button id="ask-submit" class="secondary-button" type="submit">찾기</button>
+          </form>
+          <div id="ask-result" class="ask-result"></div>
+        </section>
+
         <section class="company-picker-panel" aria-label="분석할 기업 선택">
           <div class="segmented-control" id="company-chain-tabs"></div>
           <div class="company-chips" id="company-chips"></div>
@@ -163,7 +179,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260902-event-embedding"></script>
+    <script src="./app.js?v=20260902-evidence-ask"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>
