@@ -185,37 +185,48 @@ function renderCandidateQueue(){
 }
 function renderHeadlineSankey(){
   const counts = new Map();
-  rangeFlows.forEach(({company_id, keyword}) => {
+  rangeFlows.forEach(({company_id, keyword, direction}) => {
     const normalizedKeyword = normalizeSankeyKeyword(keyword);
-    if (!normalizedKeyword) return;
-    const key = `${company_id}\u0000${normalizedKeyword}`;
+    if (!normalizedKeyword || !['positive', 'negative'].includes(direction)) return;
+    const key = `${company_id}\u0000${direction}\u0000${normalizedKeyword}`;
     counts.set(key, (counts.get(key) || 0) + 1);
   });
   const flows = [...counts.entries()].map(([key, count]) => {
-    const [company, keyword] = key.split('\u0000'); return { company, keyword, count };
+    const [company, direction, keyword] = key.split('\u0000'); return { company, direction, keyword, count };
   });
   const target = document.querySelector('#headline-sankey');
   if (!flows.length) {
-    target.innerHTML = '<p>선택 기간에 LLM 키워드 분류를 마친 비-Top 10 기사가 없습니다.</p>';
+    target.innerHTML = '<p>선택 기간에 확대·축소 헤드라인 신호로 분류된 비-Top 10 기사가 없습니다.</p>';
     return;
   }
-  const sourceNames = [...new Set(flows.map(flow => flow.company))];
-  const keywordNames = [...new Set(flows.map(flow => flow.keyword))];
-  const height = Math.max(310, Math.max(sourceNames.length, keywordNames.length) * 54 + 54);
+  const totals = new Map();
+  flows.forEach(flow => { const key = `${flow.direction}\u0000${flow.keyword}`; totals.set(key, (totals.get(key) || 0) + flow.count); });
+  const selectedNodes = ['positive', 'negative'].flatMap(direction => [...totals.entries()]
+    .filter(([key]) => key.startsWith(`${direction}\u0000`))
+    .sort((a, b) => b[1] - a[1]).slice(0, 4)
+    .map(([key, count]) => ({ direction, keyword: key.split('\u0000')[1], count })));
+  const visible = flows.filter(flow => selectedNodes.some(node => node.direction === flow.direction && node.keyword === flow.keyword));
+  const sourceNames = [...new Set(visible.map(flow => flow.company))];
+  const positiveNodes = selectedNodes.filter(node => node.direction === 'positive');
+  const negativeNodes = selectedNodes.filter(node => node.direction === 'negative');
+  const height = Math.max(300, sourceNames.length * 34 + 70, selectedNodes.length * 34 + 112);
   const yFor = (names, name, top, gap) => top + names.indexOf(name) * gap;
   const label = name => companyDisplayNames[name] || name;
   const curve = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 130} ${y1}, ${x2 - 130} ${y2}, ${x2} ${y2}`;
-  const links = flows.map(flow => {
-    const sy = yFor(sourceNames, flow.company, 48, 54) + 12;
-    const ky = yFor(keywordNames, flow.keyword, 48, 54) + 12;
-    return `<path d="${curve(164, sy, 600, ky)}" fill="none" stroke="#4f8d70" stroke-width="${Math.min(28, 5 + flow.count * 4)}" stroke-opacity=".55"/>`;
+  const nodeY = node => node.direction === 'positive' ? 62 + positiveNodes.indexOf(node) * 34 : 96 + positiveNodes.length * 34 + negativeNodes.indexOf(node) * 34;
+  const links = visible.map(flow => {
+    const sy = yFor(sourceNames, flow.company, 48, 34) + 12;
+    const node = selectedNodes.find(item => item.direction === flow.direction && item.keyword === flow.keyword);
+    const ky = nodeY(node) + 12;
+    const color = flow.direction === 'positive' ? '#398261' : '#bc5b5b';
+    return `<path d="${curve(164, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58"/>`;
   }).join('');
   const nodes = (names, x, top, gap, fill, formatter = value => value) => names.map(name => {
     const y = yFor(names, name, top, gap);
     return `<g><rect x="${x}" y="${y}" width="190" height="24" rx="4" fill="${fill}"/><text x="${x + 8}" y="${y + 16}" fill="#14263d" font-size="11" font-weight="700">${formatter(name)}</text></g>`;
   }).join('');
-  const keywordLabel = keyword => `${keyword} · ${flows.filter(flow => flow.keyword === keyword).reduce((sum, flow) => sum + flow.count, 0)}건`;
-  target.innerHTML = `<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 핵심 키워드 기사 건수 흐름도" style="display:block;width:100%;height:auto;min-height:310px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#617187" font-size="11" font-weight="700">핵심 키워드 · 기사 수</text>${links}${nodes(sourceNames, 14, 48, 54, '#eaf3fb', label)}${nodes(keywordNames, 600, 48, 54, '#e3f5ed', keywordLabel)}</svg>`;
+  const signalNodes = selectedNodes.map(node => `<g><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${node.keyword} · ${node.count}건</text></g>`).join('');
+  target.innerHTML = `<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${nodes(sourceNames, 14, 48, 34, '#eaf3fb', label)}${signalNodes}</svg>`;
 }
 function normalizeSankeyKeyword(value){
   const keyword = String(value || '').replace(/[·•]/g, ' ').replace(/\s+/g, ' ').trim();

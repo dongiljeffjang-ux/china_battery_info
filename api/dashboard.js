@@ -24,7 +24,7 @@ export default async function handler(request, response) {
       dashboardQuery("top10", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,top10_rank,article_company(company_id,company(name_ko,type_tags))&is_top10=eq.true&verification_status=in.(pending_review,approved)&order=top10_rank.asc&limit=10"),
       dashboardQuery("company_news", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=in.(pending_review,approved)&order=published_at.desc&limit=100"),
       dashboardQuery("raw_pending", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.pending&order=published_at.desc&limit=100"),
-      dashboardQuery("sankey", `article?select=id,published_at,keywords_ko,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lte.${to}&verification_status=in.(pending_review,approved)&is_top10=eq.false&order=published_at.desc&limit=500`),
+      dashboardQuery("sankey", `article?select=id,title_ko,title_original,published_at,keywords_ko,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lte.${to}&verification_status=in.(pending_review,approved)&is_top10=eq.false&order=published_at.desc&limit=500`),
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
     const flows = sankeyFlowsFromArticles(flowEvents);
