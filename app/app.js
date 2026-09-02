@@ -479,6 +479,8 @@ function normalizeEvent(event){
     : (marketLayerLabels[layer] ? '시장' : '기술');
   return {
     date: String(event.occurred_at || '').slice(0, 10),
+    precision: event.occurred_precision || 'day',
+    dateBasis: event.occurred_basis || '',
     group, layer, track: group === '기술' ? 'tech' : 'market',
     label: layerLabels[layer] || '미분류',
     both: event.trajectory_track === 'both',
@@ -519,6 +521,20 @@ async function loadCompanyTimeline(companyId){
 }
 // 과거 연도는 반기로 묶고, 사용자가 보고 있는 당해 연도만 분기로 나눈다.
 // 3년치를 분기로 늘어놓으면 열이 16개가 되어 읽기 어렵다.
+// 연간 집계를 특정 하루의 일처럼 보여주면 안 된다. 날짜를 믿을 수 있는 데까지만 적는다.
+function displayDate(event){
+  const date = String(event.date || '');
+  if (!date) return '시점미상';
+  if (event.precision === 'year') return `${date.slice(0, 4)}년`;
+  if (event.precision === 'half') return `${date.slice(0, 4)}년 ${Number(date.slice(5, 7)) <= 6 ? '상' : '하'}반기`;
+  if (event.precision === 'month') return `${date.slice(0, 4)}-${date.slice(5, 7)}`;
+  return date;
+}
+function dateTip(event){
+  const label = { year: '연 단위', half: '반기 단위', month: '월 단위', day: '일 단위' }[event.precision] || '일 단위';
+  return event.dateBasis ? `시점 정밀도: ${label}\n근거: ${event.dateBasis}` : `시점 정밀도: ${label}`;
+}
+
 function periodOf(date){
   const match = String(date).match(/^(\d{4})-(\d{2})/);
   if (!match) return null;
@@ -600,8 +616,8 @@ function renderCompanyEvents(timeline){
     return;
   }
   grid.innerHTML = [...events].sort((a, b) => b.date.localeCompare(a.date)).map(event => {
-    const tags = [event.date, evidenceLabels[event.kind] || '', event.group, event.label, event.both ? '시장·기술' : '', entityLabel(event)].filter(Boolean).join(' · ');
-    return `<article class="snapshot ${event.track}"><span class="snapshot-year">${escapeHtml(tags)}</span><h3>${escapeHtml(event.title)}</h3><ul><li>${escapeHtml(event.fact)}</li></ul><p style="margin:0;font-size:12px;color:#617187">${sourceLink(event)}</p></article>`;
+    const tags = [displayDate(event), evidenceLabels[event.kind] || '', event.group, event.label, event.both ? '시장·기술' : '', entityLabel(event)].filter(Boolean).join(' · ');
+    return `<article class="snapshot ${event.track}"><span class="snapshot-year" data-tip="${escapeHtml(dateTip(event))}">${escapeHtml(tags)}</span><h3>${escapeHtml(event.title)}</h3><ul><li>${escapeHtml(event.fact)}</li></ul><p style="margin:0;font-size:12px;color:#617187">${sourceLink(event)}</p></article>`;
   }).join('');
 }
 function renderLayerMatrix(timeline){
@@ -776,9 +792,9 @@ async function exportCompanyTimeline(){
   const timeline = await loadCompanyTimeline(currentCompany);
   const events = visibleEvents(timeline);
   if (!events.length) { window.alert(timelineNotice(timeline.status) || '내보낼 이벤트가 없습니다.'); return; }
-  const rows = [['회사', '발생 법인', '근거', '구분', '레이어', '시기', '발생일', '주요 사실', '상세', '지역', '시계열 등급', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
+  const rows = [['회사', '발생 법인', '근거', '구분', '레이어', '시기', '발생 시점', '시점 정밀도', '주요 사실', '상세', '지역', '시계열 등급', '출처', '출처 링크', '원문 발췌', '원문 한국어 번역']];
   [...events].sort((a, b) => a.date.localeCompare(b.date)).forEach(event => {
-    rows.push([company.name_ko, entityLabel(event), evidenceLabels[event.kind] || event.kind, event.group, event.label, periodOf(event.date) || event.date.slice(0, 4), event.date, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
+    rows.push([company.name_ko, entityLabel(event), evidenceLabels[event.kind] || event.kind, event.group, event.label, periodOf(event.date) || event.date.slice(0, 4), displayDate(event), event.precision, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
   });
   if (window.XLSX) {
     const sheet = XLSX.utils.aoa_to_sheet(rows);
@@ -919,6 +935,50 @@ async function generateCompareReport(){
   }
 }
 
+// 저장된 연차보고서 이벤트의 시점을 회사마다 다시 확인한다.
+// 한 번에 20건씩 처리하므로 남은 건수가 0이 될 때까지 같은 회사를 반복해서 부른다.
+async function redateAllCompanies(){
+  const targets = companyCatalog.map(company => company.id);
+  if (!targets.length) return;
+  if (!window.confirm(`추적 ${targets.length}개사의 연차보고서 이벤트 시점을 다시 확인합니다.
+기간 집계는 그대로 두고 시점 사건만 웹 검색으로 실제 시기를 찾습니다.
+수십 분이 걸리고 그만큼 LLM 비용이 발생합니다. 진행할까요?`)) return;
+  const button = document.querySelector('#redate-all');
+  button.disabled = true;
+  showBusy('이벤트 시점 재확인', `0/${targets.length}`);
+  let checked = 0, changed = 0;
+  const failed = [];
+  try {
+    for (const [index, id] of targets.entries()) {
+      for (let pass = 0; pass < 6; pass += 1) {
+        updateBusy(`${index + 1}/${targets.length} · ${displayName(id)} · 확인 ${checked}건 / 수정 ${changed}건`);
+        let result;
+        try {
+          const response = await fetch(`/api/ingest-rss?redate=${encodeURIComponent(id)}`, { method: 'POST' });
+          result = await response.json();
+          if (result.status !== 'ok') throw new Error(result.message || result.status);
+        } catch (error) { failed.push(displayName(id)); break; }
+        checked += result.checked || 0;
+        changed += result.changed || 0;
+        if (!result.checked || !result.remaining) break;
+      }
+      companyTimelineCache.delete(id);
+    }
+  } finally {
+    hideBusy();
+    button.disabled = false;
+  }
+  window.alert(`시점 재확인 완료: ${checked}건 확인 / ${changed}건 수정${failed.length ? `\n실패: ${failed.join(', ')}` : ''}`);
+  await renderCompany();
+  await renderComparison();
+}
+
+// 표시 라벨(2025년, 2025년 하반기 등)만으로는 시간 순서를 정할 수 없으므로 원래 날짜로 정렬한다.
+function sortKeyOf(eventsA, eventsB, label){
+  const match = [...eventsA, ...eventsB].find(event => displayDate(event) === label);
+  return match ? match.date : label;
+}
+
 async function renderComparison(){
   const target = document.querySelector('#comparison-grid');
   const selectA = document.querySelector('#compare-a');
@@ -931,12 +991,14 @@ async function renderComparison(){
   const eventsA = visibleEvents(timelineA), eventsB = visibleEvents(timelineB);
   // 리포트는 화면에 그려진 것과 같은 근거를 써야 한다. 여기서 확정된 목록을 그대로 보관한다.
   lastComparison = { a, b, eventsA, eventsB };
-  const dates = [...new Set([...eventsA, ...eventsB].map(event => event.date))].sort().reverse();
+  // 축은 정밀도 표기로 묶는다. 연간 집계 여러 건이 12월 31일 한 칸에 쌓이면 그 해의 일로 읽히지 않는다.
+  const dates = [...new Set([...eventsA, ...eventsB].map(event => displayDate(event)))]
+    .sort((x, y) => sortKeyOf(eventsA, eventsB, y).localeCompare(sortKeyOf(eventsA, eventsB, x)));
   if (!dates.length) {
     target.innerHTML = `<p>${escapeHtml(timelineNotice(timelineA.status) || timelineNotice(timelineB.status) || '두 기업 모두 확인된 이벤트가 없습니다.')}</p>`;
     return;
   }
-  const eventsAt = (events, date) => events.filter(event => event.date === date).map(event => `<div style="margin-bottom:7px"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<br><span style="color:#8b5a10;font-size:11px">${escapeHtml(entityLabel(event))}</span>` : ''}<br><span style="color:#526277;font-size:12px">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
+  const eventsAt = (events, date) => events.filter(event => displayDate(event) === date).map(event => `<div style="margin-bottom:7px"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<br><span style="color:#8b5a10;font-size:11px">${escapeHtml(entityLabel(event))}</span>` : ''}<br><span style="color:#526277;font-size:12px">${escapeHtml(event.fact)}</span><br>${sourceLink(event, '11px')}</div>`).join('');
   const eventCell = (events, date, side) => { const html = eventsAt(events, date); return `<div style="min-height:54px;padding:10px 12px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:13px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
   target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:900px"><div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:end;margin-bottom:14px"><div><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2></div><div style="text-align:center;color:#617187;font-size:12px">공통 시간축<br>↑ 최근</div><div style="text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2></div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'left')}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'right')}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
 }
@@ -985,6 +1047,7 @@ async function initialize(){
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
   document.querySelector('#digest-company').addEventListener('click', digestSelectedCompany);
   document.querySelector('#digest-all').addEventListener('click', digestAllCompanies);
+  document.querySelector('#redate-all').addEventListener('click', redateAllCompanies);
   document.querySelector('#embed-events').addEventListener('click', embedPendingEvents);
   document.querySelector('#ask-form').addEventListener('submit', askKnowledge);
   document.querySelector('#news-more').addEventListener('click', () => { topNewsExpanded = !topNewsExpanded; renderTopNews(); });

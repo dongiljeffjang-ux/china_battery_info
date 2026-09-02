@@ -36,7 +36,7 @@ function sortedCatalog() {
   });
 }
 
-const EVENT_SELECT = "id,occurred_at,title_ko,fact_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier)";
+const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,fact_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier)";
 
 // 근거 인용 질의응답. 새 함수 파일을 만들지 않으려고 기업 API에 붙였다.
 async function runAsk(request, response) {

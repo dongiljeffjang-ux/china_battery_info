@@ -5,7 +5,7 @@ import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
 import { llmConfig } from "../lib/llm-provider.js";
-import { backfillCompanyEvents, digestReport } from "../lib/event-backfill.js";
+import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
 
 export const maxDuration = 60;
@@ -118,6 +118,44 @@ async function runBackfill(response, companyId, sinceParam, mode) {
   }
 }
 
+// 이미 저장된 연차보고서 이벤트의 시점을 다시 확인한다.
+// 기간 집계는 보고 기간 말일이 맞으므로 그대로 두고, 시점 사건만 실제 시기를 찾아 고친다.
+async function runRedate(response, companyId) {
+  const company = COMPANIES.find((item) => item.id === companyId);
+  if (!company) return response.status(404).json({ status: "unknown_company", company_id: companyId });
+  if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
+  try {
+    // 아직 확인하지 않은 것만 집는다. 한 번 확인한 이벤트를 다시 검색하면 비용만 든다.
+    const events = await supabaseRest(`event?select=id,occurred_at,title_ko,fact_ko&company_id=eq.${encodeURIComponent(companyId)}&evidence_kind=eq.annual_report&occurred_basis=is.null&order=occurred_at.asc&limit=20`);
+    if (!events.length) return response.status(200).json({ status: "ok", company_id: companyId, company_name: company.name_ko, checked: 0, changed: 0, remaining: 0 });
+    const { items, checked, provider } = await redateReportEvents({ company, events });
+    let changed = 0;
+    for (const item of items) {
+      await supabaseRest(`event?id=eq.${encodeURIComponent(item.id)}`, {
+        method: "PATCH",
+        body: { occurred_at: item.occurred_at, occurred_precision: item.occurred_precision, occurred_basis: item.occurred_basis }
+      });
+      if (item.changed) changed += 1;
+    }
+    // 시점이 바뀐 이벤트는 벡터 청크의 [시점] 줄도 달라지므로 다시 임베딩한다.
+    let embedded = 0;
+    if (items.length) {
+      try {
+        const updated = await supabaseRest(`event?select=*&id=in.(${items.map((item) => item.id).join(",")})`);
+        embedded = (await embedEvents((updated || []).map((row) => ({ ...row, company_name_ko: company.name_ko })))).chunks;
+      } catch (error) {
+        console.error("[REDATE_EMBEDDING_FAILED]", JSON.stringify({ companyId, message: error.message }));
+      }
+    }
+    const left = await supabaseRest(`event?select=id&company_id=eq.${encodeURIComponent(companyId)}&evidence_kind=eq.annual_report&occurred_basis=is.null&limit=200`);
+    console.info("[REDATE_DONE]", JSON.stringify({ companyId, checked, changed, remaining: left.length }));
+    return response.status(200).json({ status: "ok", company_id: companyId, company_name: company.name_ko, checked, changed, embedded, remaining: left.length, provider });
+  } catch (error) {
+    console.error("[REDATE_FAILED]", JSON.stringify({ companyId, message: error.message }));
+    return response.status(502).json({ status: "redate_failed", company_id: companyId, message: error.message });
+  }
+}
+
 async function handleRequest(request, response) {
   if (request.method !== "GET" && request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
   if (!isCronRequest(request) && !requireAccess(request, response)) return;
@@ -129,6 +167,8 @@ async function handleRequest(request, response) {
     const kind = ["annual", "semiannual", "quarterly"].includes(requested) ? requested : "annual";
     return runBackfill(response, digestCompanyId, null, kind);
   }
+  const redateCompanyId = String(request.query?.redate || request.body?.redate || "").trim();
+  if (redateCompanyId) return runRedate(response, redateCompanyId);
   const backfillCompanyId = String(request.query?.backfill || request.body?.backfill || "").trim();
   if (backfillCompanyId) return runBackfill(response, backfillCompanyId, request.query?.since || request.body?.since, "web");
   let stage = "company_seed";
