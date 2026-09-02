@@ -1,4 +1,5 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { flushTraces } from "../lib/tracing.js";
 import { requireAccess } from "./lib/access.js";
 import { processPendingArticle } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
@@ -113,7 +114,7 @@ async function runBackfill(response, companyId, sinceParam, mode) {
   }
 }
 
-export default async function handler(request, response) {
+async function handleRequest(request, response) {
   if (request.method !== "GET" && request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
   if (!isCronRequest(request) && !requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
@@ -179,5 +180,14 @@ export default async function handler(request, response) {
   } catch (error) {
     console.error("[INGESTION_FAILED]", JSON.stringify({ stage, message: error.message }));
     return response.status(502).json({ status: "ingestion_failed", stage, message: error.message });
+  }
+}
+
+// 서버리스 함수는 응답 직후 종료돼 배경 전송이 유실된다. 끝나기 전에 추적을 밀어 넣는다.
+export default async function handler(request, response) {
+  try {
+    return await handleRequest(request, response);
+  } finally {
+    await flushTraces();
   }
 }

@@ -26,12 +26,27 @@ let approvedTop10 = [];
 let approvedCompanyNews = [];
 let pendingCandidates = [];
 let rangeFlows = [];
+const TOP_NEWS_PREVIEW = 4;
+let topNewsExpanded = false;
 
 function companyById(id){ return companyCatalog.find(company => company.id === id) || null; }
 function displayName(id){ return companyById(id)?.name_ko || id; }
 function companiesInValueChain(chain){ return companyCatalog.filter(company => company.value_chain === chain); }
 function escapeHtml(value){ return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 const summaryCategoryClass = { '셀': 'cell', '양극재': 'cathode', '음극재': 'anode', '정책·공급망': 'policy' };
+
+// 요약 문장 속 수치는 훑어볼 때 가장 먼저 눈에 들어와야 하는 정보라 굵게 강조한다.
+const METRIC_UNITS = ['GWh', 'MWh', 'kWh', '%p', '만톤', '조원', '억원', '만원', '위안', '%', '톤', '원', '배', '위'];
+const METRIC_PATTERN = new RegExp(`(\\d[\\d,.]*\\s?(?:${METRIC_UNITS.map(unit => unit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')}))`, 'g');
+function highlightMetrics(text){ return escapeHtml(text).replace(METRIC_PATTERN, '<strong>$1</strong>'); }
+// Daily 요약 항목은 "회사명, 사실 - 수치" 형식으로 생성되므로 회사명만 앞에서 따로 굵게 표시한다.
+function formatSummaryPoint(point){
+  const commaIndex = point.indexOf(',');
+  if (commaIndex > 0 && commaIndex <= 18) {
+    return `<strong class="pt-company">${escapeHtml(point.slice(0, commaIndex))}</strong>${highlightMetrics(point.slice(commaIndex))}`;
+  }
+  return highlightMetrics(point);
+}
 
 // Daily 리포트는 "## 카테고리" 다음에 "- 항목"이 오는 형식으로 저장된다.
 // 형식이 없는 예전 리포트는 카테고리 없는 한 덩어리로 표시한다.
@@ -60,7 +75,7 @@ function renderDailySummary(){
     const chip = section.category
       ? `<p class="summary-cat ${summaryCategoryClass[section.category] || ''}">${escapeHtml(section.category)}</p>`
       : '';
-    return `<div class="summary-block">${chip}<ul>${section.points.map(point => `<li>${escapeHtml(point)}</li>`).join('')}</ul></div>`;
+    return `<div class="summary-block">${chip}<ul>${section.points.map(point => `<li>${formatSummaryPoint(point)}</li>`).join('')}</ul></div>`;
   }).join('');
 }
 function feedbackClientKey(){
@@ -89,16 +104,25 @@ function attachFeedback(node, article){
 function renderTopNews(){
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#news-feed'); target.innerHTML = '';
+  const more = document.querySelector('#news-more');
   if (!approvedTop10.length) {
+    if (more) more.hidden = true;
     return;
   }
-  approvedTop10.forEach((item, index) => {
+  // 처음에는 4건만 보이고, 더보기로 Top 10까지 펼친다.
+  const visible = topNewsExpanded ? approvedTop10 : approvedTop10.slice(0, TOP_NEWS_PREVIEW);
+  if (more) {
+    const hidden = approvedTop10.length - TOP_NEWS_PREVIEW;
+    more.hidden = hidden <= 0;
+    more.textContent = topNewsExpanded ? '접기' : `더보기 ${hidden}건`;
+  }
+  visible.forEach((item, index) => {
     const node = template.content.cloneNode(true);
     const sector = node.querySelector('.sector-tag'); sector.textContent = `TOP ${index + 1}`; sector.classList.toggle('anode', false);
-    node.querySelector('.confidence-tag').textContent = item.confidence;
+    const confidenceTag = node.querySelector('.confidence-tag'); confidenceTag.textContent = item.confidence; confidenceTag.title = item.confidenceTitle || '';
     node.querySelector('time').textContent = item.date;
     node.querySelector('h3').textContent = `${displayName(item.company)} · ${item.title}`;
-    node.querySelector('.news-fact').textContent = item.fact;
+    node.querySelector('.news-fact').innerHTML = highlightMetrics(item.fact);
     node.querySelector('.impact-reason').textContent = item.why;
     node.querySelector('a').href = item.url;
     attachFeedback(node, item);
@@ -214,10 +238,10 @@ function renderCompanyNews(){
   filtered.forEach(item => {
     const node = template.content.cloneNode(true);
     const sector = node.querySelector('.sector-tag'); sector.textContent = displayName(item.company); sector.classList.toggle('anode', false);
-    node.querySelector('.confidence-tag').textContent = item.confidence;
+    const confidenceTag = node.querySelector('.confidence-tag'); confidenceTag.textContent = item.confidence; confidenceTag.title = item.confidenceTitle || '';
     node.querySelector('time').textContent = item.date;
     node.querySelector('h3').textContent = item.title;
-    node.querySelector('.news-fact').textContent = item.fact;
+    node.querySelector('.news-fact').innerHTML = highlightMetrics(item.fact);
     node.querySelector('.impact-reason').textContent = item.why;
     node.querySelector('a').href = item.url;
     attachFeedback(node, item);
@@ -236,8 +260,9 @@ function mapDashboardArticle(article){
     date: article.published_at ? article.published_at.slice(0, 10).replaceAll('-', '.') : '날짜 미상',
     title: article.title_ko || article.title_original,
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
-    why: article.is_top10 ? '헤드라인 선별 후 본문 정독·팩트 요약 완료' : article.verification_status === 'pending' ? '미분석 수집 원문' : '분석된 회사 이벤트',
-    confidence: article.verification_status === 'pending_review' ? '원문 본문 대조 팩트체크 완료' : article.verification_status === 'pending' ? '미분석' : article.source_tier || '검수 완료',
+    why: `출처: ${article.source_name || '출처 미상'}`,
+    confidence: article.verification_status === 'pending_review' ? '본문대조 완료' : article.verification_status === 'pending' ? '미분석' : article.source_tier || '검수 완료',
+    confidenceTitle: article.verification_status === 'pending_review' ? '원문 본문 대조 팩트체크 완료' : article.verification_status === 'pending' ? '미분석 수집 원문' : article.source_tier || '검수 완료',
     url: article.canonical_url,
     sourceName: article.source_name,
     classification: classifyCandidate(article)
@@ -712,6 +737,7 @@ async function initialize(){
   document.querySelector('#digest-all').addEventListener('click', digestAllCompanies);
   document.querySelector('#embed-events').addEventListener('click', embedPendingEvents);
   document.querySelector('#ask-form').addEventListener('submit', askKnowledge);
+  document.querySelector('#news-more').addEventListener('click', () => { topNewsExpanded = !topNewsExpanded; renderTopNews(); });
   const supporting = document.querySelector('#include-supporting');
   supporting.checked = includeSupporting;
   supporting.addEventListener('change', async () => {

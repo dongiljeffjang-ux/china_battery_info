@@ -71,10 +71,19 @@ export async function generateDailyReport(articleIds = []) {
   }
   const result = await selectTop10(candidates, preferenceExamples);
   const candidateIds = new Set(candidates.map((article) => article.id));
-  const selected = result.top10
+  // 모델이 매긴 순위는 비거나 중복될 수 있다. 위치를 그대로 믿으면 그 뒤가 통째로 잘리므로,
+  // 후보에 있는 항목만 남기고 중복을 걷어낸 뒤 1번부터 다시 매긴다.
+  const seen = new Set();
+  const selected = (result.top10 || [])
     .filter((item) => candidateIds.has(item.article_id))
-    .sort((a, b) => a.rank - b.rank)
-    .filter((item, index, all) => item.rank === index + 1 && all.findIndex((other) => other.article_id === item.article_id) === index);
+    .sort((a, b) => (a.rank || 99) - (b.rank || 99))
+    .filter((item) => {
+      if (seen.has(item.article_id)) return false;
+      seen.add(item.article_id);
+      return true;
+    })
+    .slice(0, 10)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
 
   await supabaseRest("article?is_top10=eq.true", { method: "PATCH", body: { is_top10: false, top10_rank: null, updated_at: new Date().toISOString() } });
   for (const item of selected) {
