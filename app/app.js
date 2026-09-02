@@ -176,7 +176,9 @@ function renderCandidateQueue(){
 function renderHeadlineSankey(){
   const counts = new Map();
   rangeFlows.forEach(({company_id, keyword}) => {
-    const key = `${company_id}\u0000${keyword}`;
+    const normalizedKeyword = normalizeSankeyKeyword(keyword);
+    if (!normalizedKeyword) return;
+    const key = `${company_id}\u0000${normalizedKeyword}`;
     counts.set(key, (counts.get(key) || 0) + 1);
   });
   const flows = [...counts.entries()].map(([key, count]) => {
@@ -204,6 +206,21 @@ function renderHeadlineSankey(){
   }).join('');
   const keywordLabel = keyword => `${keyword} · ${flows.filter(flow => flow.keyword === keyword).reduce((sum, flow) => sum + flow.count, 0)}건`;
   target.innerHTML = `<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 핵심 키워드 기사 건수 흐름도" style="display:block;width:100%;height:auto;min-height:310px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#617187" font-size="11" font-weight="700">핵심 키워드 · 기사 수</text>${links}${nodes(sourceNames, 14, 48, 54, '#eaf3fb', label)}${nodes(keywordNames, 600, 48, 54, '#e3f5ed', keywordLabel)}</svg>`;
+}
+function normalizeSankeyKeyword(value){
+  const keyword = String(value || '').replace(/[·•]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!keyword) return null;
+  const companyOnly = /^(?:catl|byd|lg\s*energy\s*solution|lges|gotion|high-tech|calb|eve|(?:닝더)?시대|비야디|국헌|중촹신항|억웨이|고션)(?:[·,、\s/-]+(?:catl|byd|lg\s*energy\s*solution|lges|gotion|high-tech|calb|eve|(?:닝더)?시대|비야디|국헌|중촹신항|억웨이|고션))*$/i;
+  if (companyOnly.test(keyword)) return null;
+  const compact = keyword.replace(/[\s·,，·-]/g, '').toLowerCase();
+  if (/구이저우|贵州/.test(keyword) && /프로젝트|项目|일체화|통합/.test(keyword)) return '구이저우 소재 프로젝트';
+  if (/홍콩|hk|h주/.test(keyword) && /상장|listing|ipo/.test(keyword)) return '홍콩 상장';
+  if (/가동률|产能利用率|생산능력이용률/.test(keyword)) return '가동률';
+  if (/(인산철|lfp|磷酸铁).*(양극|正极).*(판매|출하|销量|出货)/.test(keyword)) return 'LFP 양극재 판매·출하';
+  if (/증설|扩产|产能/.test(keyword) && /양극|正极/.test(keyword)) return '양극재 증설';
+  if (/증설|扩产|产能/.test(keyword) && /음극|负极/.test(keyword)) return '음극재 증설';
+  if (/프로젝트|项目/.test(keyword) && compact.length < 7) return null;
+  return keyword;
 }
 function renderCompanyNews(){
   const companiesInNews = ['all', ...new Set(approvedCompanyNews.map(item => item.company))];

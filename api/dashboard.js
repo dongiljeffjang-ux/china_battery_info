@@ -1,5 +1,6 @@
 import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { requireAccess } from "./lib/access.js";
+import { sankeyFlowsFromArticles } from "../lib/sankey-normalization.js";
 
 async function dashboardQuery(name, path) {
   try {
@@ -26,7 +27,7 @@ export default async function handler(request, response) {
       dashboardQuery("sankey", `article?select=id,published_at,keywords_ko,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lte.${to}&verification_status=in.(pending_review,approved)&is_top10=eq.false&order=published_at.desc&limit=500`),
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
-    const flows = flowEvents.flatMap((article) => (article.article_company || []).flatMap((link) => (article.keywords_ko || []).map((keyword) => ({ company_id: link.company_id, keyword }))));
+    const flows = sankeyFlowsFromArticles(flowEvents);
     return response.status(200).json({ status: "ok", report: reports[0] || null, top10, companyNews, pendingNews, flows, counts: { top10: top10.length, company_verified: companyNews.length, raw_pending: pendingNews.length } });
   } catch (error) {
     return response.status(502).json({ status: error.code || "db_error", message: "Dashboard data could not be loaded." });
