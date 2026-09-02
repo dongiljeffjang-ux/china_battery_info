@@ -12,32 +12,39 @@
 
 ```mermaid
 flowchart LR
-  RSS[Google News RSS\nChina News Finance RSS] --> INGEST[/Vercel: ingest-rss\n일일 Cron 또는 수동 수집/]
-  INGEST -->|제목·링크·발행일\n회사 별칭 매칭| ARTICLE[(Supabase\narticle · article_company)]
+  OAI[OpenAI 웹 검색<br>셀·양극재·음극재 3회] --> INGEST
+  DS[DeepSeek 웹 검색<br>중국 현지 출처 3회] --> INGEST
+  CATLNEWS[CATL 뉴스룸] --> INGEST
+  CNINFO[CNINFO 공시<br>종목코드 화이트리스트 22개사] --> INGEST
 
-  INGEST -->|Cron 인증 요청만| PROCESS[/LLM 본문 처리\nprocess-article/]
-  PROCESS -->|원문 일시 취득\n한국어 제목·요약·키워드 1~3개\n시장/기술 이벤트 추출| ARTICLE
-  PROCESS --> EVENT[(Supabase\nevent)]
+  INGEST[/Vercel: ingest-rss<br>일일 Cron 또는 수동 수집/]
+  INGEST -->|URL 중복 제거<br>회사·그룹 계열사 별칭 매칭| ARTICLE[(Supabase<br>article · article_company)]
 
-  ARTICLE -->|pending_review 기사\nTop 10 선별| DAILY[/LLM Daily 생성\ngenerate-daily/]
-  DAILY --> REPORT[(Supabase\ndaily_report)]
-  DAILY -->|Top 10 플래그·순위| ARTICLE
+  ARTICLE -->|web_search_* 또는 CATL 뉴스룸만<br>헤드라인 점수 상위 10건| PROCESS[/LLM 본문 처리<br>process-article/]
+  ARTICLE -.->|공시는 헤드라인 선별에서 제외돼<br>분석되지 않고 pending으로 남는다| PROCESS
+
+  PROCESS -->|원문 보관·한국어 제목·요약·키워드| ARTICLE
+  PROCESS -->|시장/기술 트랙·레이어·발생 법인| EVENT[(Supabase<br>event)]
+  PROCESS --> VECTOR[(Supabase pgvector<br>knowledge_chunk)]
+
+  ARTICLE -->|Top 10 선별·플래그| DAILY[/LLM Daily 생성<br>generate-daily/]
+  DAILY --> REPORT[(Supabase<br>daily_report)]
 
   ARTICLE --> DASH[/Vercel: dashboard API/]
   EVENT --> DASH
   REPORT --> DASH
-  DASH --> UI[China Battery Lens\nVercel Web UI]
+  DASH --> UI[China Battery Lens<br>Vercel Web UI]
 
-  UI -->|Top 10·Daily 요약| DASH
-  UI -->|From~To 기간| DASH
-  DASH -->|Top 10 제외 기사\n기업 → LLM 키워드(n건)| UI
-
-  EVENT -->|승인 후| EMBED[/embed-event/]
-  EMBED --> VECTOR[(Supabase pgvector\nknowledge_chunk)]
+  EVENT --> COMPANY[/Vercel: company API<br>회사 마스터 · 그룹 · 이벤트 시계열/]
+  COMPANY --> UI
   VECTOR -. 향후 RAG 챗 .-> UI
 ```
 
-현재 RSS 수집은 공개 트리거를 허용하고, 비용이 발생하는 본문 LLM 처리·Daily 생성은 Vercel Cron의 `CRON_SECRET` 인증 요청에서만 실행한다. 뉴스 원문은 LLM 처리 중에만 일시 취득하고 저장하지 않는다.
+수집은 공개 트리거를 허용하고, 비용이 발생하는 본문 LLM 처리·Daily 생성은 Vercel Cron의 `CRON_SECRET` 인증 요청에서만 실행한다. 뉴스 원문은 사용자의 명시 요구로 `article.body_original`에 보관하며 청킹·임베딩에 사용한다.
+
+RSS 수집기는 웹 검색 방식으로 전환하면서 호출이 끊겨 제거했다. 실제 수집 경로는 위 네 가지다.
+
+CNINFO 공시는 수집·저장되지만 `selectHeadlineTop10()`이 `web_search_*`와 CATL 뉴스룸만 선별 대상으로 삼기 때문에 본문 분석과 `event` 생성에 들어가지 않는다. 공식 공시를 최우선 출처로 둔다는 제품 원칙과 어긋나는 지점이며 `docs/HANDOFF.md` 9절에 기술부채로 올려 두었다.
 
 ```mermaid
 flowchart TB
