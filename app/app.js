@@ -666,15 +666,19 @@ async function digestAllCompanies(){
   showBusy('전체 기업 연차보고서 요약', `0/${targets.length}`);
   let inserted = 0;
   const failed = [];
-  for (const [index, id] of targets.entries()) {
-    button.textContent = `${index + 1}/${targets.length} ${displayName(id)}`;
-    updateBusy(`${index + 1}/${targets.length} · ${displayName(id)} · 지금까지 ${inserted}건 추가`);
-    try { inserted += (await requestDigest(id, 'annual')).inserted || 0; }
-    catch { failed.push(displayName(id)); }
-    companyTimelineCache.delete(id);
+  // 오버레이는 화면을 완전히 덮으므로 어떤 경로로 끝나든 반드시 걷어야 한다.
+  try {
+    for (const [index, id] of targets.entries()) {
+      button.textContent = `${index + 1}/${targets.length} ${displayName(id)}`;
+      updateBusy(`${index + 1}/${targets.length} · ${displayName(id)} · 지금까지 ${inserted}건 추가`);
+      try { inserted += (await requestDigest(id, 'annual')).inserted || 0; }
+      catch { failed.push(displayName(id)); }
+      companyTimelineCache.delete(id);
+    }
+  } finally {
+    hideBusy();
+    button.disabled = false; button.textContent = '전체 기업 요약';
   }
-  hideBusy();
-  button.disabled = false; button.textContent = '전체 기업 요약';
   await renderCompany();
   window.alert(`전체 요약 완료
 새로 추가 ${inserted}건${failed.length ? `
