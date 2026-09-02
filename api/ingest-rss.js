@@ -47,7 +47,7 @@ async function selectHeadlineTop10() {
     if (key && !unique.has(key)) unique.set(key, article);
   }
   return [...unique.values()]
-    .filter((article) => article.source_tier === "web_search_discovered" || article.source_name === "CATL Newsroom")
+    .filter((article) => article.source_tier.startsWith("web_search_") || article.source_name === "CATL Newsroom")
     .map((article) => ({ ...article, headline_score: headlineScore(article) }))
     .sort((a, b) => b.headline_score - a.headline_score || new Date(b.published_at) - new Date(a.published_at))
     .slice(0, TOP10_LIMIT);
@@ -88,7 +88,7 @@ export default async function handler(request, response) {
     const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
         source_language: "zh", published_at: safePublishedAt(candidate.publishedAt),
-        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? "web_search_discovered" : "needs_review"
+        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? `web_search_${candidate.searchProvider || "discovered"}` : "needs_review"
     }));
     stage = "article_storage";
     const storedArticles = articleRows.length
