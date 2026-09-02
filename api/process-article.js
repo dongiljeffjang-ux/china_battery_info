@@ -2,6 +2,7 @@ import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { resolveGoogleNewsUrl } from "./lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { COMPANIES } from "../lib/china-sources.js";
+import { embedVerifiedArticle } from "../lib/vector-ingestion.js";
 
 const MAX_BODY_CHARS = 30000;
 
@@ -79,6 +80,9 @@ export async function processPendingArticle(articleId, companyId) {
   if (!sourceResponse.ok || !contentType.includes("text/html")) return { status: "body_unavailable", contentType };
   const bodyText = htmlToText(await sourceResponse.text()).slice(0, MAX_BODY_CHARS);
   if (bodyText.length < 500) return { status: "body_too_short" };
+  await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
+    method: "PATCH", body: { body_original: bodyText, body_fetched_at: new Date().toISOString(), embedding_status: "pending", updated_at: new Date().toISOString() }
+  });
 
   const primaryProvider = llmConfig("openai") ? "openai" : "deepseek";
   const verifierProvider = llmConfig("deepseek") ? "deepseek" : primaryProvider;
@@ -95,6 +99,19 @@ export async function processPendingArticle(articleId, companyId) {
     method: "PATCH",
     body: { title_ko: factCheck.title_ko, summary_ko: factCheck.summary_ko, keywords_ko: factCheck.keywords_ko, verification_status: "pending_review", source_tier: `${primaryProvider}_${verifierProvider}_fact_checked`, updated_at: new Date().toISOString() }
   });
+  let embedding = { status: "skipped", chunks: 0 };
+  try {
+    embedding = await embedVerifiedArticle({
+      article, companyId, bodyText, titleKo: factCheck.title_ko, summaryKo: factCheck.summary_ko,
+      sourceUrl: resolvedUrl, sourceName: article.source_name, publishedAt: article.published_at
+    });
+  } catch (error) {
+    console.error("[ARTICLE_EMBEDDING_FAILED]", JSON.stringify({ articleId, message: error.message }));
+    await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
+      method: "PATCH", body: { embedding_status: "failed", updated_at: new Date().toISOString() }
+    });
+    embedding = { status: "failed", chunks: 0 };
+  }
   if (result.timeline_eligibility !== "exclude" && result.occurred_at) {
     await supabaseRest("event", { method: "POST", body: {
       company_id: companyId, article_id: articleId, occurred_at: result.occurred_at,
@@ -105,7 +122,7 @@ export async function processPendingArticle(articleId, companyId) {
       timeline_eligibility: result.timeline_eligibility
     } });
   }
-  return { status: "pending_review", analysis: result, fact_check: factCheck, primary_provider: primaryProvider, verifier_provider: verifierProvider };
+  return { status: "pending_review", analysis: result, fact_check: factCheck, embedding, primary_provider: primaryProvider, verifier_provider: verifierProvider };
 }
 
 export default async function handler(request, response) {

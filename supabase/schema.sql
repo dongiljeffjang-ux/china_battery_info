@@ -22,6 +22,10 @@ create table if not exists public.article (
   source_language text,
   published_at timestamptz,
   summary_ko text,
+  body_original text,
+  body_fetched_at timestamptz,
+  embedding_status text not null default 'pending' check (embedding_status in ('pending', 'embedded', 'failed')),
+  embedded_at timestamptz,
   keywords_ko text[] not null default '{}',
   verification_status text not null default 'pending',
   source_tier text not null default 'needs_review',
@@ -83,12 +87,15 @@ create table if not exists public.knowledge_chunk (
   company_id text references public.company(id),
   article_id uuid references public.article(id) on delete cascade,
   event_id uuid references public.event(id) on delete cascade,
-  source_type text not null check (source_type in ('official_document', 'article_fact', 'event_fact')),
+  source_type text not null check (source_type in ('official_document', 'article_fact', 'article_chunk', 'event_fact')),
   source_url text,
   source_name text,
   published_at date,
   original_excerpt text,
   content_ko text not null,
+  content_original text,
+  chunk_index smallint,
+  chunk_total smallint,
   content_hash text not null unique,
   embedding extensions.vector(1536),
   embedding_model text,
@@ -98,6 +105,7 @@ create table if not exists public.knowledge_chunk (
 
 create index if not exists article_published_at_idx on public.article (published_at desc);
 create index if not exists article_top10_idx on public.article (is_top10, top10_rank);
+create index if not exists article_embedding_retry_idx on public.article (embedding_status, published_at desc) where body_original is not null;
 create index if not exists article_feedback_article_idx on public.article_feedback (article_id, vote);
 create index if not exists event_company_date_idx on public.event (company_id, occurred_at);
 create index if not exists knowledge_chunk_company_date_idx on public.knowledge_chunk (company_id, published_at desc);
