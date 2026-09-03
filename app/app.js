@@ -878,11 +878,14 @@ function compareReportParts(payload){
   const check = r.verification || {};
   const db = payload.db_updates || {};
   const A = escapeHtml(payload.company_a), B = escapeHtml(payload.company_b);
-  // 전략·시계열은 두 회사를 나란히 놓고 읽어야 차이가 보인다. 대비는 그 아래 한 줄로 묶는다.
-  const pair = (section, contrastLabel, contrastKey) => `
-    <div class="pair"><div class="col"><p class="who">${A}</p><p class="txt">${escapeHtml(section?.a_ko || '')}</p></div>
-    <div class="col"><p class="who">${B}</p><p class="txt">${escapeHtml(section?.b_ko || '')}</p></div></div>
-    ${section?.[contrastKey] ? `<p class="contrast"><span class="tag">${contrastLabel}</span>${escapeHtml(section[contrastKey])}</p>` : ''}`;
+  const traj = r.trajectory || {};
+  const cmp = r.comparison || {};
+  // 1단계: 각 회사의 시장·기술 궤적을 회사별로 보여준다. 2단계 비교는 그 아래에 축별로 묶는다.
+  const trajCard = (who, node) => `
+    <div class="col"><p class="who">${who}</p>
+    <p class="txt"><span class="axis-tag market">시장</span>${escapeHtml(node?.market_ko || '')}</p>
+    <p class="txt"><span class="axis-tag tech">기술</span>${escapeHtml(node?.technology_ko || '')}</p></div>`;
+  const cmpRow = (label, key) => cmp?.[key] ? `<p class="contrast"><span class="tag">${label}</span>${escapeHtml(cmp[key])}</p>` : '';
   const points = (insight.points || []).map(item => `
     <div class="point"><p class="lead"><span class="seg">${escapeHtml(item.segment || '')}</span>${escapeHtml(item.implication_ko || '')}</p>
     <p class="txt">${escapeHtml(item.point_ko || '')}</p><p class="basis">근거 · ${escapeHtml(item.basis_ko || '')}</p></div>`).join('');
@@ -906,6 +909,9 @@ header{border-bottom:2px solid #10365f;padding-bottom:6px;margin-bottom:9px}
 h1{margin:2px 0 3px;font-size:16px;letter-spacing:-.3px}
 .meta{margin:0;font-size:8.2px;color:#617187}
 .headline{margin:0 0 8px;padding:7px 10px;border-left:3px solid #10365f;background:#f3f6fa;font-size:10.2px;font-weight:700}
+.axis-tag{display:inline-block;margin-right:5px;padding:0 5px;border-radius:8px;font-size:7.6px;font-weight:800;vertical-align:1px;color:#fff}
+.axis-tag.market{background:#236aa6}.axis-tag.tech{background:#8b5a10}
+.col .txt{margin:0 0 4px}
 h2{margin:9px 0 5px;font-size:10.5px;color:#10365f;letter-spacing:.2px}
 h2.tech-h{color:#8b5a10}h2.insight{color:#8b5a10}h2.check{color:#0c6b4e}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -930,12 +936,11 @@ footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8
 <h1>${A} vs ${B}</h1>
 <p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 근거 범위: ${payload.include_supporting ? '공시·핵심 + 보조(참고) 데이터' : '공시·핵심 데이터만'} · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
 ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
-<h2>1. 시장 축 비교</h2>${pair(r.market, '대비', 'contrast_ko')}
-<h2 class="tech-h">2. 기술 축 비교</h2>${pair(r.technology, '대비', 'contrast_ko')}
-<h2>3. 시계열 비교</h2>${pair(r.timeline, '갈린 지점', 'divergence_ko')}
-<h2 class="insight">4. 한국 배터리사·소재사 관점 — 해석</h2>
+<h2>1. 회사별 궤적 분석</h2><div class="pair">${trajCard(A, traj.a)}${trajCard(B, traj.b)}</div>
+<h2>2. 궤적 비교</h2>${cmpRow('시장', 'market_ko')}${cmpRow('기술', 'technology_ko')}${cmpRow('갈린 지점', 'divergence_ko')}
+<h2 class="insight">3. 한국 배터리사·소재사 관점 — 해석</h2>
 ${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
-<h2 class="check">5. 웹 검증</h2>
+<h2 class="check">4. 웹 검증</h2>
 <p class="txt">${escapeHtml(check.checked_ko || '검증 정보 없음')}</p>
 ${fixes ? `<p class="who" style="margin-top:4px">수정</p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>'}
 ${added ? `<p class="who" style="margin-top:4px">검색으로 새로 확인한 사실</p><ul>${added}</ul>` : ''}
