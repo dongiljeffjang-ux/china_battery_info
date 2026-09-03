@@ -35,3 +35,6 @@ on conflict do nothing;
 alter table public.report_digest drop constraint if exists report_digest_kind_check;
 alter table public.report_digest add constraint report_digest_kind_check
   check (kind in ('annual','semiannual','quarterly','web'));
+
+-- 보강 패스(넓힌 추출 규칙으로 다시 읽기)를 마친 시각. null이면 아직. 실행됨.
+alter table public.report_digest add column if not exists enriched_at timestamptz;
