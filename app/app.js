@@ -653,6 +653,13 @@ function renderLayerMatrix(timeline){
   target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 칸에는 방향과 수치만 적었습니다. 자세한 사실은 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
 // 정기보고서 요약은 Vercel에서 실행한다. 서버가 보고서 PDF를 직접 읽는다.
+// 어떤 정기보고서를 읽을지는 화면의 선택을 따른다. 과거는 연차, 현행은 반기·분기다.
+const DIGEST_KIND_LABEL = { annual: '연차보고서', semiannual: '반기보고서', quarterly: '분기보고서' };
+function selectedDigestKind(){
+  const value = document.querySelector('#digest-kind')?.value;
+  return DIGEST_KIND_LABEL[value] ? value : 'annual';
+}
+
 async function requestDigest(companyId, kind){
   const result = await fetch(`/api/ingest-rss?digest=${encodeURIComponent(companyId)}&kind=${encodeURIComponent(kind)}`, { method: 'POST' });
   const payload = await result.json().catch(() => ({}));
@@ -663,33 +670,37 @@ async function digestSelectedCompany(){
   if (!currentCompany) return;
   const button = document.querySelector('#digest-company');
   const name = displayName(currentCompany);
-  if (!window.confirm(`${name}의 최신 연차보고서 원문을 읽어 핵심 사실을 시계열에 채웁니다.
+  const kind = selectedDigestKind();
+  const kindLabel = DIGEST_KIND_LABEL[kind];
+  if (!window.confirm(`${name}의 최신 ${kindLabel} 원문을 읽어 핵심 사실을 시계열에 채웁니다.
 보고서 1건 분량의 LLM 비용이 발생합니다. 진행할까요?`)) return;
   button.disabled = true; button.textContent = '보고서 읽는 중…';
-  showBusy(`${name} 연차보고서 읽는 중`, '거래소에서 보고서를 내려받아 핵심 사실을 간추리고 있습니다.');
+  showBusy(`${name} ${kindLabel} 읽는 중`, '거래소에서 보고서를 내려받아 핵심 사실을 간추리고 있습니다.');
   try {
-    const payload = await requestDigest(currentCompany, 'annual');
+    const payload = await requestDigest(currentCompany, kind);
     companyTimelineCache.delete(currentCompany);
     await renderCompany();
-    window.alert(`${name} 연차보고서 요약 완료
+    window.alert(`${name} ${kindLabel} 요약 완료
 ${payload.report?.title || '보고서'} · ${payload.report?.pages || '?'}쪽
 새로 추가 ${payload.inserted}건 · 중복 제외 ${payload.duplicates}건`);
   } catch (error) {
     window.alert(`요약에 실패했습니다: ${error.message}`);
   } finally {
     hideBusy();
-    button.disabled = false; button.textContent = '연차보고서 요약';
+    button.disabled = false; button.textContent = '보고서 요약';
   }
 }
 async function digestAllCompanies(){
   const button = document.querySelector('#digest-all');
   const targets = companyCatalog.map(company => company.id);
   if (!targets.length) return;
-  if (!window.confirm(`추적 ${targets.length}개사의 연차보고서를 순서대로 읽습니다.
+  const kind = selectedDigestKind();
+  const kindLabel = DIGEST_KIND_LABEL[kind];
+  if (!window.confirm(`추적 ${targets.length}개사의 ${kindLabel}를 순서대로 읽습니다.
 회사당 보고서 1건씩이라 수십 분이 걸리고 그만큼 LLM 비용이 발생합니다.
 이 창을 닫으면 중단됩니다. 진행할까요?`)) return;
   button.disabled = true;
-  showBusy('전체 기업 연차보고서 요약', `0/${targets.length}`);
+  showBusy(`전체 기업 ${kindLabel} 요약`, `0/${targets.length}`);
   let inserted = 0;
   const failed = [];
   // 오버레이는 화면을 완전히 덮으므로 어떤 경로로 끝나든 반드시 걷어야 한다.
@@ -697,7 +708,7 @@ async function digestAllCompanies(){
     for (const [index, id] of targets.entries()) {
       button.textContent = `${index + 1}/${targets.length} ${displayName(id)}`;
       updateBusy(`${index + 1}/${targets.length} · ${displayName(id)} · 지금까지 ${inserted}건 추가`);
-      try { inserted += (await requestDigest(id, 'annual')).inserted || 0; }
+      try { inserted += (await requestDigest(id, kind)).inserted || 0; }
       catch { failed.push(displayName(id)); }
       companyTimelineCache.delete(id);
     }

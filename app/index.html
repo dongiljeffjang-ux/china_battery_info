@@ -102,7 +102,8 @@
           </div>
           <div class="company-actions">
             <label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함</label>
-            <button id="digest-company" class="secondary-button" type="button">연차보고서 요약</button>
+            <label class="digest-kind">보고서 <select id="digest-kind"><option value="annual">연차(과거)</option><option value="semiannual">반기(현행)</option><option value="quarterly">분기(현행)</option></select></label>
+            <button id="digest-company" class="secondary-button" type="button">보고서 요약</button>
             <button id="digest-all" class="secondary-button" type="button">전체 기업 요약</button>
             <button id="redate-all" class="secondary-button" type="button">시점 재확인</button>
             <button id="embed-events" class="secondary-button" type="button">벡터 임베딩 채우기</button>
@@ -189,7 +190,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260902-precision"></script>
+    <script src="./app.js?v=20260903-report-kind"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>
