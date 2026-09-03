@@ -2,11 +2,14 @@ import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
 import { requireAccess } from "./lib/access.js";
 import { sankeyFlowsFromArticles } from "../lib/sankey-normalization.js";
 
-async function dashboardQuery(name, path) {
+// 조회 하나가 실패해도 나머지는 보여주되, 무엇이 왜 실패했는지는 응답에 실어 화면이 알게 한다.
+// 조용히 빈 배열을 돌려주면 화면은 "기사 없음"으로 보이고 원인을 추적할 수 없다.
+async function dashboardQuery(name, path, errors) {
   try {
     return await supabaseRest(path);
   } catch (error) {
     console.error("[DASHBOARD_QUERY_FAILED]", JSON.stringify({ name, message: error.message }));
+    errors.push({ name, message: String(error.message || error).slice(0, 200) });
     return [];
   }
 }
@@ -24,16 +27,17 @@ export default async function handler(request, response) {
     const toBound = new Date(`${toInput}T00:00:00Z`);
     toBound.setUTCDate(toBound.getUTCDate() + 1);
     const to = toBound.toISOString().slice(0, 10);
+    const errors = [];
     const [reports, top10, companyNews, pendingNews, flowEvents] = await Promise.all([
-      dashboardQuery("report", "daily_report?select=report_date,summary_ko,insight_ko,generated_at,status&status=eq.published&order=report_date.desc&limit=1"),
-      dashboardQuery("top10", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,top10_rank,article_company(company_id,company(name_ko,type_tags))&is_top10=eq.true&verification_status=in.(pending_review,approved)&order=top10_rank.asc&limit=10"),
-      dashboardQuery("company_news", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=in.(pending_review,approved)&order=published_at.desc&limit=100"),
-      dashboardQuery("raw_pending", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.pending&order=published_at.desc&limit=100"),
-      dashboardQuery("sankey", `article?select=id,title_ko,title_original,summary_ko,published_at,keywords_ko,headline_signals,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lt.${to}&verification_status=in.(pending_review,approved)&is_top10=eq.false&order=published_at.desc&limit=500`),
+      dashboardQuery("report", "daily_report?select=report_date,summary_ko,insight_ko,generated_at,status&status=eq.published&order=report_date.desc&limit=1", errors),
+      dashboardQuery("top10", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,top10_rank,article_company(company_id,company(name_ko,type_tags))&is_top10=eq.true&verification_status=in.(pending_review,approved)&order=top10_rank.asc&limit=10", errors),
+      dashboardQuery("company_news", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=in.(pending_review,approved)&order=published_at.desc&limit=100", errors),
+      dashboardQuery("raw_pending", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.pending&order=published_at.desc&limit=100", errors),
+      dashboardQuery("sankey", `article?select=id,title_ko,title_original,summary_ko,published_at,keywords_ko,headline_signals,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lt.${to}&verification_status=in.(pending_review,approved)&is_top10=eq.false&order=published_at.desc&limit=500`, errors),
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
     const flows = sankeyFlowsFromArticles(flowEvents);
-    return response.status(200).json({ status: "ok", report: reports[0] || null, top10, companyNews, pendingNews, flows, counts: { top10: top10.length, company_verified: companyNews.length, raw_pending: pendingNews.length } });
+    return response.status(200).json({ status: "ok", errors, range: { from, to }, report: reports[0] || null, top10, companyNews, pendingNews, flows, counts: { top10: top10.length, company_verified: companyNews.length, raw_pending: pendingNews.length } });
   } catch (error) {
     return response.status(502).json({ status: error.code || "db_error", message: "Dashboard data could not be loaded." });
   }

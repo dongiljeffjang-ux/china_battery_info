@@ -401,16 +401,37 @@ function mapDashboardArticle(article){
     classification: classifyCandidate(article)
   };
 }
+// 접근 세션이 끝나면 API가 401을 준다. 조용히 넘기면 화면이 예전 상태로 멈춰 "안 된다"로만 보인다.
+// 입장 화면을 다시 띄워 무슨 일인지 알리고 키를 다시 받는다.
+function requireReentry(){
+  const gate = document.querySelector('#access-gate');
+  const shell = document.querySelector('#app-shell');
+  const message = document.querySelector('#access-message');
+  if (gate) gate.hidden = false;
+  if (shell) shell.hidden = true;
+  if (message) message.textContent = '접근 세션이 만료됐습니다. 접근 키를 다시 입력해 주세요.';
+}
+function showLoadFailure(text){
+  const sankey = document.querySelector('#headline-sankey');
+  if (sankey) sankey.innerHTML = `<p class="load-failure">${escapeHtml(text)}</p>`;
+}
 async function loadDashboardFromApi(){
   try {
     const from = document.querySelector('#sankey-from')?.value;
     const to = document.querySelector('#sankey-to')?.value;
     const params = new URLSearchParams(); if (from) params.set('from', from); if (to) params.set('to', to);
     params.set('_', Date.now().toString());
+    const sankeyBox = document.querySelector('#headline-sankey');
+    if (sankeyBox) sankeyBox.innerHTML = `<p class="load-note">${escapeHtml(from && to ? `${from} ~ ${to} 기간을 불러오는 중…` : '불러오는 중…')}</p>`;
     const result = await fetch(`/api/dashboard?${params}`, { cache: 'no-store' });
-    if (!result.ok) return;
+    if (result.status === 401) { requireReentry(); return; }
+    if (!result.ok) { showLoadFailure(`첫 화면 데이터를 불러오지 못했습니다 (HTTP ${result.status}).`); return; }
     const payload = await result.json();
-    if (payload.status !== 'ok') return;
+    if (payload.status !== 'ok') { showLoadFailure(`첫 화면 데이터를 불러오지 못했습니다 (${payload.status}).`); return; }
+    if (Array.isArray(payload.errors) && payload.errors.length) {
+      console.error('dashboard query errors', payload.errors);
+      window.alert(`서버 조회 일부 실패:\n${payload.errors.map(item => `· ${item.name}: ${item.message}`).join('\n')}`);
+    }
     approvedTop10 = (payload.top10 || []).map(mapDashboardArticle);
     approvedCompanyNews = (payload.companyNews || []).map(mapDashboardArticle)
       .filter(article => !approvedTop10.some(top10 => top10.url === article.url));
