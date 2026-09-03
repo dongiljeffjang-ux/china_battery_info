@@ -65,6 +65,7 @@
 - `supabase/feedback.sql`: `article_feedback`
 - `supabase/vector-schema.sql`: pgvector 검색 기반
 - `supabase/vector-ingestion.sql`: 원문 보관·청크 필드·임베딩 상태
+- `supabase/graph-vectors.sql`: `graph_vectors()` — 회사·키워드·레이어별 평균 임베딩(3D 보조 그래프용). 실행됨.
 
 **미실행**: `supabase/company-entity.sql` (`event.entity_names`). 코드 배포 전에 SQL Editor에서 실행해야 한다. 컬럼이 없는 상태로 새 코드가 이벤트를 INSERT하면 Supabase가 거부해 기사 처리가 실패한다.
 
@@ -77,7 +78,7 @@
 | `/api/access` | 입장 키 검증·HttpOnly 쿠키 발급 |
 | `/api/ingest-rss?process=1` | 수집부터 분석·Daily까지 수동 1회 실행 |
 | `/api/dashboard` | Daily, Top 10, 회사 뉴스, Sankey 데이터 |
-| `/api/company` | companyId 없으면 31개 회사 마스터·그룹·선정 기준, 있으면 그 기업의 이벤트 시계열 |
+| `/api/company` | companyId 없으면 31개 회사 마스터·그룹·선정 기준, 있으면 그 기업의 이벤트 시계열. `?mode=strategy_profile`은 전체 이벤트를 레이어·분기·세그먼트로 태그해 반환, `?mode=knowledge_graph`는 벡터 유사도 3D 그래프 데이터 |
 | `/api/news` | GET 소스 후보, POST 좋아요/싫어요 |
 | `/api/raw-news` | Raw Excel용 기사 데이터 |
 | `/api/process-article` | 보호된 단일 기사 처리 |
@@ -216,3 +217,12 @@ git diff --check
 - 시점 원칙: 기간 집계는 기간 말일+`half`/`year`, 시점 사건은 보고서에 적힌 월/일 또는 공개 발표일(basis에 근거 명시). 보고서가 시기를 안 밝히면 `half`로 두고 basis에 그렇게 적었다.
 - 장부(`report_digest`)에 읽은 보고서를 모두 기록했으므로 유지 단계가 같은 보고서를 다시 읽지 않는다.
 - 미해결: BTR(베이징거래소)은 CNINFO 반기·FY2024 연차 분류가 달라 못 받음. 신왕다 2026 반기는 발췌 구간이 빗나가 기사 이벤트로 대체. 비상장 9곳은 유지 단계의 웹 백필(참고 등급)에 맡긴다.
+
+### 2026-09-03 밤: 전략 프로파일 탭
+- 벡터 유사도 3D 그래프(`lib/knowledge-graph.js`, `graph_vectors()`)를 먼저 만들었으나 "선만 있고 사업적 의미가 없다"는 판단으로 접힌 보조 탐색으로 내렸다.
+- 메인은 `기업 전략 프로파일`(`lib/strategy-profile.js` + `app.js`의 `renderStrategyProfile`)이다. 이벤트 건수 집계만 한다.
+  - 분기별 8개 레이어 누적막대와, 같은 밸류체인 동종 회사 평균 대비 레이어 **비중**(건수가 아니라 비중이어야 커버리지 차이를 상쇄) 배수.
+  - 한국 소재사 접점: 제목+사실 문장을 **용어 규칙**으로 삼원/LFP/음극/셀 네 세그먼트에 배정. 규칙은 `SEGMENTS`에 있고, 양극재 회사가 계열을 안 밝힌 "양극재" 언급은 `type_tags`의 주력 계열로 본다. 매칭된 용어를 화면에 그대로 보여 준다.
+  - 세그먼트를 클릭하면 회사별 최근 4분기 vs 그 전 4분기 건수 표와 해당 회사의 이벤트 목록이 바뀐다.
+- 분류가 놓치는 표현을 발견하면 `lib/strategy-profile.js`의 `terms`를 늘린다. LLM 분류로 바꾸지 않은 이유: 근거 용어를 그대로 보여 줄 수 있고 매일 같은 결과가 나오기 때문.
+- 표준 8개 밖의 `layer_key`(기사 백필에서 자유 서술로 들어온 값 ~20건)는 화면에서 `기타`로 묶인다. 정리하려면 `event.layer_key`를 표준 값으로 UPDATE 하면 된다.
