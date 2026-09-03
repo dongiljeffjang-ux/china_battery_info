@@ -1078,6 +1078,7 @@ async function waitForDailyReport(sinceIso, timeoutMs = 4 * 60 * 1000){
   return false;
 }
 document.querySelector('#run-collection-button').addEventListener('click', async () => {
+  if (!(await confirmAccessCode('수집·분석 1회 실행'))) return;
   const button = document.querySelector('#run-collection-button');
   button.disabled = true; button.textContent = '수집·분석 중…';
   showBusy('수집·분석 중', '중국어 원문을 검색해 기사를 모으고 있습니다.');
