@@ -1042,8 +1042,9 @@ function renderLedgerCapacity(facts){
   for (const f of caps.slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))) {
     const key = `${f.company_id}|${f.segment}`;
     const prev = latest.get(key);
-    // 수량 있는 최신값이 우선. 수량 없는 사실만 있으면 그것을 회색 점으로 둔다.
-    if (!prev || (prev.quantity === null && f.quantity !== null)) latest.set(key, f);
+    // 수량 있는 최신값이 우선. 같은 날짜(같은 보고서)에 여럿이면 큰 값을 둔다 — 보통 그것이 기지 전체 규모다.
+    // 수량 없는 사실만 있으면 그것을 회색 점으로 둔다.
+    if (!prev || (prev.quantity === null && f.quantity !== null) || (prev.occurred_at === f.occurred_at && (f.quantity || 0) > (prev.quantity || 0))) latest.set(key, f);
   }
   const companies = ledgerCompanies().filter(c => SEGMENT_ORDER.some(seg => latest.has(`${c.id}|${seg}`)));
   const maxTon = Math.max(1, ...[...latest.values()].filter(f => /^t/.test(f.unit || '')).map(f => f.quantity || 0));
@@ -1085,7 +1086,7 @@ function renderLedgerSites(facts){
   for (const f of abroad) { if (!byCountry.has(f.country)) byCountry.set(f.country, []); byCountry.get(f.country).push(f); }
   const regionOf = country => REGIONS.find(r => r.countries.includes(country))?.key || 'other';
   const groups = [...REGIONS, { key: 'other', label: '기타 지역', countries: [] }].map(region => ({ ...region, list: [...byCountry.entries()].filter(([c]) => regionOf(c) === region.key).sort((a, b) => b[1].length - a[1].length) })).filter(g => g.list.length);
-  const tileW = 150, tileH = 96, gap = 10, cols = 3;
+  const tileW = 176, tileH = 96, gap = 10, cols = 3;
   let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px">';
   for (const g of groups) {
     const rows = Math.ceil(g.list.length / cols);
@@ -1100,7 +1101,7 @@ function renderLedgerSites(facts){
       const ink = suspended ? '#712b13' : korea ? '#633806' : '#0c447c';
       const companies = [...new Set(list.map(f => f.company_id))];
       const lines = list.slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)).slice(0, 3).map(f => `${displayName(f.company_id).replace(/\(.*\)/, '').trim()} · ${f.item || f.counterparty || FACT_TYPE_KO[f.fact_type]}${f.quantity_text ? ` ${f.quantity_text}` : ''}`);
-      svg += `<g class="site-tile" data-country="${escapeHtml(country)}" style="cursor:pointer" data-tip="${escapeHtml(`${country} · 회사 ${companies.length}곳 · 사실 ${list.length}건`)}"><rect x="${x}" y="${y}" width="${tileW}" height="${tileH}" rx="6" fill="${fill}" stroke="${stroke}"/><text x="${x + 10}" y="${y + 18}" font-size="12" font-weight="700" fill="${ink}">${escapeHtml(country)} <tspan font-weight="500" fill="${stroke}">${list.length}</tspan></text>${lines.map((line, j) => `<text x="${x + 10}" y="${y + 38 + j * 16}" font-size="10.5" fill="${ink}">${escapeHtml(line.length > 22 ? line.slice(0, 22) + '…' : line)}</text>`).join('')}${list.length > 3 ? `<text x="${x + 10}" y="${y + 88}" font-size="10" fill="${stroke}">+${list.length - 3}건</text>` : ''}</g>`;
+      svg += `<g class="site-tile" data-country="${escapeHtml(country)}" style="cursor:pointer" data-tip="${escapeHtml(`${country} · 회사 ${companies.length}곳 · 사실 ${list.length}건`)}"><rect x="${x}" y="${y}" width="${tileW}" height="${tileH}" rx="6" fill="${fill}" stroke="${stroke}"/><text x="${x + 10}" y="${y + 18}" font-size="12" font-weight="700" fill="${ink}">${escapeHtml(country)} <tspan font-weight="500" fill="${stroke}">${list.length}</tspan></text>${lines.map((line, j) => `<text x="${x + 10}" y="${y + 38 + j * 16}" font-size="10.5" fill="${ink}">${escapeHtml(line.length > 27 ? line.slice(0, 27) + '…' : line)}</text>`).join('')}${list.length > 3 ? `<text x="${x + 10}" y="${y + 88}" font-size="10" fill="${stroke}">+${list.length - 3}건</text>` : ''}</g>`;
     });
     svg += '</svg>';
     html += `<div>${svg}</div>`;

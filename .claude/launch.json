@@ -4,8 +4,26 @@
     {
       "name": "daily-preview",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "4173", "--directory", "C:/Users/POSCOFUTUREM/AppData/Local/Temp/claude/C--Users-POSCOFUTUREM-Documents-china-info/791a0eb0-ee7b-4057-a13b-2cf743303504/scratchpad/preview"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4173",
+        "--directory",
+        "C:/Users/POSCOFUTUREM/AppData/Local/Temp/claude/C--Users-POSCOFUTUREM-Documents-china-info/791a0eb0-ee7b-4057-a13b-2cf743303504/scratchpad/preview"
+      ],
       "port": 4173
+    },
+    {
+      "name": "ledger-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4174",
+        "--directory",
+        "C:/Users/POSCOFUTUREM/Documents/china_info"
+      ],
+      "port": 4174
     }
   ]
 }
