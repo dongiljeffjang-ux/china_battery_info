@@ -691,8 +691,7 @@ function renderLayerMatrix(timeline){
     target.innerHTML = `<p>${escapeHtml(notice || '선택한 기업에 표시할 공시 기반 이벤트가 아직 없습니다.')}</p>`;
     return;
   }
-  // 현재 시점을 먼저 본다. 열은 최근이 왼쪽, 과거가 오른쪽이다.
-  const periods = timelinePeriods(events).reverse();
+  const periods = timelinePeriods(events);
   const rowsFor = (group, labels) => {
     const rows = Object.entries(labels).map(([key, label]) => ({ group, label, match: event => event.layer === key }));
     if (events.some(event => event.layer === UNCLASSIFIED_LAYER && event.group === group)) {
@@ -714,7 +713,10 @@ function renderLayerMatrix(timeline){
   const stickyGroup = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:0;background:#fff;z-index:1';
   const stickyLayer = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:58px;background:#fff;z-index:1';
   const table = `<table style="width:100%;min-width:${periods.length * 168 + 300}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:150px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-  target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">최근 시점이 왼쪽입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 칸에는 방향과 수치만 적었습니다. 자세한 사실은 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
+  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">처음에는 현재 시점(오른쪽 끝)이 보이고 왼쪽으로 밀면 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 칸에는 방향과 수치만 적었습니다. 자세한 사실은 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
+  // 시간축은 과거→현재 순서를 지키되, 처음 보이는 위치를 현재 시점(오른쪽 끝)으로 둔다.
+  const scroller = target.querySelector('.matrix-scroll');
+  if (scroller) scroller.scrollLeft = scroller.scrollWidth;
 }
 
 // 벡터 지식에 질문한다. 근거가 없으면 답을 만들지 않고 무엇을 확인할지 안내받는다.
