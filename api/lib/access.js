@@ -33,7 +33,7 @@ export function issueAccessCookie(response) {
   const key = process.env.APP_ACCESS_KEY;
   if (!key) throw new Error("APP_ACCESS_KEY_NOT_CONFIGURED");
   const secure = process.env.VERCEL ? "; Secure" : "";
-  response.setHeader("Set-Cookie", `${COOKIE_NAME}=${signature(key)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200${secure}`);
+  response.setHeader("Set-Cookie", `${COOKIE_NAME}=${signature(key)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${secure}`);
 }
 
 export function validateAccessKey(candidate) {

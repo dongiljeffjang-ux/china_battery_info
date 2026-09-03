@@ -3,6 +3,7 @@ import { flushTraces } from "../lib/tracing.js";
 import { requireAccess } from "./lib/access.js";
 import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
+import { waitUntil } from "@vercel/functions";
 import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
 import { llmConfig } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
@@ -12,6 +13,10 @@ export const maxDuration = 60;
 
 const TOP10_LIMIT = 10;
 const PROCESS_CONCURRENCY = 3;
+// 한 함수는 60초 안에 끝나야 한다. 본문 처리는 이 시간까지만 새 기사를 집고 나머지는 다음 호출로 넘긴다.
+const STAGE_BUDGET_MS = 42000;
+// 본문 처리 호출을 최대 몇 번 이어 붙일지. 하루치 헤드라인 10건이면 두어 번이면 끝난다.
+const MAX_PROCESS_HOPS = 4;
 // 60초 함수 안에서 검색 1회 + 추출이 끝나야 하므로 회사당 건수를 낮춘다.
 const BACKFILL_MAX_EVENTS = 12;
 const BACKFILL_SINCE = "2023-01-01";
@@ -63,11 +68,13 @@ async function selectHeadlineTop10() {
     .slice(0, TOP10_LIMIT);
 }
 
-async function processSelectedBatch(rows) {
+async function processSelectedBatch(rows, deadline = Infinity) {
   const outcomes = [];
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(PROCESS_CONCURRENCY, rows.length) }, async () => {
     while (next < rows.length) {
+      // 예산이 다하면 남은 기사는 다음 호출이 이어받는다. 기사 하나를 반쯤 처리하다 잘리는 것보다 낫다.
+      if (Date.now() > deadline) break;
       const article = rows[next++];
       const companyId = article.article_company?.[0]?.company_id;
       if (!companyId) continue;
@@ -116,6 +123,50 @@ async function runBackfill(response, companyId, sinceParam, mode) {
     console.error("[BACKFILL_FAILED]", JSON.stringify({ companyId, mode, message: error.message }));
     return response.status(502).json({ status: "backfill_failed", mode, company_id: companyId, message: error.message });
   }
+}
+
+// 다음 단계를 같은 함수의 새 호출로 넘긴다.
+//
+// 수집·본문 처리·Daily 생성을 한 호출에 몰아 넣으면 60초에 잘려 Daily가 만들어지지 않았다.
+// 각 단계를 별도 호출로 나누고, 앞 단계가 뒷 단계를 HTTP로 부른다. 부름을 받은 쪽은 곧바로
+// 응답하고 waitUntil 안에서 일을 계속하므로, 부른 쪽은 기다리지 않고 자기 예산을 다 쓰지 않는다.
+// 인증은 크론과 같은 CRON_SECRET을 쓴다. 비밀이 없으면 이어 붙이지 못하므로 그 사실을 남긴다.
+function chainStage(request, stage, hop = 1) {
+  const secret = process.env.CRON_SECRET;
+  const host = request.headers["x-forwarded-host"] || request.headers.host;
+  if (!secret || !host) {
+    console.error("[STAGE_CHAIN_SKIPPED]", JSON.stringify({ stage, reason: !secret ? "no_cron_secret" : "no_host" }));
+    return;
+  }
+  const url = `https://${host}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}`;
+  waitUntil(fetch(url, { method: "POST", headers: { Authorization: `Bearer ${secret}` } })
+    .then((upstream) => console.info("[STAGE_CHAINED]", JSON.stringify({ stage, hop, status: upstream.status })))
+    .catch((error) => console.error("[STAGE_CHAIN_FAILED]", JSON.stringify({ stage, hop, message: error.message }))));
+}
+
+// 본문 처리 단계. 헤드라인을 골라 예산 안에서 처리하고, 남으면 자신을 다시 부르고, 끝나면 Daily를 부른다.
+async function runProcessStage(request, hop) {
+  const started = Date.now();
+  const selected = await selectHeadlineTop10();
+  const results = selected.length ? await processSelectedBatch(selected, started + STAGE_BUDGET_MS) : [];
+  const counts = results.reduce((acc, result) => ({ ...acc, [result.status]: (acc[result.status] || 0) + 1 }), {});
+  const attempted = new Set(results.map((result) => result.articleId));
+  const leftover = selected.filter((article) => !attempted.has(article.id)).length;
+  console.info("[PROCESS_STAGE]", JSON.stringify({ hop, selected: selected.length, processed: results.length, leftover, counts, ms: Date.now() - started }));
+  if (leftover > 0 && hop < MAX_PROCESS_HOPS) chainStage(request, "process", hop + 1);
+  else chainStage(request, "daily");
+  await flushTraces();
+}
+
+async function runDailyStage() {
+  const started = Date.now();
+  try {
+    const report = await generateDailyReport();
+    console.info("[DAILY_STAGE]", JSON.stringify({ status: report.status, top10: report.top10_count || 0, ms: Date.now() - started }));
+  } catch (error) {
+    console.error("[DAILY_STAGE_FAILED]", JSON.stringify({ message: error.message }));
+  }
+  await flushTraces();
 }
 
 // 이미 저장된 연차보고서 이벤트의 시점을 다시 확인한다.
@@ -169,6 +220,16 @@ async function handleRequest(request, response) {
   }
   const redateCompanyId = String(request.query?.redate || request.body?.redate || "").trim();
   if (redateCompanyId) return runRedate(response, redateCompanyId);
+  // 이어 붙은 단계 호출. 곧바로 응답하고 일은 waitUntil 안에서 마저 한다.
+  const stage = String(request.query?.stage || "").trim();
+  if (stage) {
+    if (!isCronRequest(request)) return response.status(403).json({ status: "stage_requires_cron_secret" });
+    const hop = Math.max(1, Number(request.query?.hop) || 1);
+    if (stage === "process") waitUntil(runProcessStage(request, hop));
+    else if (stage === "daily") waitUntil(runDailyStage());
+    else return response.status(400).json({ status: "unknown_stage", stage });
+    return response.status(202).json({ status: "accepted", stage, hop });
+  }
   const backfillCompanyId = String(request.query?.backfill || request.body?.backfill || "").trim();
   if (backfillCompanyId) return runBackfill(response, backfillCompanyId, request.query?.since || request.body?.since, "web");
   let stage = "company_seed";
@@ -200,26 +261,16 @@ async function handleRequest(request, response) {
     stage = "headline_selection";
     const immediateAnalysis = request.query?.process === "1" || request.body?.process === true;
     const shouldProcess = isCronRequest(request) || immediateAnalysis;
-    const selectedHeadlines = shouldProcess ? await selectHeadlineTop10() : [];
-    stage = "article_analysis";
-    const llmResults = shouldProcess && (process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL))
-      ? await processSelectedBatch(selectedHeadlines)
-      : [];
-    const processedIds = llmResults.filter((result) => result.status === "pending_review").map((result) => result.articleId);
-    const outcomeCounts = llmResults.reduce((counts, result) => ({ ...counts, [result.status]: (counts[result.status] || 0) + 1 }), {});
-    console.info("[INGEST_OUTCOMES]", JSON.stringify({ selected: selectedHeadlines.length, outcomes: outcomeCounts }));
-    stage = "daily_report";
-    const dailyReport = processedIds.length && (process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL))
-      ? await generateDailyReport(processedIds)
-      : null;
+    const llmReady = Boolean(process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL));
+    // 본문 처리와 Daily 생성은 이 호출에서 하지 않는다. 60초 안에 다 못 끝나 Daily가 빠지던 원인이다.
+    // 다음 단계를 새 호출로 넘기고 여기서는 수집 결과만 돌려준다.
+    if (shouldProcess && llmReady) chainStage(request, "process", 1);
     return response.status(200).json({
-      status: "ok", search_runs: (llmConfig("openai") ? 3 : 0) + (llmConfig("deepseek") ? 3 : 0), discovered: candidates.length, stored: storedArticles.length,
-      headline_selected: selectedHeadlines.length,
-      llm_processed: llmResults.filter((result) => result.status === "pending_review").length,
-      outcome_counts: outcomeCounts,
-      llm_results: llmResults,
-      daily_report: dailyReport,
-      next_step: shouldProcess ? "Headline-based Top 10 selection, body reading, Korean fact summarization, and Daily report generation have run." : "Use process=1 or the scheduled cron to run the Daily analysis."
+      status: shouldProcess && llmReady ? "started" : "ok",
+      search_runs: (llmConfig("openai") ? 3 : 0) + (llmConfig("deepseek") ? 3 : 0), discovered: candidates.length, stored: storedArticles.length,
+      next_step: shouldProcess && llmReady
+        ? "본문 처리와 Daily 생성이 별도 호출로 이어집니다. 몇 분 뒤 첫 화면에 반영됩니다."
+        : "process=1 또는 크론이 본문 분석을 시작합니다."
     });
   } catch (error) {
     console.error("[INGESTION_FAILED]", JSON.stringify({ stage, message: error.message }));

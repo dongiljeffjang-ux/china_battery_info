@@ -1028,16 +1028,34 @@ function activateView(view){
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
 document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompanyPicker(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });
 document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
+// 수집은 시작만 이 요청으로 하고, 본문 처리와 Daily 생성은 서버가 별도 호출로 이어 간다.
+// 그래서 여기서는 새 Daily가 생길 때까지 첫 화면을 주기적으로 다시 읽으며 기다린다.
+async function waitForDailyReport(sinceIso, timeoutMs = 4 * 60 * 1000){
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    await new Promise(resolve => setTimeout(resolve, 15000));
+    const elapsed = Math.round((Date.now() - started) / 1000);
+    updateBusy(`본문 정독과 팩트 확인, Daily 생성이 서버에서 이어지고 있습니다. ${elapsed}초 경과`);
+    try {
+      const result = await fetch(`/api/dashboard?_=${Date.now()}`, { cache: 'no-store' });
+      const payload = await result.json();
+      const generatedAt = payload?.report?.generated_at;
+      if (generatedAt && generatedAt > sinceIso) return true;
+    } catch { /* 일시적 오류는 다음 주기에 다시 본다 */ }
+  }
+  return false;
+}
 document.querySelector('#run-collection-button').addEventListener('click', async () => {
   const button = document.querySelector('#run-collection-button');
   button.disabled = true; button.textContent = '수집·분석 중…';
-  showBusy('수집·분석 중', '중국어 원문을 검색하고 본문을 정독해 팩트를 확인하고 있습니다. 1~2분 걸립니다.');
+  showBusy('수집·분석 중', '중국어 원문을 검색해 기사를 모으고 있습니다.');
+  const startedAt = new Date().toISOString();
   try {
     const result = await fetch('/api/ingest-rss?process=1', { method: 'POST' });
     const payload = await result.json();
     if (!result.ok) throw new Error([payload.status, payload.stage, payload.message].filter(Boolean).join(' · ') || '요청 실패');
-    const outcomes = Object.entries(payload.outcome_counts || {}).map(([status, count]) => `${status} ${count}건`).join(' / ');
-    window.alert(`Daily 분석 완료: 발견 ${payload.discovered}건 / 저장 ${payload.stored}건 / 헤드라인 Top ${payload.headline_selected || 0}건 / 본문 처리 ${payload.llm_processed || 0}건${outcomes ? `\n처리 결과: ${outcomes}` : ''}\n첫 화면을 최신 결과로 갱신합니다.`);
+    const done = payload.status === 'started' ? await waitForDailyReport(startedAt) : true;
+    window.alert(`수집 완료: 발견 ${payload.discovered}건 / 저장 ${payload.stored}건\n${done ? '본문 처리와 Daily 생성까지 반영됐습니다.' : '본문 처리가 아직 진행 중입니다. 잠시 뒤 새로 고침하면 반영됩니다.'}`);
     companyTimelineCache.clear();
     await loadDashboardFromApi();
     await renderCompany();
