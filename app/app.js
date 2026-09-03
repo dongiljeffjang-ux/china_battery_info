@@ -787,13 +787,13 @@ function compareReportHtml(payload){
   const r = payload.report || {};
   const insight = r.korea_insight || {};
   const check = r.verification || {};
-  const para = (label, text) => text ? `<p class="row"><span class="lbl">${escapeHtml(label)}</span>${escapeHtml(text)}</p>` : '';
+  const para = (label, text) => text ? `<div class="row"><p class="lbl">${escapeHtml(label)}</p><p class="txt">${escapeHtml(text)}</p></div>` : '';
   const points = (insight.points || []).map(item =>
     `<p class="row"><span class="seg">${escapeHtml(item.segment || '')}</span>${escapeHtml(item.point_ko || '')}<span class="basis">근거 · ${escapeHtml(item.basis_ko || '')}</span></p>`).join('');
   const fixes = (check.corrections || []).map(item =>
-    `<li><s>${escapeHtml(item.original_ko || '')}</s> → <strong>${escapeHtml(item.corrected_ko || '')}</strong><span class="basis">${escapeHtml(item.reason_ko || '')}</span></li>`).join('');
+    `<li><s>${escapeHtml(item.original_ko || '')}</s><br>→ <strong>${escapeHtml(item.corrected_ko || '')}</strong><span class="basis">이유 · ${escapeHtml(item.reason_ko || '')}</span></li>`).join('');
   const added = (check.added_evidence || []).map(item =>
-    `<li>${escapeHtml(item.fact_ko || '')}<span class="basis">${escapeHtml(item.source_name || '')} · ${escapeHtml(item.source_url || '')}</span></li>`).join('');
+    `<li>${escapeHtml(item.fact_ko || '')}<span class="basis">${escapeHtml(item.source_name || '')} · <a href="${escapeHtml(item.source_url || '')}">${escapeHtml(item.source_url || '')}</a></span></li>`).join('');
   const stamp = new Date(payload.generated_at || Date.now()).toLocaleString('ko-KR');
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(payload.company_a)} vs ${escapeHtml(payload.company_b)} 비교 리포트</title><style>
 @page{size:A4;margin:14mm}
@@ -806,8 +806,10 @@ h1{margin:3px 0 4px;font-size:16px;letter-spacing:-.3px}
 h2{margin:11px 0 5px;font-size:11px;color:#10365f;border-left:3px solid #1674c5;padding-left:7px}
 h2.insight{border-color:#8b5a10;color:#8b5a10}
 h2.check{border-color:#0c6b4e;color:#0c6b4e}
-.row{margin:0 0 5px}
-.lbl{display:inline-block;min-width:74px;font-weight:800;color:#10365f}
+.row{margin:0 0 6px}
+.lbl{margin:0 0 1px;font-size:9px;font-weight:800;color:#1674c5;letter-spacing:.2px}
+.txt{margin:0}
+p.row{margin:0 0 6px}
 .seg{display:inline-block;margin-right:5px;padding:0 5px;border:1px solid #e4dcc8;border-radius:9px;font-size:8px;font-weight:800;color:#8b5a10}
 .basis{display:block;margin-top:1px;font-size:8.5px;color:#617187}
 ul{margin:0;padding-left:14px}
@@ -836,7 +838,7 @@ ${fixes ? `<p class="row"><span class="lbl">수정</span></p><ul>${fixes}</ul>` 
 ${added ? `<p class="row"><span class="lbl">추가 근거</span></p><ul>${added}</ul>` : ''}
 <footer>1~2장은 수집된 사실 정리이고 3장은 해석입니다. 투자 판단 자료가 아닙니다.
 ${payload.verification_status === 'draft_only' ? ' 웹 검증에 실패해 초안 상태입니다.' : ''}
-${(payload.searched_sources || []).length ? ` 검색 참조 ${payload.searched_sources.length}건.` : ''}</footer>
+</footer>
 </body></html>`;
 }
 
