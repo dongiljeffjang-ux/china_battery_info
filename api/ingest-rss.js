@@ -4,6 +4,7 @@ import { requireAccess } from "./lib/access.js";
 import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { waitUntil } from "@vercel/functions";
+import { runCurationHop } from "../lib/curation.js";
 import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
 import { llmConfig } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
@@ -17,6 +18,8 @@ const PROCESS_CONCURRENCY = 3;
 const STAGE_BUDGET_MS = 42000;
 // 본문 처리 호출을 최대 몇 번 이어 붙일지. 하루치 헤드라인 10건이면 두어 번이면 끝난다.
 const MAX_PROCESS_HOPS = 4;
+// 유지 단계(보고서 읽기·시점 재확인·임베딩) 호출을 하루에 최대 몇 번 이어 붙일지.
+const MAX_CURATE_HOPS = 8;
 // 60초 함수 안에서 검색 1회 + 추출이 끝나야 하므로 회사당 건수를 낮춘다.
 const BACKFILL_MAX_EVENTS = 12;
 const BACKFILL_SINCE = "2023-01-01";
@@ -158,7 +161,7 @@ async function runProcessStage(request, hop) {
   await flushTraces();
 }
 
-async function runDailyStage() {
+async function runDailyStage(request) {
   const started = Date.now();
   try {
     const report = await generateDailyReport();
@@ -166,6 +169,23 @@ async function runDailyStage() {
   } catch (error) {
     console.error("[DAILY_STAGE_FAILED]", JSON.stringify({ message: error.message }));
   }
+  // Daily가 끝나면 시계열 유지 작업으로 넘어간다. 사용자가 버튼을 누르지 않아도 보고서가 읽히고 시점이 다듬어진다.
+  chainStage(request, "curate", 1);
+  await flushTraces();
+}
+
+// 유지 단계. 아직 안 읽은 정기보고서를 읽고, 시점을 다시 확인하고, 벡터를 메운다. 남으면 자신을 다시 부른다.
+async function runCurateStage(request, hop) {
+  const started = Date.now();
+  let more = false;
+  try {
+    const result = await runCurationHop({ deadline: started + STAGE_BUDGET_MS });
+    more = result.more;
+    console.info("[CURATE_STAGE]", JSON.stringify({ hop, ...result.log, more, ms: Date.now() - started }));
+  } catch (error) {
+    console.error("[CURATE_STAGE_FAILED]", JSON.stringify({ hop, message: error.message }));
+  }
+  if (more && hop < MAX_CURATE_HOPS) chainStage(request, "curate", hop + 1);
   await flushTraces();
 }
 
@@ -226,7 +246,8 @@ async function handleRequest(request, response) {
     if (!isCronRequest(request)) return response.status(403).json({ status: "stage_requires_cron_secret" });
     const hop = Math.max(1, Number(request.query?.hop) || 1);
     if (stageName === "process") waitUntil(runProcessStage(request, hop));
-    else if (stageName === "daily") waitUntil(runDailyStage());
+    else if (stageName === "daily") waitUntil(runDailyStage(request));
+    else if (stageName === "curate") waitUntil(runCurateStage(request, hop));
     else return response.status(400).json({ status: "unknown_stage", stage: stageName });
     return response.status(202).json({ status: "accepted", stage: stageName, hop });
   }
