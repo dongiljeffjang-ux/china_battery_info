@@ -4,7 +4,7 @@ import { requireAccess } from "./lib/access.js";
 import { COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
 import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
-import { buildCompareReport } from "../lib/compare-report.js";
+import { buildCompareReport, applyVerifiedFacts } from "../lib/compare-report.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증)을 부르므로 기본 10초로는 끝나지 않는다.
 export const maxDuration = 60;
@@ -61,6 +61,8 @@ function cleanEvents(list) {
   return (Array.isArray(list) ? list : [])
     .slice(0, 60)
     .map((event) => ({
+      // 검증자가 "이 이벤트의 날짜가 틀렸다"고 짚을 수 있도록 id를 같이 넘긴다. 형식이 uuid가 아니면 버린다.
+      id: /^[0-9a-f-]{36}$/i.test(String(event?.id || "")) ? String(event.id) : "",
       date: String(event?.date || "").slice(0, 10),
       title: String(event?.title || "").slice(0, 160),
       fact: String(event?.fact || "").slice(0, 400),
@@ -81,11 +83,19 @@ async function runCompareReport(request, response) {
   if (!eventsA.length && !eventsB.length) return response.status(400).json({ status: "no_evidence", message: "비교 화면에 근거로 쓸 이벤트가 없습니다." });
   try {
     const result = await buildCompareReport({ nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB });
-    console.info("[COMPARE_REPORT]", JSON.stringify({ idA, idB, events: eventsA.length + eventsB.length, status: result.verification_status }));
+    // 웹 검증이 확인한 것은 리포트에만 두지 않고 DB에 되돌린다. 실패해도 리포트는 그대로 낸다.
+    let dbUpdates = null;
+    try {
+      dbUpdates = await applyVerifiedFacts({ companyA: a, companyB: b, report: result.report, knownEventIds: [...eventsA, ...eventsB].map((event) => event.id).filter(Boolean) });
+    } catch (error) {
+      console.error("[COMPARE_REPORT_APPLY_FAILED]", JSON.stringify({ idA, idB, message: error.message }));
+      dbUpdates = { dates_fixed: 0, events_added: 0, embedded: 0, skipped: [error.message] };
+    }
+    console.info("[COMPARE_REPORT]", JSON.stringify({ idA, idB, events: eventsA.length + eventsB.length, status: result.verification_status, db: dbUpdates }));
     return response.status(200).json({
       status: "ok", company_a: a.name_ko, company_b: b.name_ko,
       events_a: eventsA.length, events_b: eventsB.length,
-      generated_at: new Date().toISOString(), ...result
+      generated_at: new Date().toISOString(), db_updates: dbUpdates, ...result
     });
   } catch (error) {
     console.error("[COMPARE_REPORT_FAILED]", JSON.stringify({ idA, idB, message: error.message }));

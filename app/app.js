@@ -507,6 +507,7 @@ function normalizeEvent(event){
     ? (event.trajectory_track === 'technology' ? '기술' : '시장')
     : (marketLayerLabels[layer] ? '시장' : '기술');
   return {
+    id: event.id,
     date: String(event.occurred_at || '').slice(0, 10),
     precision: event.occurred_precision || 'day',
     dateBasis: event.occurred_basis || '',
@@ -787,58 +788,66 @@ function compareReportHtml(payload){
   const r = payload.report || {};
   const insight = r.korea_insight || {};
   const check = r.verification || {};
-  const para = (label, text) => text ? `<div class="row"><p class="lbl">${escapeHtml(label)}</p><p class="txt">${escapeHtml(text)}</p></div>` : '';
-  const points = (insight.points || []).map(item =>
-    `<p class="row"><span class="seg">${escapeHtml(item.segment || '')}</span>${escapeHtml(item.point_ko || '')}<span class="basis">근거 · ${escapeHtml(item.basis_ko || '')}</span></p>`).join('');
-  const fixes = (check.corrections || []).map(item =>
-    `<li><s>${escapeHtml(item.original_ko || '')}</s><br>→ <strong>${escapeHtml(item.corrected_ko || '')}</strong><span class="basis">이유 · ${escapeHtml(item.reason_ko || '')}</span></li>`).join('');
-  const added = (check.added_evidence || []).map(item =>
-    `<li>${escapeHtml(item.fact_ko || '')}<span class="basis">${escapeHtml(item.source_name || '')} · <a href="${escapeHtml(item.source_url || '')}">${escapeHtml(item.source_url || '')}</a></span></li>`).join('');
+  const db = payload.db_updates || {};
+  const A = escapeHtml(payload.company_a), B = escapeHtml(payload.company_b);
+  // 전략·시계열은 두 회사를 나란히 놓고 읽어야 차이가 보인다. 대비는 그 아래 한 줄로 묶는다.
+  const pair = (section, contrastLabel, contrastKey) => `
+    <div class="pair"><div class="col"><p class="who">${A}</p><p class="txt">${escapeHtml(section?.a_ko || '')}</p></div>
+    <div class="col"><p class="who">${B}</p><p class="txt">${escapeHtml(section?.b_ko || '')}</p></div></div>
+    ${section?.[contrastKey] ? `<p class="contrast"><span class="tag">${contrastLabel}</span>${escapeHtml(section[contrastKey])}</p>` : ''}`;
+  const points = (insight.points || []).map(item => `
+    <div class="point"><p class="lead"><span class="seg">${escapeHtml(item.segment || '')}</span>${escapeHtml(item.implication_ko || '')}</p>
+    <p class="txt">${escapeHtml(item.point_ko || '')}</p><p class="basis">근거 · ${escapeHtml(item.basis_ko || '')}</p></div>`).join('');
+  const fixes = (check.corrections || []).map(item => `
+    <li><span class="was">${escapeHtml(item.original_ko || '')}</span><span class="now">${escapeHtml(item.corrected_ko || '')}</span><span class="basis">${escapeHtml(item.reason_ko || '')}${item.event_id ? ' · DB 이벤트 시점 수정 반영' : ''}</span></li>`).join('');
+  const added = (check.added_evidence || []).map(item => `
+    <li><strong>${escapeHtml(item.company === 'B' ? payload.company_b : payload.company_a)}</strong> · ${escapeHtml(item.occurred_at || '')} · ${escapeHtml(item.fact_ko || '')}<span class="basis">${escapeHtml(item.source_name || '')} · <a href="${escapeHtml(item.source_url || '')}">${escapeHtml(item.source_url || '')}</a></span></li>`).join('');
   const stamp = new Date(payload.generated_at || Date.now()).toLocaleString('ko-KR');
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(payload.company_a)} vs ${escapeHtml(payload.company_b)} 비교 리포트</title><style>
-@page{size:A4;margin:14mm}
+  const dbLine = payload.verification_status === 'draft_only'
+    ? '웹 검증에 실패해 초안 상태입니다.'
+    : `DB 반영 · 시점 수정 ${db.dates_fixed || 0}건 · 참고 이벤트 추가 ${db.events_added || 0}건`;
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${A} vs ${B} 비교 리포트</title><style>
+@page{size:A4;margin:13mm 14mm}
 *{box-sizing:border-box}
-body{margin:0;font-family:"Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;font-size:10px;line-height:1.62;color:#14263d}
-header{border-bottom:2px solid #10365f;padding-bottom:7px;margin-bottom:11px}
+body{margin:0;font-family:"Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;font-size:9.6px;line-height:1.6;color:#14263d}
+header{border-bottom:2px solid #10365f;padding-bottom:6px;margin-bottom:9px}
 .eyebrow{margin:0;font-size:8px;font-weight:800;letter-spacing:1.1px;color:#1674c5}
-h1{margin:3px 0 4px;font-size:16px;letter-spacing:-.3px}
-.meta{margin:0;font-size:8.5px;color:#617187}
-h2{margin:11px 0 5px;font-size:11px;color:#10365f;border-left:3px solid #1674c5;padding-left:7px}
-h2.insight{border-color:#8b5a10;color:#8b5a10}
-h2.check{border-color:#0c6b4e;color:#0c6b4e}
-.row{margin:0 0 6px}
-.lbl{margin:0 0 1px;font-size:9px;font-weight:800;color:#1674c5;letter-spacing:.2px}
+h1{margin:2px 0 3px;font-size:16px;letter-spacing:-.3px}
+.meta{margin:0;font-size:8.2px;color:#617187}
+.headline{margin:0 0 8px;padding:7px 10px;border-left:3px solid #10365f;background:#f3f6fa;font-size:10.2px;font-weight:700}
+h2{margin:9px 0 5px;font-size:10.5px;color:#10365f;letter-spacing:.2px}
+h2.insight{color:#8b5a10}h2.check{color:#0c6b4e}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.col{padding:6px 8px;border:1px solid #dbe3ec;border-radius:6px}
+.who{margin:0 0 2px;font-size:8.6px;font-weight:800;color:#1674c5}
 .txt{margin:0}
-p.row{margin:0 0 6px}
-.seg{display:inline-block;margin-right:5px;padding:0 5px;border:1px solid #e4dcc8;border-radius:9px;font-size:8px;font-weight:800;color:#8b5a10}
-.basis{display:block;margin-top:1px;font-size:8.5px;color:#617187}
-ul{margin:0;padding-left:14px}
-li{margin-bottom:3px}
-.none{margin:0;font-size:9px;color:#617187}
-footer{margin-top:12px;padding-top:6px;border-top:1px solid #dbe3ec;font-size:8px;color:#617187}
+.contrast{margin:5px 0 0;padding:5px 8px;background:#eaf3fb;border-radius:6px}
+.tag{display:inline-block;margin-right:6px;padding:0 6px;border-radius:9px;background:#10365f;color:#fff;font-size:7.8px;font-weight:800;vertical-align:1px}
+.point{margin:0 0 6px;padding:5px 8px;border:1px solid #e4dcc8;border-radius:6px;background:#fffdf6}
+.lead{margin:0 0 2px;font-weight:800;color:#5a3d0a}
+.seg{display:inline-block;margin-right:5px;padding:0 5px;border:1px solid #e4dcc8;border-radius:9px;font-size:7.8px;font-weight:800;color:#8b5a10;background:#fff;vertical-align:1px}
+.basis{display:block;margin-top:2px;font-size:8.2px;color:#617187}
+ul{margin:0;padding-left:12px}li{margin-bottom:3px}
+.was{display:block;color:#9b3a3a;text-decoration:line-through}
+.now{display:block;font-weight:700}
+.none{margin:0;font-size:8.8px;color:#617187}
+a{color:#1674c5;text-decoration:none;word-break:break-all}
+footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8px;color:#617187}
 @media screen{body{max-width:186mm;margin:18px auto;padding:0 14px}}
 </style></head><body>
 <header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
-<h1>${escapeHtml(payload.company_a)} vs ${escapeHtml(payload.company_b)}</h1>
+<h1>${A} vs ${B}</h1>
 <p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
-${r.headline_ko ? `<p class="row"><strong>${escapeHtml(r.headline_ko)}</strong></p>` : ''}
-<h2>1. 전략 비교</h2>
-${para(payload.company_a, r.strategy?.a_ko)}
-${para(payload.company_b, r.strategy?.b_ko)}
-${para('대비', r.strategy?.contrast_ko)}
-<h2>2. 시계열 비교</h2>
-${para(payload.company_a, r.timeline?.a_ko)}
-${para(payload.company_b, r.timeline?.b_ko)}
-${para('갈린 지점', r.timeline?.divergence_ko)}
-<h2 class="insight">3. 한국 배터리사·소재사 관점 (해석)</h2>
+${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
+<h2>1. 전략 비교</h2>${pair(r.strategy, '대비', 'contrast_ko')}
+<h2>2. 시계열 비교</h2>${pair(r.timeline, '갈린 지점', 'divergence_ko')}
+<h2 class="insight">3. 한국 배터리사·소재사 관점 — 해석</h2>
 ${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
 <h2 class="check">4. 웹 검증</h2>
-<p class="row">${escapeHtml(check.checked_ko || '검증 정보 없음')}</p>
-${fixes ? `<p class="row"><span class="lbl">수정</span></p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>'}
-${added ? `<p class="row"><span class="lbl">추가 근거</span></p><ul>${added}</ul>` : ''}
-<footer>1~2장은 수집된 사실 정리이고 3장은 해석입니다. 투자 판단 자료가 아닙니다.
-${payload.verification_status === 'draft_only' ? ' 웹 검증에 실패해 초안 상태입니다.' : ''}
-</footer>
+<p class="txt">${escapeHtml(check.checked_ko || '검증 정보 없음')}</p>
+${fixes ? `<p class="who" style="margin-top:4px">수정</p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>'}
+${added ? `<p class="who" style="margin-top:4px">검색으로 새로 확인한 사실</p><ul>${added}</ul>` : ''}
+<footer>1~2장은 수집된 사실 정리, 3장은 해석입니다. 투자 판단 자료가 아닙니다. ${escapeHtml(dbLine)}</footer>
 </body></html>`;
 }
 
@@ -859,8 +868,8 @@ async function generateCompareReport(){
       body: JSON.stringify({
         mode: 'compare_report',
         companyA: lastComparison.a, companyB: lastComparison.b,
-        eventsA: lastComparison.eventsA.map(event => ({ date: event.date, title: event.title, fact: event.fact, sourceName: event.sourceName })),
-        eventsB: lastComparison.eventsB.map(event => ({ date: event.date, title: event.title, fact: event.fact, sourceName: event.sourceName }))
+        eventsA: lastComparison.eventsA.map(event => ({ id: event.id, date: event.date, title: event.title, fact: event.fact, sourceName: event.sourceName })),
+        eventsB: lastComparison.eventsB.map(event => ({ id: event.id, date: event.date, title: event.title, fact: event.fact, sourceName: event.sourceName }))
       })
     });
     const payload = await response.json();
