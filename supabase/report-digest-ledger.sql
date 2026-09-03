@@ -7,7 +7,7 @@
 
 create table if not exists public.report_digest (
   company_id text not null references public.company(id) on delete cascade,
-  kind text not null check (kind in ('annual','semiannual','quarterly')),
+  kind text not null check (kind in ('annual','semiannual','quarterly','web')),
   report_url text not null,
   report_title text,
   published_at date,
@@ -29,3 +29,9 @@ from public.event
 where evidence_kind = 'annual_report' and source_url is not null
 group by company_id, source_url
 on conflict do nothing;
+
+
+-- 비상장사 웹 백필 기록도 같은 장부에 둔다.
+alter table public.report_digest drop constraint if exists report_digest_kind_check;
+alter table public.report_digest add constraint report_digest_kind_check
+  check (kind in ('annual','semiannual','quarterly','web'));

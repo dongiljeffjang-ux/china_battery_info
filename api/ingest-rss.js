@@ -18,8 +18,9 @@ const PROCESS_CONCURRENCY = 3;
 const STAGE_BUDGET_MS = 42000;
 // 본문 처리 호출을 최대 몇 번 이어 붙일지. 하루치 헤드라인 10건이면 두어 번이면 끝난다.
 const MAX_PROCESS_HOPS = 4;
-// 유지 단계(보고서 읽기·시점 재확인·임베딩) 호출을 하루에 최대 몇 번 이어 붙일지.
-const MAX_CURATE_HOPS = 8;
+// 유지 단계(보고서 읽기·시점 재확인·임베딩) 호출을 한 번의 실행에서 최대 몇 번 이어 붙일지.
+// 회사 23곳 × 최근 3년 보고서 6건이면 백여 건이라, 처음 며칠은 한 실행에 수십 번 이어야 한다.
+const MAX_CURATE_HOPS = 40;
 // 60초 함수 안에서 검색 1회 + 추출이 끝나야 하므로 회사당 건수를 낮춘다.
 const BACKFILL_MAX_EVENTS = 12;
 const BACKFILL_SINCE = "2023-01-01";
