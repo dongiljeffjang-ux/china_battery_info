@@ -638,16 +638,49 @@ async function renderCompany(){
   renderCompanyEvents(timeline);
   renderLayerMatrix(timeline);
 }
+// 훑어보는 화면에서 무엇을 먼저 보여줄지 정하는 중요도. 정기보고서와 핵심 등급, 수치가 있는 사실을 앞에 둔다.
+function importanceOf(event){
+  let score = 0;
+  if (event.kind === 'annual_report' || event.kind === 'periodic_report') score += 3;
+  if (event.eligibility === '핵심') score += 2;
+  if (event.kind === 'web_backfill') score -= 1;
+  if (METRIC_PATTERN.test(`${event.title} ${event.fact}`)) score += 2;
+  METRIC_PATTERN.lastIndex = 0;
+  if (/(증설|투산|가동|출하|판매|매출|수주|인증|양산|생산능력|공장|투자)/.test(event.title)) score += 1;
+  return score;
+}
+// 사실 문장에서 단위 붙은 수치 두 개까지만 뽑는다. 개조식 한 줄에 실을 핵심이다.
+function keyMetrics(event){
+  const found = [...String(event.fact || '').matchAll(METRIC_PATTERN)].map(match => match[1].trim());
+  return [...new Set(found)].slice(0, 2).join(' · ');
+}
+function eventTip(event){
+  return [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
+}
+
 function renderCompanyEvents(timeline){
   const grid = document.querySelector('#snapshot-grid');
   const events = visibleEvents(timeline).filter(event => event.kind === 'annual_report' || event.kind === 'periodic_report');
   if (!events.length) {
-    grid.innerHTML = `<p>${escapeHtml(timelineNotice(timeline.status) || '아직 읽어들인 정기보고서가 없습니다. 연차보고서 요약을 실행해 주세요.')}</p>`;
+    grid.innerHTML = `<p>${escapeHtml(timelineNotice(timeline.status) || '아직 읽어들인 정기보고서가 없습니다. 매일 밤 수집 뒤 자동으로 채워집니다.')}</p>`;
     return;
   }
-  grid.innerHTML = [...events].sort((a, b) => b.date.localeCompare(a.date)).map(event => {
-    const tags = [displayDate(event), evidenceLabels[event.kind] || '', event.group, event.label, event.both ? '시장·기술' : '', entityLabel(event)].filter(Boolean).join(' · ');
-    return `<article class="snapshot ${event.track}"><span class="snapshot-year" data-tip="${escapeHtml(dateTip(event))}">${escapeHtml(tags)}</span><h3>${escapeHtml(event.title)}</h3><ul><li>${escapeHtml(event.fact)}</li></ul><p style="margin:0;font-size:12px;color:#617187">${sourceLink(event)}</p></article>`;
+  // 시점별로 묶고, 한 시점 안에서는 중요한 것부터 개조식 한 줄씩. 전문은 마우스를 올리면 뜬다.
+  const groups = new Map();
+  [...events].sort((a, b) => b.date.localeCompare(a.date)).forEach(event => {
+    const label = displayDate(event);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(event);
+  });
+  grid.innerHTML = [...groups.entries()].map(([label, items]) => {
+    const first = items[0];
+    const head = [label, evidenceLabels[first.kind] || ''].filter(Boolean).join(' · ');
+    const lines = [...items].sort((x, y) => importanceOf(y) - importanceOf(x)).map(event => {
+      const metrics = keyMetrics(event);
+      const tags = [event.label !== '미분류' ? event.label : '', entityLabel(event)].filter(Boolean).join(' · ');
+      return `<li class="digest-item" data-tip="${escapeHtml(eventTip(event))}"><span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${tags ? `<span class="digest-tags">${escapeHtml(tags)}</span>` : ''} ${sourceLink(event, '11px')}</li>`;
+    }).join('');
+    return `<article class="snapshot digest ${first.track}"><span class="snapshot-year" data-tip="${escapeHtml(dateTip(first))}">${escapeHtml(head)}</span><ul class="digest-list">${lines}</ul></article>`;
   }).join('');
 }
 function renderLayerMatrix(timeline){
@@ -658,7 +691,8 @@ function renderLayerMatrix(timeline){
     target.innerHTML = `<p>${escapeHtml(notice || '선택한 기업에 표시할 공시 기반 이벤트가 아직 없습니다.')}</p>`;
     return;
   }
-  const periods = timelinePeriods(events);
+  // 현재 시점을 먼저 본다. 열은 최근이 왼쪽, 과거가 오른쪽이다.
+  const periods = timelinePeriods(events).reverse();
   const rowsFor = (group, labels) => {
     const rows = Object.entries(labels).map(([key, label]) => ({ group, label, match: event => event.layer === key }));
     if (events.some(event => event.layer === UNCLASSIFIED_LAYER && event.group === group)) {
@@ -680,10 +714,8 @@ function renderLayerMatrix(timeline){
   const stickyGroup = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:0;background:#fff;z-index:1';
   const stickyLayer = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:58px;background:#fff;z-index:1';
   const table = `<table style="width:100%;min-width:${periods.length * 168 + 300}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:150px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-  target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 칸에는 방향과 수치만 적었습니다. 자세한 사실은 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
+  target.innerHTML = `<div style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">최근 시점이 왼쪽입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 칸에는 방향과 수치만 적었습니다. 자세한 사실은 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
-// 정기보고서 요약은 Vercel에서 실행한다. 서버가 보고서 PDF를 직접 읽는다.
-// 어떤 정기보고서를 읽을지는 화면의 선택을 따른다. 과거는 연차, 현행은 반기·분기다.
 
 // 벡터 지식에 질문한다. 근거가 없으면 답을 만들지 않고 무엇을 확인할지 안내받는다.
 async function askKnowledge(event){
@@ -922,28 +954,13 @@ async function renderComparison(){
   // 비교 화면의 셀은 훑어보는 자리다. 사실 문장을 다 싣지 않고 제목과 핵심 수치만 개조식으로,
   // 중요한 것부터 최대 세 줄 보여준다. 전문은 마우스를 올리면 뜬다.
   const CELL_LIMIT = 3;
-  const importanceOf = event => {
-    let score = 0;
-    if (event.kind === 'annual_report' || event.kind === 'periodic_report') score += 3;
-    if (event.eligibility === '핵심') score += 2;
-    if (event.kind === 'web_backfill') score -= 1;
-    if (METRIC_PATTERN.test(`${event.title} ${event.fact}`)) score += 2;
-    METRIC_PATTERN.lastIndex = 0;
-    if (/(증설|투산|가동|출하|판매|매출|수주|인증|양산|생산능력|공장|투자)/.test(event.title)) score += 1;
-    return score;
-  };
-  const keyMetrics = event => {
-    const found = [...String(event.fact || '').matchAll(METRIC_PATTERN)].map(match => match[1].trim());
-    return [...new Set(found)].slice(0, 2).join(' · ');
-  };
   const eventsAt = (events, date) => {
     const ranked = events.filter(event => displayDate(event) === date).sort((x, y) => importanceOf(y) - importanceOf(x));
     const shown = ranked.slice(0, CELL_LIMIT);
     const rest = ranked.length - shown.length;
     return shown.map(event => {
       const metrics = keyMetrics(event);
-      const tip = [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
-      return `<div class="cmp-item" data-tip="${escapeHtml(tip)}"><span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+      return `<div class="cmp-item" data-tip="${escapeHtml(eventTip(event))}"><span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('') + (rest > 0 ? `<div class="cmp-more">+${rest}건 (Excel 내보내기에서 전체 확인)</div>` : '');
   };
   const eventCell = (events, date, side) => { const html = eventsAt(events, date); return `<div class="cmp-cell" style="min-height:54px;padding:8px 10px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:12px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
