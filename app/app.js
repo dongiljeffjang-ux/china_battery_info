@@ -972,7 +972,177 @@ function activateView(view){
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('is-visible', el.id === view));
   document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('is-active',el.dataset.view===view));
 }
-document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
+document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => {
+  activateView(link.dataset.view);
+  if (link.dataset.view === 'graph') startKnowledgeGraph();
+}));
+
+// ── 키워드·기업·레이어 3D 연관 그래프 ──────────────────────────────
+// 서버가 pca3()로 미리 계산해 준 x,y,z를 그대로 초기 배치로 쓰고, 여기서는
+// 회전·확대만 다룬다. 라이브러리 없이 캔버스 2D에 직접 원근 투영한다.
+let knowledgeGraphData = null;
+let knowledgeGraphLoading = false;
+let graphProjectedCache = null;
+let graphSelectedNode = null;
+let graphRotation = { x: -0.3, y: 0.6 };
+let graphZoom = 1;
+let graphDrag = null;
+let graphDragMoved = false;
+let graphAutoRotate = true;
+let graphRAF = null;
+
+function graphNodeColor(kind){ return kind === 'company' ? '#2f6fed' : kind === 'keyword' ? '#e08a2f' : '#1f9d6b'; }
+function graphNodeRadius(node){ return 5 + Math.min(10, Math.sqrt(Math.max(1, node.count))); }
+
+function drawKnowledgeGraph(){
+  const canvas = document.querySelector('#knowledge-graph-canvas');
+  if (!canvas || !knowledgeGraphData?.nodes?.length) return;
+  const wrap = canvas.parentElement;
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  if (!w || !h) return;
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  const cosY = Math.cos(graphRotation.y), sinY = Math.sin(graphRotation.y);
+  const cosX = Math.cos(graphRotation.x), sinX = Math.sin(graphRotation.x);
+  const unit = Math.min(w, h) / 190;
+  const perspective = 240;
+  const projected = new Map();
+  for (const node of knowledgeGraphData.nodes) {
+    const x1 = node.x * cosY - node.z * sinY;
+    const z1 = node.x * sinY + node.z * cosY;
+    const y1 = node.y * cosX - z1 * sinX;
+    const z2 = node.y * sinX + z1 * cosX;
+    const depthScale = (perspective / (perspective + z2)) * graphZoom;
+    projected.set(node.id, { sx: w / 2 + x1 * unit * depthScale, sy: h / 2 + y1 * unit * depthScale, depthScale, z: z2, node });
+  }
+  for (const link of knowledgeGraphData.links) {
+    const a = projected.get(link.source), b = projected.get(link.target);
+    if (!a || !b) continue;
+    const isSelected = graphSelectedNode && (link.source === graphSelectedNode.id || link.target === graphSelectedNode.id);
+    const alpha = Math.max(0.06, Math.min(0.5, link.weight * 0.4));
+    ctx.strokeStyle = isSelected ? 'rgba(22,116,197,0.85)' : `rgba(120,140,165,${alpha})`;
+    ctx.lineWidth = isSelected ? 1.6 : 0.8;
+    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+  }
+  const order = [...projected.values()].sort((p, q) => p.z - q.z);
+  for (const p of order) {
+    const r = graphNodeRadius(p.node) * Math.max(0.55, p.depthScale);
+    ctx.globalAlpha = Math.max(0.45, Math.min(1, p.depthScale));
+    ctx.fillStyle = graphNodeColor(p.node.kind);
+    ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2); ctx.fill();
+    if (graphSelectedNode && p.node.id === graphSelectedNode.id) {
+      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#10365f'; ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  graphProjectedCache = projected;
+}
+
+function hitTestGraphNode(event){
+  if (!graphProjectedCache) return null;
+  const canvas = document.querySelector('#knowledge-graph-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const mx = event.clientX - rect.left, my = event.clientY - rect.top;
+  let best = null, bestDist = Infinity;
+  for (const p of graphProjectedCache.values()) {
+    const r = graphNodeRadius(p.node) * Math.max(0.55, p.depthScale) + 4;
+    const d = Math.hypot(p.sx - mx, p.sy - my);
+    if (d <= r && d < bestDist) { bestDist = d; best = p; }
+  }
+  return best;
+}
+
+function renderGraphInfo(node){
+  const panel = document.querySelector('#graph-info');
+  if (!node) { panel.innerHTML = '점을 클릭하면 상세 정보가 표시됩니다.'; return; }
+  const kindLabel = node.kind === 'company' ? '회사' : node.kind === 'keyword' ? '키워드' : '시장·기술 레이어';
+  const links = knowledgeGraphData.links.filter(l => l.source === node.id || l.target === node.id)
+    .sort((a, b) => b.weight - a.weight).slice(0, 10);
+  const rows = links.map(l => {
+    const otherId = l.source === node.id ? l.target : l.source;
+    const other = knowledgeGraphData.nodes.find(n => n.id === otherId);
+    return `<li>${escapeHtml(other?.label || otherId)} <span style="color:var(--muted)">· ${escapeHtml(l.reason)} (${l.weight})</span></li>`;
+  }).join('') || '<li style="color:var(--muted)">연결된 근거가 없습니다.</li>';
+  panel.innerHTML = `<span class="gi-kind">${kindLabel}</span><h3>${escapeHtml(node.label)}</h3><p style="margin:0;color:var(--muted)">근거 청크 ${node.count}개${node.companies?.length ? ` · 관련 회사 ${node.companies.length}곳` : ''}</p><ul>${rows}</ul>`;
+}
+
+function graphRenderLoop(){
+  const view = document.querySelector('#graph');
+  if (view?.classList.contains('is-visible')) {
+    if (!graphDrag && graphAutoRotate) graphRotation.y += 0.0025;
+    drawKnowledgeGraph();
+    graphRAF = requestAnimationFrame(graphRenderLoop);
+  } else {
+    graphRAF = null;
+  }
+}
+
+function setupGraphInteractions(){
+  const canvas = document.querySelector('#knowledge-graph-canvas');
+  if (!canvas) return;
+  canvas.addEventListener('pointerdown', event => {
+    graphDrag = { x: event.clientX, y: event.clientY, rx: graphRotation.x, ry: graphRotation.y };
+    graphDragMoved = false;
+    graphAutoRotate = false;
+    canvas.classList.add('is-dragging');
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointermove', event => {
+    if (graphDrag) {
+      const dx = event.clientX - graphDrag.x, dy = event.clientY - graphDrag.y;
+      if (Math.hypot(dx, dy) > 4) graphDragMoved = true;
+      graphRotation.y = graphDrag.ry + dx * 0.006;
+      graphRotation.x = Math.max(-1.3, Math.min(1.3, graphDrag.rx + dy * 0.006));
+      return;
+    }
+    const hit = hitTestGraphNode(event);
+    canvas.style.cursor = hit ? 'pointer' : 'grab';
+    if (hit) showTip(`${hit.node.label} · 근거 ${hit.node.count}개`, event.clientX, event.clientY);
+    else hideTip();
+  });
+  const endDrag = event => {
+    if (!graphDrag) return;
+    graphDrag = null;
+    canvas.classList.remove('is-dragging');
+    if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+  };
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointerleave', endDrag);
+  canvas.addEventListener('wheel', event => {
+    event.preventDefault();
+    graphZoom = Math.max(0.5, Math.min(2.6, graphZoom - event.deltaY * 0.001));
+  }, { passive: false });
+  canvas.addEventListener('click', event => {
+    if (graphDragMoved) { graphDragMoved = false; return; }
+    const hit = hitTestGraphNode(event);
+    graphSelectedNode = hit ? hit.node : null;
+    renderGraphInfo(graphSelectedNode);
+  });
+}
+
+async function startKnowledgeGraph(){
+  if (!graphRAF) graphRAF = requestAnimationFrame(graphRenderLoop);
+  if (knowledgeGraphLoading || knowledgeGraphData) return;
+  knowledgeGraphLoading = true;
+  const empty = document.querySelector('#graph-empty');
+  try {
+    const result = await fetch('/api/company?mode=knowledge_graph', { cache: 'no-store' });
+    const payload = await result.json();
+    if (payload.status !== 'ok' || !payload.nodes?.length) {
+      empty.hidden = false;
+      empty.textContent = payload.note || payload.message || '아직 그래프를 그릴 만큼 벡터가 쌓이지 않았습니다.';
+      knowledgeGraphData = { nodes: [], links: [] };
+      return;
+    }
+    knowledgeGraphData = payload;
+  } catch (error) {
+    empty.hidden = false;
+    empty.textContent = `그래프를 불러오지 못했습니다: ${error.message}`;
+  } finally {
+    knowledgeGraphLoading = false;
+  }
+}
 document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompanyPicker(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });
 document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
 // 수집은 시작만 이 요청으로 하고, 본문 처리와 Daily 생성은 서버가 별도 호출로 이어 간다.
@@ -1015,6 +1185,7 @@ document.querySelector('#run-collection-button').addEventListener('click', async
   }
 });
 async function initialize(){
+  setupGraphInteractions();
   await loadCompanyCatalog();
   const compareA = document.querySelector('#compare-a');
   const compareB = document.querySelector('#compare-b');

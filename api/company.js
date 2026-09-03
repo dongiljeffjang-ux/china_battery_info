@@ -5,6 +5,7 @@ import { COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
 import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
 import { buildCompareReport, applyVerifiedFacts } from "../lib/compare-report.js";
+import { buildKnowledgeGraph } from "../lib/knowledge-graph.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증)을 부르므로 기본 10초로는 끝나지 않는다.
 export const maxDuration = 60;
@@ -110,6 +111,18 @@ async function handleRequest(request, response) {
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
     return runAsk(request, response);
   }
+  if (String(request.query.mode || "") === "knowledge_graph") {
+    if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", nodes: [], links: [] });
+    try {
+      const graph = await buildKnowledgeGraph({});
+      response.setHeader("Cache-Control", "no-store, max-age=0");
+      return response.status(200).json({ status: "ok", ...graph });
+    } catch (error) {
+      console.error("[KNOWLEDGE_GRAPH_FAILED]", JSON.stringify({ message: error.message }));
+      return response.status(502).json({ status: error.code || "db_error", message: error.message, nodes: [], links: [] });
+    }
+  }
+
   const companyId = String(request.query.companyId || "").trim();
   if (!companyId) return response.status(200).json({ status: "ok", selection_basis: SELECTION_BASIS, companies: sortedCatalog() });
 
