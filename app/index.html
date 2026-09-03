@@ -102,6 +102,7 @@
           </div>
           <div class="company-actions">
             <label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함</label>
+            <button id="run-backfill-button" class="secondary-button" type="button" data-tip="정기보고서(심천·상해·홍콩) 읽기, 얇게 읽힌 보고서 보강, 비상장사 웹 백필, 시점 재확인을 서버가 20~30분 동안 이어서 돌립니다. 뉴스 수집과는 별개입니다.">시계열 백필 1회 실행</button>
             <button id="export-company-timeline" class="secondary-button" type="button">Excel 내보내기</button>
           </div>
         </div>
@@ -187,7 +188,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260904-compare-chain"></script>
+    <script src="./app.js?v=20260904-backfill-button"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

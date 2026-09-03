@@ -1099,6 +1099,25 @@ document.querySelector('#run-collection-button').addEventListener('click', async
     button.disabled = false; button.textContent = '수집·분석 1회 실행';
   }
 });
+// 시계열 백필 1회 실행. 서버가 백그라운드에서 이어 돌리므로 화면을 잠그지 않는다.
+async function runTimelineBackfill(){
+  if (!window.confirm('정기보고서 읽기·보강·시점 재확인을 서버에서 20~30분 동안 돌립니다. LLM 호출이 많으니 필요할 때만 실행하세요. 시작할까요?')) return;
+  const button = document.querySelector('#run-backfill-button');
+  button.disabled = true; button.textContent = '백필 시작 중…';
+  try {
+    const result = await fetch('/api/ingest-rss?curate_run=1', { method: 'POST' });
+    const payload = await result.json();
+    if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || '요청 실패');
+    button.textContent = '백필 진행 중 (백그라운드)';
+    window.alert(`시작했습니다.
+${payload.next_step || ''}`);
+    // 몇 분 뒤에 한 번 다시 읽어 채워지는 것을 보여준다. 이후는 새로 고침으로.
+    setTimeout(async () => { companyTimelineCache.clear(); await renderCompany(); button.disabled = false; button.textContent = '시계열 백필 1회 실행'; }, 5 * 60 * 1000);
+  } catch (error) {
+    window.alert(`백필을 시작하지 못했습니다: ${error.message}`);
+    button.disabled = false; button.textContent = '시계열 백필 1회 실행';
+  }
+}
 async function initialize(){
   await loadCompanyCatalog();
   const compareA = document.querySelector('#compare-a');
@@ -1117,6 +1136,7 @@ async function initialize(){
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
+  document.querySelector('#run-backfill-button').addEventListener('click', runTimelineBackfill);
   document.querySelector('#ask-form').addEventListener('submit', askKnowledge);
   document.querySelector('#news-more').addEventListener('click', () => { topNewsExpanded = !topNewsExpanded; renderTopNews(); });
   const supporting = document.querySelector('#include-supporting');
