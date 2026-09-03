@@ -1236,12 +1236,16 @@ async function initialize(){
   document.querySelector('#run-embed-button').addEventListener('click', runEmbedBackfill);
   document.querySelector('#ask-form').addEventListener('submit', askKnowledge);
   document.querySelector('#news-more').addEventListener('click', () => { topNewsExpanded = !topNewsExpanded; renderTopNews(); });
-  const supporting = document.querySelector('#include-supporting');
-  supporting.checked = includeSupporting;
-  supporting.addEventListener('change', async () => {
-    includeSupporting = supporting.checked;
-    await renderCompany();
-    await renderComparison();
+  // 보조 데이터 토글은 기업 시계열 화면과 비교 화면 두 곳에 있고, 같은 상태를 공유한다.
+  const supportingToggles = [document.querySelector('#include-supporting'), document.querySelector('#include-supporting-compare')].filter(Boolean);
+  supportingToggles.forEach(box => {
+    box.checked = includeSupporting;
+    box.addEventListener('change', async () => {
+      includeSupporting = box.checked;
+      supportingToggles.forEach(other => { other.checked = includeSupporting; });
+      await renderCompany();
+      await renderComparison();
+    });
   });
   document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
   // toISOString은 UTC 날짜를 준다. 한국은 UTC+9라 오전에는 하루 뒤처진 날짜가 잡혀
