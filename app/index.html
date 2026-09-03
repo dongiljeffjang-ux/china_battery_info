@@ -175,6 +175,7 @@
             <h1 id="graph-title">키워드·기업·레이어 연관 그래프</h1>
             <p>벡터 DB에 쌓인 회사·키워드·시장/기술 레이어의 평균 임베딩을 코사인 유사도로 잇고, 3차원으로 투영했습니다. 드래그로 회전, 휠로 확대·축소, 점을 클릭하면 연결 근거를 보여줍니다.</p>
           </div>
+          <label class="company-picker">회사 선택 <select id="graph-company"><option value="">전체 보기</option></select></label>
         </div>
         <div class="graph-layout">
           <div class="graph-canvas-wrap">
@@ -210,7 +211,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260903-knowledge-graph"></script>
+    <script src="./app.js?v=20260903-graph-labels"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

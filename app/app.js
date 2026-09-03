@@ -990,6 +990,23 @@ let graphDrag = null;
 let graphDragMoved = false;
 let graphAutoRotate = true;
 let graphRAF = null;
+let graphFocusCompany = '';
+
+// 회사를 고르면 그 회사와 직접 이어진 점만 남긴다. 이어진 근거는 링크(의미 유사·같은 기사)와
+// 키워드·레이어가 가진 관련 회사 목록 두 가지다.
+function graphVisibleIds(){
+  if (!graphFocusCompany || !knowledgeGraphData) return null;
+  const focusId = `company:${graphFocusCompany}`;
+  const visible = new Set([focusId]);
+  for (const link of knowledgeGraphData.links) {
+    if (link.source === focusId) visible.add(link.target);
+    if (link.target === focusId) visible.add(link.source);
+  }
+  for (const node of knowledgeGraphData.nodes) {
+    if (node.kind !== 'company' && (node.companies || []).includes(graphFocusCompany)) visible.add(node.id);
+  }
+  return visible;
+}
 
 function graphNodeColor(kind){ return kind === 'company' ? '#2f6fed' : kind === 'keyword' ? '#e08a2f' : '#1f9d6b'; }
 function graphNodeRadius(node){ return 5 + Math.min(10, Math.sqrt(Math.max(1, node.count))); }
@@ -1008,7 +1025,9 @@ function drawKnowledgeGraph(){
   const unit = Math.min(w, h) / 190;
   const perspective = 240;
   const projected = new Map();
+  const visible = graphVisibleIds();
   for (const node of knowledgeGraphData.nodes) {
+    if (visible && !visible.has(node.id)) continue;
     const x1 = node.x * cosY - node.z * sinY;
     const z1 = node.x * sinY + node.z * cosY;
     const y1 = node.y * cosX - z1 * sinX;
@@ -1034,6 +1053,20 @@ function drawKnowledgeGraph(){
     if (graphSelectedNode && p.node.id === graphSelectedNode.id) {
       ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#10365f'; ctx.stroke();
     }
+  }
+  // 라벨은 점을 다 찍은 뒤 위에 얹는다. 앞쪽 점일수록 크고 진하게, 뒤쪽은 작고 흐리게.
+  ctx.textBaseline = 'middle';
+  for (const p of order) {
+    const r = graphNodeRadius(p.node) * Math.max(0.55, p.depthScale);
+    const size = Math.round(Math.max(9, Math.min(14, 11 * p.depthScale)));
+    ctx.font = `${p.node.kind === 'company' ? '700' : '500'} ${size}px "Segoe UI","Noto Sans KR",sans-serif`;
+    ctx.globalAlpha = Math.max(0.5, Math.min(1, p.depthScale));
+    const label = p.node.label;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    ctx.fillRect(p.sx + r + 3, p.sy - size * 0.7, tw + 6, size * 1.4);
+    ctx.fillStyle = graphNodeColor(p.node.kind);
+    ctx.fillText(label, p.sx + r + 6, p.sy);
   }
   ctx.globalAlpha = 1;
   graphProjectedCache = projected;
@@ -1136,6 +1169,15 @@ async function startKnowledgeGraph(){
       return;
     }
     knowledgeGraphData = payload;
+    const select = document.querySelector('#graph-company');
+    const present = new Set(payload.nodes.filter(n => n.kind === 'company').map(n => n.key));
+    const options = companyCatalog.filter(c => present.has(c.id)).map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name_ko)}</option>`);
+    select.innerHTML = `<option value="">전체 보기</option>${options.join('')}`;
+    select.onchange = () => {
+      graphFocusCompany = select.value;
+      graphSelectedNode = graphFocusCompany ? payload.nodes.find(n => n.id === `company:${graphFocusCompany}`) || null : null;
+      renderGraphInfo(graphSelectedNode);
+    };
   } catch (error) {
     empty.hidden = false;
     empty.textContent = `그래프를 불러오지 못했습니다: ${error.message}`;
