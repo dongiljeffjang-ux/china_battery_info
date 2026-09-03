@@ -101,7 +101,6 @@
             <p>최소 최근 3년부터 현재까지, 출처가 확인된 주요 사실을 시간순으로 추적합니다.</p>
           </div>
           <div class="company-actions">
-            <label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 거래소 공시·본문 검증을 통과한 핵심(core) 사실만 표시합니다. 이 옵션을 켜면 아직 공시로 확정되지 않은 참고(reference) 등급 데이터도 함께 보입니다: 언론 기사, 그리고 상장사 올해분·비상장사의 뉴스 웹 백필. 최신 소식을 폭넓게 보되 확정도는 낮으니 참고용으로 보세요.">?</span></label>
             <button id="run-backfill-button" class="secondary-button" type="button" data-tip="정기보고서(심천·상해·홍콩) 읽기, 얇게 읽힌 보고서 보강, 비상장사 웹 백필, 시점 재확인을 서버가 20~30분 동안 이어서 돌립니다. 뉴스 수집과는 별개입니다.">시계열 백필 1회 실행</button>
             <button id="run-embed-button" class="secondary-button" type="button" data-tip="시계열 사실(event) 중 벡터DB(지식 검색)에 아직 들어가지 않은 항목을 임베딩합니다. LLM 사실 추출이 아니라 이미 확정된 텍스트를 임베딩 API로 색인만 합니다.">벡터DB 임베딩 채우기</button>
             <button id="export-company-timeline" class="secondary-button" type="button">Excel 내보내기</button>
@@ -147,6 +146,7 @@
               <p class="eyebrow">MARKET × TECHNOLOGY</p>
               <h2 id="tracks-title">시장·기술 레이어별 시간축</h2>
             </div>
+            <label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 거래소 공시·본문 검증을 통과한 핵심(core) 사실만 표시합니다. 이 옵션을 켜면 아직 공시로 확정되지 않은 참고(reference) 등급 데이터도 함께 보입니다: 언론 기사, 그리고 상장사 올해분·비상장사의 뉴스 웹 백필. 이 레이어별 시간축과 기업 비교 화면에 반영됩니다. 최신 소식을 폭넓게 보되 확정도는 낮으니 참고용으로 보세요.">?</span></label>
           </div>
           <div class="track-legend"><span><i class="dot market"></i>시장: 실적·생산기반 / 고객·해외</span><span><i class="dot tech"></i>기술: 소재·공정 / IP·인증·양산</span><span>위가 최근 · 아래가 과거</span></div>
           <div id="dual-track" class="dual-track"></div>
