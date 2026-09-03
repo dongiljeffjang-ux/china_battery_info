@@ -122,9 +122,17 @@ function formatSummaryPoint(point){
 
 // 기사 팩트 요약도 개조식("- 항목")으로 내려온다. 카테고리 헤더가 없을 뿐 파싱 방식은 같다.
 // 개조식 이전에 저장된 옛 기사는 줄바꿈 없는 문장 하나로 오는데, 이때도 한 줄짜리 항목으로 그냥 보여준다.
+// 서술형으로 저장된 예전 요약도 카드에서는 개조식으로 보여야 한다.
+// 불릿 표시가 없는 문단은 문장 단위로 잘라 한 줄씩 만든다. 소수점(22.99)은 뒤에 공백이 없어 안 잘린다.
+function splitSentences(text){
+  return String(text).split(/(?<=[.。!?！？])\s+/).map(part => part.trim()).filter(part => part.length > 1);
+}
 function renderFactHtml(text){
   const lines = String(text || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
-  const points = parseDailySections(lines).flatMap(section => section.points);
+  const hasBullets = lines.some(line => /^[-*·•]\s+/.test(line));
+  const points = hasBullets
+    ? parseDailySections(lines).flatMap(section => section.points)
+    : lines.flatMap(splitSentences);
   if (!points.length) return '';
   return `<ul class="fact-list">${points.map(point => `<li>${formatSummaryPoint(point)}</li>`).join('')}</ul>`;
 }

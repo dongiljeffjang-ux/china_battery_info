@@ -1,7 +1,7 @@
 {
   "crons": [
-    { "path": "/api/ingest-rss", "schedule": "30 23 * * *" },
-    { "path": "/api/embed-event", "schedule": "0 1 * * *" }
+    { "path": "/api/ingest-rss", "schedule": "0 14 * * *" },
+    { "path": "/api/embed-event", "schedule": "0 16 * * *" }
   ],
   "rewrites": [
     { "source": "/", "destination": "/app/index.html" },
