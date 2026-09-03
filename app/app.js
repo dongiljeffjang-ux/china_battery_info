@@ -974,8 +974,165 @@ function activateView(view){
 }
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => {
   activateView(link.dataset.view);
-  if (link.dataset.view === 'graph') startKnowledgeGraph();
+  if (link.dataset.view === 'graph') startStrategyProfile();
 }));
+
+// ── 기업 전략 프로파일 ──────────────────────────────────────────
+// 서버는 이벤트를 레이어·분기·세그먼트로 태그해서 주고, 세는 일은 전부 여기서 한다.
+// 그래야 회사를 바꿀 때마다 서버를 다시 부르지 않는다.
+let profileData = null;
+let profileLoading = false;
+let profileCompany = '';
+let profileSegment = 'ncm';
+const LAYER_ORDER = [...Object.keys(marketLayerLabels), ...Object.keys(technologyLayerLabels), 'other'];
+const LAYER_COLORS = {
+  'supply-performance': '#10365f', 'investment-production': '#1f5f99', 'customer-commercialization': '#4a8ac7', 'regional-overseas': '#9cc0e3',
+  'technology-material-chemistry': '#8b5a10', 'technology-process-performance': '#b8842f', 'technology-ip-standard': '#d9ad62', 'technology-development': '#efd3a2',
+  other: '#c9d2dc'
+};
+function layerName(key){ return layerLabels[key] || '기타'; }
+function quarterList(){
+  const now = new Date();
+  const endYear = now.getFullYear(), endQ = Math.ceil((now.getMonth() + 1) / 3);
+  const list = [];
+  for (let y = 2023; y <= endYear; y += 1) for (let q = 1; q <= 4; q += 1) {
+    if (y === endYear && q > endQ) break;
+    list.push(`${y} Q${q}`);
+  }
+  return list;
+}
+function halfOf(quarter){ const [y, q] = quarter.split(' Q'); return `${y} ${Number(q) <= 2 ? 'H1' : 'H2'}`; }
+function countBy(items, keyFn){ const map = new Map(); for (const item of items) { const k = keyFn(item); map.set(k, (map.get(k) || 0) + 1); } return map; }
+
+function renderProfileQuarters(events, quarters){
+  const target = document.querySelector('#profile-quarters');
+  if (!events.length) { target.innerHTML = '<p class="profile-empty">이 회사의 이벤트가 아직 없습니다.</p>'; return; }
+  const cell = new Map();
+  for (const e of events) { const k = `${e.quarter}|${e.layer_key}`; cell.set(k, (cell.get(k) || 0) + 1); }
+  const totals = quarters.map(q => LAYER_ORDER.reduce((s, l) => s + (cell.get(`${q}|${l}`) || 0), 0));
+  const max = Math.max(1, ...totals);
+  const W = 720, H = 220, left = 30, bottom = 34, top = 10, colW = (W - left - 10) / quarters.length, barW = Math.min(34, colW * 0.62);
+  const scale = (H - top - bottom) / max;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="분기별 레이어 이벤트 분포">`;
+  for (const tick of [0, Math.ceil(max / 2), max]) { const y = H - bottom - tick * scale; svg += `<line x1="${left}" x2="${W - 10}" y1="${y}" y2="${y}" stroke="#edf1f4"/><text x="${left - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#8b98a8">${tick}</text>`; }
+  quarters.forEach((q, i) => {
+    const x = left + i * colW + (colW - barW) / 2;
+    let y = H - bottom;
+    for (const layer of LAYER_ORDER) {
+      const n = cell.get(`${q}|${layer}`) || 0; if (!n) continue;
+      const hgt = n * scale; y -= hgt;
+      svg += `<rect x="${x}" y="${y}" width="${barW}" height="${hgt}" fill="${LAYER_COLORS[layer]}" data-tip="${escapeHtml(`${q} · ${layerName(layer)} ${n}건`)}"/>`;
+    }
+    if (totals[i]) svg += `<text x="${x + barW / 2}" y="${y - 4}" text-anchor="middle" font-size="10" fill="#617187">${totals[i]}</text>`;
+    const [yy, qq] = q.split(' ');
+    svg += `<text x="${x + barW / 2}" y="${H - bottom + 14}" text-anchor="middle" font-size="10" fill="#617187">${qq}</text>`;
+    if (qq === 'Q1' || i === 0) svg += `<text x="${x + barW / 2}" y="${H - bottom + 27}" text-anchor="middle" font-size="10" font-weight="700" fill="#334a63">${yy}</text>`;
+  });
+  svg += '</svg>';
+  const legend = LAYER_ORDER.filter(l => events.some(e => e.layer_key === l)).map(l => `<span><i style="background:${LAYER_COLORS[l]}"></i>${layerName(l)}</span>`).join('');
+  target.innerHTML = `${svg}<div class="profile-legend">${legend}</div>`;
+}
+
+function renderProfilePeer(events, peerEvents, peerCount, chainLabel){
+  const target = document.querySelector('#profile-peer');
+  if (!events.length || !peerCount) { target.innerHTML = ''; return; }
+  // 회사마다 이벤트 수가 달라 건수를 바로 비교하면 커버리지 차이만 보인다. 비중으로 비교한다.
+  const mine = countBy(events, e => e.layer_key);
+  const peerByCompany = new Map();
+  for (const e of peerEvents) { if (!peerByCompany.has(e.company_id)) peerByCompany.set(e.company_id, []); peerByCompany.get(e.company_id).push(e); }
+  const peerShare = new Map();
+  for (const list of peerByCompany.values()) { const c = countBy(list, e => e.layer_key); for (const l of LAYER_ORDER) peerShare.set(l, (peerShare.get(l) || 0) + (c.get(l) || 0) / list.length / peerByCompany.size); }
+  const rows = LAYER_ORDER.filter(l => l !== 'other').map(l => {
+    const me = (mine.get(l) || 0) / events.length, peer = peerShare.get(l) || 0;
+    const ratio = peer > 0 ? me / peer : (me > 0 ? Infinity : 1);
+    const label = ratio === Infinity ? '동종 0' : `${ratio.toFixed(1)}×`;
+    const width = v => `${Math.min(100, v * 100 * 1.6)}%`;
+    return `<div class="peer-row"><span class="peer-label">${layerName(l)}</span><div class="peer-bars"><div class="peer-bar me" data-tip="${escapeHtml(`이 회사 ${(me * 100).toFixed(0)}% (${mine.get(l) || 0}건/${events.length}건)`)}"><i style="width:${width(me)}"></i></div><div class="peer-bar peer" data-tip="${escapeHtml(`${chainLabel} 평균 ${(peer * 100).toFixed(0)}%`)}"><i style="width:${width(peer)}"></i></div></div><span class="peer-ratio${ratio < 1 ? ' low' : ''}">${label}</span></div>`;
+  }).join('');
+  target.innerHTML = `<h3>동종 그룹 대비 비중</h3><p class="peer-note">진한 막대 = 이 회사, 연한 막대 = ${chainLabel} ${peerByCompany.size}곳 평균. 배수는 이 회사 비중 ÷ 동종 평균 비중.</p>${rows}`;
+}
+
+function sparkline(values, color){
+  const W = 120, H = 34, max = Math.max(1, ...values), step = W / Math.max(1, values.length - 1);
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(H - 4 - (v / max) * (H - 8)).toFixed(1)}`);
+  const last = pts[pts.length - 1].split(',');
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2"/><circle cx="${last[0]}" cy="${last[1]}" r="2.5" fill="${color}"/></svg>`;
+}
+
+function renderProfileSegments(events, quarters){
+  const target = document.querySelector('#profile-segments');
+  const halves = [...new Set(quarters.map(halfOf))];
+  target.innerHTML = profileData.segments.map(seg => {
+    const hits = events.filter(e => e.segments.some(s => s.key === seg.key));
+    const byHalf = countBy(hits, e => halfOf(e.quarter));
+    const series = halves.map(h => byHalf.get(h) || 0);
+    const termCount = countBy(hits.flatMap(e => e.segments.find(s => s.key === seg.key).terms), t => t);
+    const terms = [...termCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([t, n]) => `<span>${escapeHtml(t)} ${n}</span>`).join('');
+    const recent = series.slice(-2).reduce((a, b) => a + b, 0), before = series.slice(-4, -2).reduce((a, b) => a + b, 0);
+    return `<button type="button" class="segment-card${seg.key === profileSegment ? ' is-selected' : ''}" data-segment="${seg.key}"><h3>${seg.label_ko}</h3><div class="segment-count">${hits.length}<small>건 · 최근 1년 ${recent} / 그 전 1년 ${before}</small></div>${sparkline(series, '#10365f')}<div class="segment-terms">${terms || '<span>매칭 용어 없음</span>'}</div></button>`;
+  }).join('');
+  target.querySelectorAll('.segment-card').forEach(card => card.addEventListener('click', () => { profileSegment = card.dataset.segment; renderStrategyProfile(); }));
+}
+
+function renderProfileRace(allEvents, myEvents, quarters){
+  const target = document.querySelector('#profile-race');
+  const seg = profileData.segments.find(s => s.key === profileSegment);
+  const recentQ = new Set(quarters.slice(-4)), beforeQ = new Set(quarters.slice(-8, -4));
+  const hits = allEvents.filter(e => e.segments.some(s => s.key === profileSegment));
+  const byCompany = new Map();
+  for (const e of hits) {
+    if (!byCompany.has(e.company_id)) byCompany.set(e.company_id, { recent: 0, before: 0, total: 0 });
+    const row = byCompany.get(e.company_id); row.total += 1;
+    if (recentQ.has(e.quarter)) row.recent += 1; else if (beforeQ.has(e.quarter)) row.before += 1;
+  }
+  const rows = [...byCompany.entries()].sort((a, b) => b[1].recent - a[1].recent || b[1].total - a[1].total).slice(0, 10).map(([id, r]) => {
+    const delta = r.recent - r.before;
+    return `<tr class="${id === profileCompany ? 'is-me' : ''}"><td>${escapeHtml(displayName(id))}</td><td class="num">${r.recent}</td><td class="num">${r.before}</td><td class="num race-delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}</td></tr>`;
+  }).join('');
+  const mine = myEvents.filter(e => e.segments.some(s => s.key === profileSegment)).slice(0, 8);
+  const list = mine.map(e => `<div class="race-event" data-tip="${escapeHtml(`매칭 용어: ${e.segments.find(s => s.key === profileSegment).terms.join(', ')}`)}"><time>${escapeHtml(displayDate({ date: e.occurred_at, precision: e.precision }))}</time>${escapeHtml(e.title_ko)}${e.source_url ? `<a href="${escapeHtml(e.source_url)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`).join('') || '<p class="profile-empty">이 세그먼트에 해당하는 이벤트가 없습니다.</p>';
+  target.innerHTML = `<div><h3 style="margin:0 0 4px;font-size:14px">${seg.label_ko} · 회사별 이벤트 (최근 4분기 vs 그 전 4분기)</h3><p style="margin:0 0 10px;font-size:11.5px;color:var(--muted)">이 세그먼트 용어가 들어간 이벤트를 회사별로 센 것입니다. 최근 4분기 건수 순.</p><table class="race-table"><thead><tr><th>회사</th><th style="text-align:right">최근 4분기</th><th style="text-align:right">그 전 4분기</th><th style="text-align:right">변화</th></tr></thead><tbody>${rows || '<tr><td colspan="4">해당 이벤트 없음</td></tr>'}</tbody></table></div><div><h3 style="margin:0 0 10px;font-size:14px">${escapeHtml(displayName(profileCompany))} · ${seg.label_ko} 이벤트</h3><div class="race-events">${list}</div></div>`;
+}
+
+function renderStrategyProfile(){
+  if (!profileData) return;
+  const quarters = quarterList();
+  const all = profileData.events.filter(e => quarters.includes(e.quarter));
+  const mine = all.filter(e => e.company_id === profileCompany);
+  const chain = companyById(profileCompany)?.value_chain;
+  const peerIds = companiesInValueChain(chain).map(c => c.id).filter(id => id !== profileCompany);
+  const peers = all.filter(e => peerIds.includes(e.company_id));
+  document.querySelector('#profile-count').textContent = `${displayName(profileCompany)} · 이벤트 ${mine.length}건 · ${quarters[0]}~${quarters[quarters.length - 1]}`;
+  renderProfileQuarters(mine, quarters);
+  renderProfilePeer(mine, peers, peerIds.length, `${valueChainLabels[chain] || '동종'} 그룹`);
+  renderProfileSegments(mine, quarters);
+  renderProfileRace(all, mine, quarters);
+}
+
+async function startStrategyProfile(){
+  const select = document.querySelector('#profile-company');
+  if (!select.options.length && companyCatalog.length) {
+    select.innerHTML = companyCatalog.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name_ko)}</option>`).join('');
+    profileCompany = currentCompany || companyCatalog[0].id;
+    select.value = profileCompany;
+    select.addEventListener('change', () => { profileCompany = select.value; renderStrategyProfile(); });
+    document.querySelector('.graph-aux').addEventListener('toggle', event => { if (event.target.open) startKnowledgeGraph(); });
+  }
+  if (profileData) { renderStrategyProfile(); return; }
+  if (profileLoading) return;
+  profileLoading = true;
+  try {
+    const result = await fetch('/api/company?mode=strategy_profile', { cache: 'no-store' });
+    const payload = await result.json();
+    if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
+    profileData = payload;
+    renderStrategyProfile();
+  } catch (error) {
+    document.querySelector('#profile-quarters').innerHTML = `<p class="profile-empty">프로파일을 불러오지 못했습니다: ${escapeHtml(error.message)}</p>`;
+  } finally {
+    profileLoading = false;
+  }
+}
 
 // ── 키워드·기업·레이어 3D 연관 그래프 ──────────────────────────────
 // 서버가 pca3()로 미리 계산해 준 x,y,z를 그대로 초기 배치로 쓰고, 여기서는
@@ -1102,7 +1259,7 @@ function renderGraphInfo(node){
 
 function graphRenderLoop(){
   const view = document.querySelector('#graph');
-  if (view?.classList.contains('is-visible')) {
+  if (view?.classList.contains('is-visible') && document.querySelector('.graph-aux')?.open) {
     if (!graphDrag && graphAutoRotate) graphRotation.y += 0.0025;
     drawKnowledgeGraph();
     graphRAF = requestAnimationFrame(graphRenderLoop);

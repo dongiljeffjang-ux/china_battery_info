@@ -30,7 +30,7 @@
         <a href="#daily" class="nav-link is-active" data-view="daily">Daily</a>
         <a href="#companies" class="nav-link" data-view="companies">기업 분석</a>
         <a href="#compare" class="nav-link" data-view="compare">비교</a>
-        <a href="#graph" class="nav-link" data-view="graph">키워드 그래프</a>
+        <a href="#graph" class="nav-link" data-view="graph">전략 프로파일</a>
       </nav>
       <div class="as-of">데이터 기준 2026.08.31 · 내부 검토용</div>
     </header>
@@ -168,29 +168,61 @@
           <div id="comparison-grid" class="comparison-stack"></div>
       </section>
 
-      <section id="graph" class="view" aria-labelledby="graph-title">
+      <section id="graph" class="view" aria-labelledby="profile-title">
         <div class="page-heading compact">
           <div>
-            <p class="eyebrow">KNOWLEDGE GRAPH</p>
-            <h1 id="graph-title">키워드·기업·레이어 연관 그래프</h1>
-            <p>벡터 DB에 쌓인 회사·키워드·시장/기술 레이어의 평균 임베딩을 코사인 유사도로 잇고, 3차원으로 투영했습니다. 드래그로 회전, 휠로 확대·축소, 점을 클릭하면 연결 근거를 보여줍니다.</p>
+            <p class="eyebrow">STRATEGY PROFILE</p>
+            <h1 id="profile-title">기업 전략 프로파일</h1>
+            <p>수집된 이벤트를 레이어·분기로 세어 이 회사가 어디에 힘을 쓰는지, 동종 그룹과 어떻게 다른지, 한국 소재사 제품 영역과 어디서 겹치는지 보여줍니다. 모두 건수 집계이며 전망은 만들지 않습니다.</p>
           </div>
-          <label class="company-picker">회사 선택 <select id="graph-company"><option value="">전체 보기</option></select></label>
+          <label class="company-picker">회사 선택 <select id="profile-company"></select></label>
         </div>
-        <div class="graph-layout">
-          <div class="graph-canvas-wrap">
-            <canvas id="knowledge-graph-canvas"></canvas>
-            <div id="graph-empty" class="graph-empty" hidden>아직 그래프를 그릴 만큼 벡터가 쌓이지 않았습니다.</div>
-          </div>
-          <aside class="graph-side">
-            <div class="graph-legend">
-              <span><i class="dot" style="background:#2f6fed"></i>회사</span>
-              <span><i class="dot" style="background:#e08a2f"></i>키워드</span>
-              <span><i class="dot" style="background:#1f9d6b"></i>시장·기술 레이어</span>
+
+        <section class="profile-section" aria-labelledby="profile-layers-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">WHERE THE EFFORT GOES</p>
+              <h2 id="profile-layers-title">어디에 힘을 쓰는가 — 분기별 레이어 분포</h2>
             </div>
-            <div id="graph-info" class="graph-info">점을 클릭하면 상세 정보가 표시됩니다.</div>
-          </aside>
-        </div>
+            <span class="source-rule" id="profile-count"></span>
+          </div>
+          <div class="profile-grid">
+            <div id="profile-quarters" class="profile-quarters"></div>
+            <div id="profile-peer" class="profile-peer"></div>
+          </div>
+        </section>
+
+        <section class="profile-section" aria-labelledby="profile-segments-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">OVERLAP WITH KOREAN MATERIALS</p>
+              <h2 id="profile-segments-title">한국 소재사 접점 — 세그먼트별 이벤트</h2>
+            </div>
+            <span class="source-rule" data-tip="이벤트 제목·사실 문장에 들어 있는 용어로 분류합니다. 카드에 매칭된 용어를 표시하니 왜 그 세그먼트로 셌는지 확인할 수 있습니다.">용어 규칙 기반 분류</span>
+          </div>
+          <div id="profile-segments" class="profile-segments"></div>
+          <div id="profile-race" class="profile-race"></div>
+        </section>
+
+        <details class="graph-aux">
+          <summary>보조 탐색 · 벡터 유사도 3D 그래프</summary>
+          <p class="ask-note">벡터 DB의 평균 임베딩을 코사인 유사도로 잇고 3차원으로 투영한 탐색용 보기입니다. 드래그로 회전, 휠로 확대·축소, 점을 클릭하면 연결 근거가 표시됩니다.</p>
+          <label class="company-picker">회사 선택 <select id="graph-company"><option value="">전체 보기</option></select></label>
+          <div class="graph-layout">
+            <div class="graph-canvas-wrap">
+              <canvas id="knowledge-graph-canvas"></canvas>
+              <div id="graph-empty" class="graph-empty" hidden>아직 그래프를 그릴 만큼 벡터가 쌓이지 않았습니다.</div>
+            </div>
+            <aside class="graph-side">
+              <div class="graph-legend">
+                <span><i class="dot" style="background:#2f6fed"></i>회사</span>
+                <span><i class="dot" style="background:#e08a2f"></i>키워드</span>
+                <span><i class="dot" style="background:#1f9d6b"></i>시장·기술 레이어</span>
+              </div>
+              <div id="graph-info" class="graph-info">점을 클릭하면 상세 정보가 표시됩니다.</div>
+            </aside>
+          </div>
+        </details>
       </section>
     </main>
     </div>
@@ -211,7 +243,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260903-graph-labels"></script>
+    <script src="./app.js?v=20260903-strategy-profile"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

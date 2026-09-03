@@ -6,6 +6,7 @@ import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
 import { buildCompareReport, applyVerifiedFacts } from "../lib/compare-report.js";
 import { buildKnowledgeGraph } from "../lib/knowledge-graph.js";
+import { buildStrategyProfile } from "../lib/strategy-profile.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증)을 부르므로 기본 10초로는 끝나지 않는다.
 export const maxDuration = 60;
@@ -110,6 +111,17 @@ async function handleRequest(request, response) {
     if (String(request.body?.mode || "") === "compare_report") return runCompareReport(request, response);
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
     return runAsk(request, response);
+  }
+  if (String(request.query.mode || "") === "strategy_profile") {
+    if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", events: [] });
+    try {
+      const profile = await buildStrategyProfile();
+      response.setHeader("Cache-Control", "no-store, max-age=0");
+      return response.status(200).json({ status: "ok", ...profile });
+    } catch (error) {
+      console.error("[STRATEGY_PROFILE_FAILED]", JSON.stringify({ message: error.message }));
+      return response.status(502).json({ status: error.code || "db_error", message: error.message, events: [] });
+    }
   }
   if (String(request.query.mode || "") === "knowledge_graph") {
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", nodes: [], links: [] });
