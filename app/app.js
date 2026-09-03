@@ -1099,8 +1099,27 @@ document.querySelector('#run-collection-button').addEventListener('click', async
     button.disabled = false; button.textContent = '수집·분석 1회 실행';
   }
 });
+// 백필류 버튼은 오조작을 막기 위해 입장 코드를 한 번 더 확인한다. /api/access가 이미 검증 로직을 갖고 있으므로 재사용한다.
+async function confirmAccessCode(actionLabel){
+  const code = window.prompt(`"${actionLabel}"을(를) 실행하려면 입장 코드를 입력하세요.`);
+  if (!code) return false;
+  try {
+    const result = await fetch('/api/access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessKey: code })
+    });
+    if (result.ok) return true;
+    window.alert('입장 코드가 일치하지 않습니다.');
+    return false;
+  } catch (error) {
+    window.alert(`코드 확인에 실패했습니다: ${error.message}`);
+    return false;
+  }
+}
 // 시계열 백필 1회 실행. 서버가 백그라운드에서 이어 돌리므로 화면을 잠그지 않는다.
 async function runTimelineBackfill(){
+  if (!(await confirmAccessCode('시계열 백필 1회 실행'))) return;
   if (!window.confirm('정기보고서 읽기·보강·시점 재확인을 서버에서 20~30분 동안 돌립니다. LLM 호출이 많으니 필요할 때만 실행하세요. 시작할까요?')) return;
   const button = document.querySelector('#run-backfill-button');
   button.disabled = true; button.textContent = '백필 시작 중…';
@@ -1116,6 +1135,28 @@ ${payload.next_step || ''}`);
   } catch (error) {
     window.alert(`백필을 시작하지 못했습니다: ${error.message}`);
     button.disabled = false; button.textContent = '시계열 백필 1회 실행';
+  }
+}
+// 벡터DB(knowledge_chunk)에 아직 없는 event를 임베딩 API로 채운다. 남은 만큼 반복 호출한다.
+async function runEmbedBackfill(){
+  if (!(await confirmAccessCode('벡터DB 임베딩 채우기'))) return;
+  const button = document.querySelector('#run-embed-button');
+  button.disabled = true; button.textContent = '임베딩 중…';
+  let totalEmbedded = 0;
+  try {
+    for (let guard = 0; guard < 30; guard += 1) {
+      const result = await fetch('/api/embed-event', { method: 'POST' });
+      const payload = await result.json();
+      if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || '요청 실패');
+      totalEmbedded += payload.embedded || 0;
+      button.textContent = `임베딩 중… (${totalEmbedded}건, 남음 ${payload.remaining})`;
+      if (!payload.embedded || payload.remaining <= 0) break;
+    }
+    window.alert(`벡터DB 임베딩을 완료했습니다. 이번 실행에서 ${totalEmbedded}건 색인.`);
+  } catch (error) {
+    window.alert(`임베딩을 실행하지 못했습니다: ${error.message}`);
+  } finally {
+    button.disabled = false; button.textContent = '벡터DB 임베딩 채우기';
   }
 }
 async function initialize(){
@@ -1137,6 +1178,7 @@ async function initialize(){
   compareB.addEventListener('change', renderComparison);
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
   document.querySelector('#run-backfill-button').addEventListener('click', runTimelineBackfill);
+  document.querySelector('#run-embed-button').addEventListener('click', runEmbedBackfill);
   document.querySelector('#ask-form').addEventListener('submit', askKnowledge);
   document.querySelector('#news-more').addEventListener('click', () => { topNewsExpanded = !topNewsExpanded; renderTopNews(); });
   const supporting = document.querySelector('#include-supporting');
