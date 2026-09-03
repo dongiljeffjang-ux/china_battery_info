@@ -160,8 +160,8 @@
           </div>
         </div>
         <div class="compare-controls">
-          <label>기업 A <select id="compare-a"></select></label>
-          <label>기업 B <select id="compare-b"></select></label>
+          <div class="compare-pick"><span class="compare-pick-label">기업 A</span><div class="segmented-control" id="compare-chain-a" role="group" aria-label="기업 A 밸류체인"></div><select id="compare-a" aria-label="기업 A 선택"></select></div>
+          <div class="compare-pick"><span class="compare-pick-label">기업 B</span><div class="segmented-control" id="compare-chain-b" role="group" aria-label="기업 B 밸류체인"></div><select id="compare-b" aria-label="기업 B 선택"></select></div>
           <button id="compare-report" class="secondary-button" type="button">비교 리포트 생성</button>
         </div>
           <div id="comparison-grid" class="comparison-stack"></div>
@@ -187,7 +187,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260904-sankey-range"></script>
+    <script src="./app.js?v=20260904-compare-chain"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

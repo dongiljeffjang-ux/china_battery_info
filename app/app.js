@@ -488,9 +488,19 @@ function renderCompanyPicker(){
     renderCompany();
   }));
 }
-function makeSelect(select, selected){
-  if (!companyCatalog.length) { select.innerHTML = '<option value="">기업 목록 없음</option>'; return; }
-  select.innerHTML = companyCatalog.map(company => `<option value="${escapeHtml(company.id)}" ${company.id === selected ? 'selected' : ''}>${escapeHtml(company.name_ko)} · ${escapeHtml(valueChainLabels[company.value_chain] || '기타')}</option>`).join('');
+// 비교 화면의 회사 선택은 밸류체인(셀사/양극재/음극재)을 먼저 고르고 그 안에서 회사를 고른다.
+function makeSelect(select, selected, chain){
+  const list = chain ? companiesInValueChain(chain) : companyCatalog;
+  if (!list.length) { select.innerHTML = '<option value="">기업 목록 없음</option>'; return; }
+  const chosen = list.some(company => company.id === selected) ? selected : list[0].id;
+  select.innerHTML = list.map(company => `<option value="${escapeHtml(company.id)}" ${company.id === chosen ? 'selected' : ''}>${escapeHtml(company.name_ko)}</option>`).join('');
+}
+function makeChainTabs(container, chain, onChange){
+  container.innerHTML = Object.entries(valueChainLabels).map(([key, label]) => `<button type="button" class="segment${key === chain ? ' is-selected' : ''}" data-chain="${key}">${label}</button>`).join('');
+  container.querySelectorAll('.segment').forEach(button => button.addEventListener('click', () => {
+    container.querySelectorAll('.segment').forEach(b => b.classList.toggle('is-selected', b === button));
+    onChange(button.dataset.chain);
+  }));
 }
 async function loadCompanyCatalog(){
   try {
@@ -1098,8 +1108,11 @@ async function initialize(){
   const compareBId = firstIn('anode') || currentCompany;
   currentChain = companyById(currentCompany)?.value_chain || 'cathode';
   renderCompanyPicker();
-  makeSelect(compareA, currentCompany);
-  makeSelect(compareB, compareBId);
+  const chainA = currentChain, chainB = companyById(compareBId)?.value_chain || 'anode';
+  makeSelect(compareA, currentCompany, chainA);
+  makeSelect(compareB, compareBId, chainB);
+  makeChainTabs(document.querySelector('#compare-chain-a'), chainA, chain => { makeSelect(compareA, '', chain); renderComparison(); });
+  makeChainTabs(document.querySelector('#compare-chain-b'), chainB, chain => { makeSelect(compareB, '', chain); renderComparison(); });
   document.querySelector('#compare-report').addEventListener('click', generateCompareReport);
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
