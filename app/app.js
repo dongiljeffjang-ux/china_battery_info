@@ -66,6 +66,14 @@ document.addEventListener('mousemove', event => {
   else hideTip();
 });
 document.addEventListener('mouseleave', hideTip);
+// 키보드 접근성: data-tip 요소에 포커스가 오면 그 위치에 툴팁을 띄운다.
+document.addEventListener('focusin', event => {
+  const host = event.target.closest?.('[data-tip]');
+  if (!host) return;
+  const rect = host.getBoundingClientRect();
+  showTip(host.getAttribute('data-tip'), rect.left, rect.bottom + 6);
+});
+document.addEventListener('focusout', hideTip);
 window.addEventListener('scroll', hideTip, { passive: true });
 
 // ── 전체 화면 진행 표시 ──────────────────────────────────────────
