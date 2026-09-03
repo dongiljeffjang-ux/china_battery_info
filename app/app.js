@@ -1120,7 +1120,7 @@ async function initialize(){
     const day = new Date(); day.setDate(day.getDate() + offsetDays);
     return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
   };
-  document.querySelector('#sankey-from').value = localDate(-30);
+  document.querySelector('#sankey-from').value = localDate(-1);
   document.querySelector('#sankey-to').value = localDate(0);
   renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
   await loadDashboardFromApi();
