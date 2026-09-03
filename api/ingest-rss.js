@@ -221,14 +221,14 @@ async function handleRequest(request, response) {
   const redateCompanyId = String(request.query?.redate || request.body?.redate || "").trim();
   if (redateCompanyId) return runRedate(response, redateCompanyId);
   // 이어 붙은 단계 호출. 곧바로 응답하고 일은 waitUntil 안에서 마저 한다.
-  const stage = String(request.query?.stage || "").trim();
-  if (stage) {
+  const stageName = String(request.query?.stage || "").trim();
+  if (stageName) {
     if (!isCronRequest(request)) return response.status(403).json({ status: "stage_requires_cron_secret" });
     const hop = Math.max(1, Number(request.query?.hop) || 1);
-    if (stage === "process") waitUntil(runProcessStage(request, hop));
-    else if (stage === "daily") waitUntil(runDailyStage());
-    else return response.status(400).json({ status: "unknown_stage", stage });
-    return response.status(202).json({ status: "accepted", stage, hop });
+    if (stageName === "process") waitUntil(runProcessStage(request, hop));
+    else if (stageName === "daily") waitUntil(runDailyStage());
+    else return response.status(400).json({ status: "unknown_stage", stage: stageName });
+    return response.status(202).json({ status: "accepted", stage: stageName, hop });
   }
   const backfillCompanyId = String(request.query?.backfill || request.body?.backfill || "").trim();
   if (backfillCompanyId) return runBackfill(response, backfillCompanyId, request.query?.since || request.body?.since, "web");
