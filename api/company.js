@@ -92,10 +92,28 @@ async function runCompareReport(request, response) {
       dbUpdates = { dates_fixed: 0, events_added: 0, embedded: 0, skipped: [error.message] };
     }
     console.info("[COMPARE_REPORT]", JSON.stringify({ idA, idB, events: eventsA.length + eventsB.length, status: result.verification_status, db: dbUpdates }));
+    const generatedAt = new Date().toISOString();
+    // 히스토리 저장. 실패해도(예: 일시적 DB 오류) 방금 만든 리포트는 그대로 응답한다.
+    let historyId = null;
+    try {
+      const [saved] = await supabaseRest("compare_report_history", {
+        method: "POST", prefer: "return=representation",
+        body: {
+          company_a_id: idA, company_b_id: idB,
+          company_a_name_ko: a.name_ko, company_b_name_ko: b.name_ko,
+          events_a_count: eventsA.length, events_b_count: eventsB.length,
+          report: result.report, model: result.model || null,
+          verification_status: result.verification_status, searched_sources: result.searched_sources || []
+        }
+      });
+      historyId = saved?.id || null;
+    } catch (error) {
+      console.error("[COMPARE_REPORT_HISTORY_SAVE_FAILED]", JSON.stringify({ idA, idB, message: error.message }));
+    }
     return response.status(200).json({
       status: "ok", company_a: a.name_ko, company_b: b.name_ko,
       events_a: eventsA.length, events_b: eventsB.length,
-      generated_at: new Date().toISOString(), db_updates: dbUpdates, ...result
+      generated_at: generatedAt, history_id: historyId, db_updates: dbUpdates, ...result
     });
   } catch (error) {
     console.error("[COMPARE_REPORT_FAILED]", JSON.stringify({ idA, idB, message: error.message }));
@@ -109,6 +127,35 @@ async function handleRequest(request, response) {
     if (String(request.body?.mode || "") === "compare_report") return runCompareReport(request, response);
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
     return runAsk(request, response);
+  }
+  // 비교 리포트 히스토리 목록. report 본문은 크므로 목록에는 안 담고 헤드라인만 뽑아 낸다.
+  if (String(request.query.compare_history || "") === "1") {
+    if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", history: [] });
+    try {
+      const rows = await supabaseRest("compare_report_history?select=id,created_at,company_a_id,company_b_id,company_a_name_ko,company_b_name_ko,report->>headline_ko&order=created_at.desc&limit=30");
+      return response.status(200).json({ status: "ok", history: rows.map((row) => ({ ...row, headline_ko: row["headline_ko"] })) });
+    } catch (error) {
+      console.error("[COMPARE_HISTORY_QUERY_FAILED]", JSON.stringify({ message: error.message }));
+      return response.status(502).json({ status: error.code || "db_error", history: [] });
+    }
+  }
+  const compareHistoryId = String(request.query.compare_history_id || "").trim();
+  if (compareHistoryId) {
+    if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
+    try {
+      const rows = await supabaseRest(`compare_report_history?select=*&id=eq.${encodeURIComponent(compareHistoryId)}&limit=1`);
+      if (!rows.length) return response.status(404).json({ status: "not_found" });
+      const row = rows[0];
+      return response.status(200).json({
+        status: "ok", company_a: row.company_a_name_ko, company_b: row.company_b_name_ko,
+        events_a: row.events_a_count, events_b: row.events_b_count,
+        generated_at: row.created_at, history_id: row.id, report: row.report,
+        model: row.model, verification_status: row.verification_status, searched_sources: row.searched_sources || []
+      });
+    } catch (error) {
+      console.error("[COMPARE_HISTORY_DETAIL_FAILED]", JSON.stringify({ id: compareHistoryId, message: error.message }));
+      return response.status(502).json({ status: error.code || "db_error" });
+    }
   }
   const companyId = String(request.query.companyId || "").trim();
   if (!companyId) return response.status(200).json({ status: "ok", selection_basis: SELECTION_BASIS, companies: sortedCatalog() });

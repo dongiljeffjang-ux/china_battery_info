@@ -972,6 +972,38 @@ function renderCompareReportPanel(payload){
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+function compareHistoryDateLabel(iso){
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : new Intl.DateTimeFormat('ko', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+async function openCompareHistoryItem(id){
+  const container = document.querySelector('#compare-report-history');
+  try {
+    const response = await fetch(`/api/company?compare_history_id=${encodeURIComponent(id)}`);
+    const payload = await response.json();
+    if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
+    renderCompareReportPanel(payload);
+  } catch (error) {
+    window.alert(`지난 리포트를 불러오지 못했습니다: ${error.message}`);
+  }
+}
+// 새로 만들거나 화면에 처음 들어올 때 지난 비교 리포트 목록을 보여준다. 본문은 클릭해야 불러온다.
+async function loadCompareReportHistory(){
+  const container = document.querySelector('#compare-report-history');
+  if (!container) return;
+  try {
+    const response = await fetch('/api/company?compare_history=1');
+    const payload = await response.json();
+    if (payload.status !== 'ok') { container.innerHTML = ''; return; }
+    if (!payload.history.length) { container.innerHTML = ''; return; }
+    container.innerHTML = `<details class="compare-history-list"><summary>지난 비교 리포트 (${payload.history.length}건)</summary><ul>${payload.history.map(item =>
+      `<li><button type="button" class="link-button" data-history-id="${item.id}">${compareHistoryDateLabel(item.created_at)} · ${item.company_a_name_ko} vs ${item.company_b_name_ko}${item.headline_ko ? ` — ${item.headline_ko}` : ''}</button></li>`
+    ).join('')}</ul></details>`;
+    container.querySelectorAll('[data-history-id]').forEach(button => button.addEventListener('click', () => openCompareHistoryItem(button.dataset.historyId)));
+  } catch (error) {
+    console.error('비교 리포트 히스토리를 불러오지 못했습니다', error);
+  }
+}
 async function generateCompareReport(){
   if (!lastComparison || (!lastComparison.eventsA.length && !lastComparison.eventsB.length)) {
     window.alert('비교할 이벤트가 화면에 없습니다. 두 기업을 고른 뒤 다시 시도해 주세요.');
@@ -993,6 +1025,7 @@ async function generateCompareReport(){
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
     renderCompareReportPanel(payload);
+    await loadCompareReportHistory();
   } catch (error) {
     window.alert(`비교 리포트를 만들지 못했습니다: ${error.message}`);
   } finally {
@@ -1175,6 +1208,7 @@ async function initialize(){
   makeChainTabs(document.querySelector('#compare-chain-a'), chainA, chain => { makeSelect(compareA, '', chain); renderComparison(); });
   makeChainTabs(document.querySelector('#compare-chain-b'), chainB, chain => { makeSelect(compareB, '', chain); renderComparison(); });
   document.querySelector('#compare-report').addEventListener('click', generateCompareReport);
+  loadCompareReportHistory();
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
