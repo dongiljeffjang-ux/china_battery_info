@@ -30,7 +30,7 @@
         <a href="#daily" class="nav-link is-active" data-view="daily">Daily</a>
         <a href="#companies" class="nav-link" data-view="companies">기업 분석</a>
         <a href="#compare" class="nav-link" data-view="compare">비교</a>
-        <a href="#graph" class="nav-link" data-view="graph">전략 프로파일</a>
+        <a href="#ledger" class="nav-link" data-view="ledger">전략 장부</a>
       </nav>
       <div class="as-of">데이터 기준 2026.08.31 · 내부 검토용</div>
     </header>
@@ -168,61 +168,52 @@
           <div id="comparison-grid" class="comparison-stack"></div>
       </section>
 
-      <section id="graph" class="view" aria-labelledby="profile-title">
+      <section id="ledger" class="view" aria-labelledby="ledger-title">
         <div class="page-heading compact">
           <div>
-            <p class="eyebrow">STRATEGY PROFILE</p>
-            <h1 id="profile-title">기업 전략 프로파일</h1>
-            <p>수집된 이벤트를 레이어·분기로 세어 이 회사가 어디에 힘을 쓰는지, 동종 그룹과 어떻게 다른지, 한국 소재사 제품 영역과 어디서 겹치는지 보여줍니다. 모두 건수 집계이며 전망은 만들지 않습니다.</p>
+            <p class="eyebrow">STRATEGY LEDGER</p>
+            <h1 id="ledger-title">전략 장부</h1>
+            <p>공시·기사 이벤트에서 뽑은 숫자와 이름을 회사를 가로질러 같은 축에 놓습니다. 원문에 적힌 값만 쓰고 합산·환산·추정은 하지 않으며, 모든 값 옆에 근거 발췌와 원문 링크가 붙습니다.</p>
           </div>
-          <label class="company-picker">회사 선택 <select id="profile-company"></select></label>
+          <div class="ledger-controls">
+            <label class="company-picker">출처 범위 <select id="ledger-tier"><option value="disclosure">공시만</option><option value="article">공시 + 기사</option><option value="web">공시 + 기사 + 웹(참고)</option></select></label>
+            <span id="ledger-status" class="source-rule"></span>
+          </div>
         </div>
 
-        <section class="profile-section" aria-labelledby="profile-layers-title">
+        <section class="profile-section" aria-labelledby="ledger-cap-title">
           <div class="section-heading">
-            <div>
-              <p class="eyebrow">WHERE THE EFFORT GOES</p>
-              <h2 id="profile-layers-title">어디에 힘을 쓰는가 — 분기별 레이어 분포</h2>
-            </div>
-            <span class="source-rule" id="profile-count"></span>
+            <div><p class="eyebrow">CAPACITY</p><h2 id="ledger-cap-title">① 생산능력 · 회사 × 품목</h2></div>
+            <span class="source-rule">원 크기 = 최신 공표 캐파 · 색 = 상태 · 클릭하면 근거</span>
           </div>
-          <div class="profile-grid">
-            <div id="profile-quarters" class="profile-quarters"></div>
-            <div id="profile-peer" class="profile-peer"></div>
-          </div>
+          <div id="ledger-capacity" class="ledger-figure"></div>
         </section>
 
-        <section class="profile-section" aria-labelledby="profile-segments-title">
+        <section class="profile-section" aria-labelledby="ledger-site-title">
           <div class="section-heading">
-            <div>
-              <p class="eyebrow">OVERLAP WITH KOREAN MATERIALS</p>
-              <h2 id="profile-segments-title">한국 소재사 접점 — 세그먼트별 이벤트</h2>
-            </div>
-            <span class="source-rule" data-tip="이벤트 제목·사실 문장에 들어 있는 용어로 분류합니다. 카드에 매칭된 용어를 표시하니 왜 그 세그먼트로 셌는지 확인할 수 있습니다.">용어 규칙 기반 분류</span>
+            <div><p class="eyebrow">OVERSEAS</p><h2 id="ledger-site-title">② 해외 거점 · 국가별</h2></div>
+            <span class="source-rule">중국 밖 거점·증설·합작을 국가로 묶음</span>
           </div>
-          <div id="profile-segments" class="profile-segments"></div>
-          <div id="profile-race" class="profile-race"></div>
+          <div id="ledger-sites" class="ledger-figure"></div>
         </section>
 
-        <details class="graph-aux">
-          <summary>보조 탐색 · 벡터 유사도 3D 그래프</summary>
-          <p class="ask-note">벡터 DB의 평균 임베딩을 코사인 유사도로 잇고 3차원으로 투영한 탐색용 보기입니다. 드래그로 회전, 휠로 확대·축소, 점을 클릭하면 연결 근거가 표시됩니다.</p>
-          <label class="company-picker">회사 선택 <select id="graph-company"><option value="">전체 보기</option></select></label>
-          <div class="graph-layout">
-            <div class="graph-canvas-wrap">
-              <canvas id="knowledge-graph-canvas"></canvas>
-              <div id="graph-empty" class="graph-empty" hidden>아직 그래프를 그릴 만큼 벡터가 쌓이지 않았습니다.</div>
-            </div>
-            <aside class="graph-side">
-              <div class="graph-legend">
-                <span><i class="dot" style="background:#2f6fed"></i>회사</span>
-                <span><i class="dot" style="background:#e08a2f"></i>키워드</span>
-                <span><i class="dot" style="background:#1f9d6b"></i>시장·기술 레이어</span>
-              </div>
-              <div id="graph-info" class="graph-info">점을 클릭하면 상세 정보가 표시됩니다.</div>
-            </aside>
+        <section class="profile-section" aria-labelledby="ledger-link-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">CUSTOMERS &amp; PARTNERS</p><h2 id="ledger-link-title">③ 공급·파트너 연결도</h2></div>
+            <span class="source-rule">선 굵기 = 확인된 사실 수 · 한국 기업은 강조</span>
           </div>
-        </details>
+          <div id="ledger-links" class="ledger-figure"></div>
+        </section>
+
+        <section class="profile-section" aria-labelledby="ledger-fin-title">
+          <div class="section-heading">
+            <div><p class="eyebrow">FINANCIALS</p><h2 id="ledger-fin-title">④ 실적 추이</h2></div>
+            <div class="ledger-controls"><div class="segmented-control" id="ledger-fin-chain"></div><select id="ledger-fin-metric"><option value="revenue">매출(억 위안)</option><option value="net_profit">순이익(억 위안)</option><option value="shipment">출하량</option></select></div>
+          </div>
+          <div id="ledger-financials" class="ledger-figure"></div>
+        </section>
+
+        <section id="ledger-detail" class="profile-section ledger-detail" hidden aria-live="polite"></section>
       </section>
     </main>
     </div>
@@ -243,7 +234,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260903-strategy-profile"></script>
+    <script src="./app.js?v=20260904-ledger"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

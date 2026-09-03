@@ -974,374 +974,244 @@ function activateView(view){
 }
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => {
   activateView(link.dataset.view);
-  if (link.dataset.view === 'graph') startStrategyProfile();
+  if (link.dataset.view === 'ledger') startFactLedger();
 }));
 
-// ── 기업 전략 프로파일 ──────────────────────────────────────────
-// 서버는 이벤트를 레이어·분기·세그먼트로 태그해서 주고, 세는 일은 전부 여기서 한다.
-// 그래야 회사를 바꿀 때마다 서버를 다시 부르지 않는다.
-let profileData = null;
-let profileLoading = false;
-let profileCompany = '';
-let profileSegment = 'ncm';
-const LAYER_ORDER = [...Object.keys(marketLayerLabels), ...Object.keys(technologyLayerLabels), 'other'];
-const LAYER_COLORS = {
-  'supply-performance': '#10365f', 'investment-production': '#1f5f99', 'customer-commercialization': '#4a8ac7', 'regional-overseas': '#9cc0e3',
-  'technology-material-chemistry': '#8b5a10', 'technology-process-performance': '#b8842f', 'technology-ip-standard': '#d9ad62', 'technology-development': '#efd3a2',
-  other: '#c9d2dc'
-};
-function layerName(key){ return layerLabels[key] || '기타'; }
-function quarterList(){
-  const now = new Date();
-  const endYear = now.getFullYear(), endQ = Math.ceil((now.getMonth() + 1) / 3);
-  const list = [];
-  for (let y = 2023; y <= endYear; y += 1) for (let q = 1; q <= 4; q += 1) {
-    if (y === endYear && q > endQ) break;
-    list.push(`${y} Q${q}`);
-  }
-  return list;
-}
-function halfOf(quarter){ const [y, q] = quarter.split(' Q'); return `${y} ${Number(q) <= 2 ? 'H1' : 'H2'}`; }
-function countBy(items, keyFn){ const map = new Map(); for (const item of items) { const k = keyFn(item); map.set(k, (map.get(k) || 0) + 1); } return map; }
 
-function renderProfileQuarters(events, quarters){
-  const target = document.querySelector('#profile-quarters');
-  if (!events.length) { target.innerHTML = '<p class="profile-empty">이 회사의 이벤트가 아직 없습니다.</p>'; return; }
-  const cell = new Map();
-  for (const e of events) { const k = `${e.quarter}|${e.layer_key}`; cell.set(k, (cell.get(k) || 0) + 1); }
-  const totals = quarters.map(q => LAYER_ORDER.reduce((s, l) => s + (cell.get(`${q}|${l}`) || 0), 0));
-  const max = Math.max(1, ...totals);
-  const W = 720, H = 220, left = 30, bottom = 34, top = 10, colW = (W - left - 10) / quarters.length, barW = Math.min(34, colW * 0.62);
-  const scale = (H - top - bottom) / max;
-  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="분기별 레이어 이벤트 분포">`;
-  for (const tick of [0, Math.ceil(max / 2), max]) { const y = H - bottom - tick * scale; svg += `<line x1="${left}" x2="${W - 10}" y1="${y}" y2="${y}" stroke="#edf1f4"/><text x="${left - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="#8b98a8">${tick}</text>`; }
-  quarters.forEach((q, i) => {
-    const x = left + i * colW + (colW - barW) / 2;
-    let y = H - bottom;
-    for (const layer of LAYER_ORDER) {
-      const n = cell.get(`${q}|${layer}`) || 0; if (!n) continue;
-      const hgt = n * scale; y -= hgt;
-      svg += `<rect x="${x}" y="${y}" width="${barW}" height="${hgt}" fill="${LAYER_COLORS[layer]}" data-tip="${escapeHtml(`${q} · ${layerName(layer)} ${n}건`)}"/>`;
-    }
-    if (totals[i]) svg += `<text x="${x + barW / 2}" y="${y - 4}" text-anchor="middle" font-size="10" fill="#617187">${totals[i]}</text>`;
-    const [yy, qq] = q.split(' ');
-    svg += `<text x="${x + barW / 2}" y="${H - bottom + 14}" text-anchor="middle" font-size="10" fill="#617187">${qq}</text>`;
-    if (qq === 'Q1' || i === 0) svg += `<text x="${x + barW / 2}" y="${H - bottom + 27}" text-anchor="middle" font-size="10" font-weight="700" fill="#334a63">${yy}</text>`;
+// ── 전략 장부 ──────────────────────────────────────────────────────
+// 서버는 사실(event_fact) 전체를 주고, 세고 고르는 일은 여기서 한다. 회사를 가로질러
+// 같은 축(품목·지역·상대방·기간)으로 놓는 것이 이 화면의 전부다. 숫자는 원문 표기 그대로.
+let ledgerData = null;
+let ledgerLoading = false;
+let ledgerTier = 'disclosure';
+let ledgerFinChain = 'cell';
+const TIER_RANK = { disclosure: 0, article: 1, web: 2 };
+const FACT_TYPE_KO = { capacity: '생산능력', shipment: '출하', financial: '실적', customer: '고객', partnership: '제휴', site: '거점', spec: '스펙' };
+const SEGMENT_KO = { ncm: '삼원', lfp: 'LFP', precursor: '전구체', anode: '음극', cell: '셀', ess: 'ESS', other: '기타' };
+const SEGMENT_ORDER = ['ncm', 'lfp', 'precursor', 'anode', 'cell', 'ess'];
+const STATUS_KO = { planned: '계획', under_construction: '건설중', operating: '가동', completed: '완료', suspended: '중단', unknown: '상태 미상' };
+const TIER_KO = { disclosure: '공시', article: '기사', web: '웹(참고)' };
+const KIND_KO = { oem: '완성차', cell: '셀사', material: '소재사', resource: '자원·정제', government: '정부', other: '기타' };
+const STATUS_COLOR = { planned: '#7f77dd', under_construction: '#7f77dd', operating: '#1d9e75', completed: '#1d9e75', suspended: '#d85a30', unknown: '#888780' };
+const KIND_COLOR = { oem: '#7f77dd', cell: '#378add', material: '#1d9e75', resource: '#ba7517', government: '#888780', other: '#b4b2a9' };
+const KOREAN_HINTS = ['posco', '포스코', 'lg', '삼성sdi', 'samsung sdi', 'sk온', 'sk on', 'sk넥실리스', '에코프로', '엘앤에프', '현대', 'hyundai', '기아', 'kia'];
+const REGIONS = [
+  { key: 'americas', label: '아메리카', countries: ['미국', '캐나다', '멕시코', '브라질', '칠레', '아르헨티나', '볼리비아'] },
+  { key: 'europe', label: '유럽·중동·아프리카', countries: ['헝가리', '독일', '프랑스', '스페인', '포르투갈', '영국', '폴란드', '체코', '슬로바키아', '이탈리아', '핀란드', '스웨덴', '노르웨이', '네덜란드', '튀르키예', '세르비아', '모로코', '남아프리카공화국', '사우디아라비아', '아랍에미리트', '이집트', '짐바브웨', '콩고민주공화국', '나미비아'] },
+  { key: 'asia', label: '아시아·오세아니아', countries: ['한국', '일본', '인도네시아', '태국', '베트남', '말레이시아', '인도', '싱가포르', '필리핀', '호주', '대만', '홍콩'] },
+];
+function isKorean(name){ const n = String(name || '').toLowerCase(); return KOREAN_HINTS.some(h => n.includes(h)); }
+function ledgerFacts(){ return (ledgerData?.facts || []).filter(f => TIER_RANK[f.source_tier] <= TIER_RANK[ledgerTier]); }
+function factQty(f){ return f.quantity_text || (f.quantity !== null ? String(f.quantity) : '수량 미기재'); }
+function ledgerCompanies(){ return companyCatalog.slice(); }
+
+function factCard(f){
+  const ev = f.event || {};
+  const where = [f.country, f.city].filter(Boolean).join(' ');
+  const rev = f.review_status || 'unreviewed';
+  return `<article class="fact-card" data-fact="${f.id}"><div class="fact-side"><span>${escapeHtml(displayDate({ date: f.occurred_at, precision: ev.occurred_precision || 'day' }))}</span><span>${escapeHtml(displayName(f.company_id))}</span><span class="fact-tag tier-${f.source_tier}">${TIER_KO[f.source_tier]}</span>${f.agreement === 'conflict' ? '<span class="fact-tag agreement-conflict">검토 필요</span>' : ''}${rev === 'confirmed' ? '<span class="fact-tag review-confirmed">확인됨</span>' : ''}</div><div class="fact-main"><div class="fact-head"><span class="fact-tag">${FACT_TYPE_KO[f.fact_type] || f.fact_type}${f.segment && f.segment !== 'other' ? ` · ${SEGMENT_KO[f.segment]}` : ''}</span><strong>${escapeHtml(f.item || f.metric || f.relation || '')}</strong>${f.quantity_text ? `<strong>${escapeHtml(f.quantity_text)}</strong>` : ''}${f.status && f.status !== 'unknown' ? `<span class="fact-tag status-${f.status}">${STATUS_KO[f.status]}</span>` : ''}${where ? `<span>${escapeHtml(where)}</span>` : ''}${f.counterparty ? `<span>${escapeHtml(f.relation || '')} · ${escapeHtml(f.counterparty)}${f.counterparty_kind ? ` (${KIND_KO[f.counterparty_kind]})` : ''}</span>` : ''}${f.period ? `<span style="color:var(--muted)">${escapeHtml(f.period)}</span>` : ''}</div><div class="fact-excerpt">“${escapeHtml(f.excerpt)}”</div><div class="fact-foot"><span>${escapeHtml(ev.title_ko || '')}</span>${ev.source_url ? `<a href="${escapeHtml(ev.source_url)}" target="_blank" rel="noreferrer">원문 ↗</a>` : ''}<span class="fact-review"><button type="button" data-review="confirmed" class="${rev === 'confirmed' ? 'is-on' : ''}">맞음</button><button type="button" data-review="rejected">오류</button></span></div></div></article>`;
+}
+
+function showLedgerDetail(title, facts){
+  const panel = document.querySelector('#ledger-detail');
+  panel.hidden = false;
+  const sorted = facts.slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
+  panel.innerHTML = `<button type="button" class="ledger-detail-close" aria-label="닫기">닫기 ✕</button><h2>${escapeHtml(title)} <span style="font-size:12px;color:var(--muted);font-weight:500">· 사실 ${sorted.length}건</span></h2><div class="fact-list">${sorted.map(factCard).join('') || '<p class="fig-empty">확인된 사실이 없습니다.</p>'}</div>`;
+  panel.querySelector('.ledger-detail-close').addEventListener('click', () => { panel.hidden = true; });
+  panel.querySelectorAll('[data-review]').forEach(button => button.addEventListener('click', async () => {
+    const card = button.closest('.fact-card');
+    const factId = card.dataset.fact;
+    const status = button.dataset.review === 'confirmed' && button.classList.contains('is-on') ? 'unreviewed' : button.dataset.review;
+    try {
+      const result = await fetch('/api/company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'fact_review', factId, status }) });
+      if (!result.ok) throw new Error('저장 실패');
+      const fact = ledgerData.facts.find(f => f.id === factId);
+      if (status === 'rejected') { ledgerData.facts = ledgerData.facts.filter(f => f.id !== factId); card.remove(); renderFactLedger(); }
+      else { fact.review_status = status; card.outerHTML = factCard(fact); showLedgerDetail(title, facts.filter(f => f.id !== factId).concat(status === 'rejected' ? [] : [fact])); }
+    } catch (error) { window.alert(`검토를 저장하지 못했습니다: ${error.message}`); }
+  }));
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ① 회사 × 품목. 셀에는 그 조합에서 가장 최근에 공표된 캐파 하나만 둔다. 합산은 이중계산이 된다.
+function renderLedgerCapacity(facts){
+  const target = document.querySelector('#ledger-capacity');
+  const caps = facts.filter(f => f.fact_type === 'capacity' && f.segment !== 'other');
+  if (!caps.length) { target.innerHTML = '<p class="fig-empty">아직 생산능력 사실이 없습니다.</p>'; return; }
+  const latest = new Map();
+  for (const f of caps.slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))) {
+    const key = `${f.company_id}|${f.segment}`;
+    const prev = latest.get(key);
+    // 수량 있는 최신값이 우선. 수량 없는 사실만 있으면 그것을 회색 점으로 둔다.
+    if (!prev || (prev.quantity === null && f.quantity !== null)) latest.set(key, f);
+  }
+  const companies = ledgerCompanies().filter(c => SEGMENT_ORDER.some(seg => latest.has(`${c.id}|${seg}`)));
+  const maxTon = Math.max(1, ...[...latest.values()].filter(f => /^t/.test(f.unit || '')).map(f => f.quantity || 0));
+  const maxGwh = Math.max(1, ...[...latest.values()].filter(f => /GWh/.test(f.unit || '')).map(f => f.quantity || 0));
+  const left = 150, colW = 118, rowH = 74, top = 34;
+  const W = left + colW * SEGMENT_ORDER.length + 10, H = top + rowH * companies.length + 10;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="회사별 품목 생산능력">`;
+  SEGMENT_ORDER.forEach((seg, i) => { svg += `<text x="${left + colW * i + colW / 2}" y="22" text-anchor="middle" font-size="12" font-weight="700" fill="#334a63">${SEGMENT_KO[seg]}</text>`; });
+  svg += `<line x1="${left - 10}" x2="${W - 10}" y1="${top - 4}" y2="${top - 4}" stroke="#dbe3ec"/>`;
+  companies.forEach((c, r) => {
+    const y = top + rowH * r + rowH / 2;
+    const reports = ledgerData.coverage?.[c.id] || 0;
+    svg += `<text x="8" y="${y + 4}" font-size="12" font-weight="700" fill="#10365f" data-tip="${escapeHtml(`읽은 공시 ${reports}건`)}">${escapeHtml(c.name_ko.length > 12 ? c.name_ko.slice(0, 12) + '…' : c.name_ko)}</text>`;
+    svg += `<line x1="${left - 10}" x2="${W - 10}" y1="${top + rowH * (r + 1)}" y2="${top + rowH * (r + 1)}" stroke="#edf1f4"/>`;
+    SEGMENT_ORDER.forEach((seg, i) => {
+      const f = latest.get(`${c.id}|${seg}`);
+      const x = left + colW * i + colW / 2;
+      if (!f) { svg += `<text x="${x}" y="${y + 4}" text-anchor="middle" font-size="11" fill="#c9d2dc">—</text>`; return; }
+      let r0 = 6;
+      if (f.quantity !== null) { const max = /GWh/.test(f.unit || '') ? maxGwh : maxTon; r0 = 8 + 20 * Math.sqrt(f.quantity / max); }
+      const tip = `${c.name_ko} · ${SEGMENT_KO[seg]} · ${factQty(f)} · ${STATUS_KO[f.status] || ''} · ${[f.country, f.city].filter(Boolean).join(' ')} (${f.occurred_at})`;
+      svg += `<g class="cap-cell" data-company="${c.id}" data-segment="${seg}" style="cursor:pointer" data-tip="${escapeHtml(tip)}"><circle cx="${x}" cy="${y - 6}" r="${r0.toFixed(1)}" fill="${STATUS_COLOR[f.status] || '#888780'}" opacity="0.85"/><text x="${x}" y="${y + r0 + 8}" text-anchor="middle" font-size="10.5" fill="#405167">${escapeHtml(f.quantity_text || '미기재')}${f.status && f.status !== 'unknown' ? ` · ${STATUS_KO[f.status]}` : ''}</text></g>`;
+    });
   });
   svg += '</svg>';
-  const legend = LAYER_ORDER.filter(l => events.some(e => e.layer_key === l)).map(l => `<span><i style="background:${LAYER_COLORS[l]}"></i>${layerName(l)}</span>`).join('');
-  target.innerHTML = `${svg}<div class="profile-legend">${legend}</div>`;
+  target.innerHTML = `${svg}<div class="fig-legend"><span><i style="background:#7f77dd"></i>계획·건설중</span><span><i style="background:#1d9e75"></i>가동·완료</span><span><i style="background:#d85a30"></i>중단</span><span><i style="background:#888780"></i>수량 미기재</span><span>· 회사명에 마우스를 올리면 읽은 공시 수</span></div>`;
+  target.querySelectorAll('.cap-cell').forEach(cell => cell.addEventListener('click', () => {
+    const list = caps.filter(f => f.company_id === cell.dataset.company && f.segment === cell.dataset.segment);
+    showLedgerDetail(`${displayName(cell.dataset.company)} · ${SEGMENT_KO[cell.dataset.segment]} 생산능력`, list);
+  }));
 }
 
-function renderProfilePeer(events, peerEvents, peerCount, chainLabel){
-  const target = document.querySelector('#profile-peer');
-  if (!events.length || !peerCount) { target.innerHTML = ''; return; }
-  // 회사마다 이벤트 수가 달라 건수를 바로 비교하면 커버리지 차이만 보인다. 비중으로 비교한다.
-  const mine = countBy(events, e => e.layer_key);
-  const peerByCompany = new Map();
-  for (const e of peerEvents) { if (!peerByCompany.has(e.company_id)) peerByCompany.set(e.company_id, []); peerByCompany.get(e.company_id).push(e); }
-  const peerShare = new Map();
-  for (const list of peerByCompany.values()) { const c = countBy(list, e => e.layer_key); for (const l of LAYER_ORDER) peerShare.set(l, (peerShare.get(l) || 0) + (c.get(l) || 0) / list.length / peerByCompany.size); }
-  const rows = LAYER_ORDER.filter(l => l !== 'other').map(l => {
-    const me = (mine.get(l) || 0) / events.length, peer = peerShare.get(l) || 0;
-    const ratio = peer > 0 ? me / peer : (me > 0 ? Infinity : 1);
-    const label = ratio === Infinity ? '동종 0' : `${ratio.toFixed(1)}×`;
-    const width = v => `${Math.min(100, v * 100 * 1.6)}%`;
-    return `<div class="peer-row"><span class="peer-label">${layerName(l)}</span><div class="peer-bars"><div class="peer-bar me" data-tip="${escapeHtml(`이 회사 ${(me * 100).toFixed(0)}% (${mine.get(l) || 0}건/${events.length}건)`)}"><i style="width:${width(me)}"></i></div><div class="peer-bar peer" data-tip="${escapeHtml(`${chainLabel} 평균 ${(peer * 100).toFixed(0)}%`)}"><i style="width:${width(peer)}"></i></div></div><span class="peer-ratio${ratio < 1 ? ' low' : ''}">${label}</span></div>`;
-  }).join('');
-  target.innerHTML = `<h3>동종 그룹 대비 비중</h3><p class="peer-note">진한 막대 = 이 회사, 연한 막대 = ${chainLabel} ${peerByCompany.size}곳 평균. 배수는 이 회사 비중 ÷ 동종 평균 비중.</p>${rows}`;
-}
-
-function sparkline(values, color){
-  const W = 120, H = 34, max = Math.max(1, ...values), step = W / Math.max(1, values.length - 1);
-  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(H - 4 - (v / max) * (H - 8)).toFixed(1)}`);
-  const last = pts[pts.length - 1].split(',');
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2"/><circle cx="${last[0]}" cy="${last[1]}" r="2.5" fill="${color}"/></svg>`;
-}
-
-function renderProfileSegments(events, quarters){
-  const target = document.querySelector('#profile-segments');
-  const halves = [...new Set(quarters.map(halfOf))];
-  target.innerHTML = profileData.segments.map(seg => {
-    const hits = events.filter(e => e.segments.some(s => s.key === seg.key));
-    const byHalf = countBy(hits, e => halfOf(e.quarter));
-    const series = halves.map(h => byHalf.get(h) || 0);
-    const termCount = countBy(hits.flatMap(e => e.segments.find(s => s.key === seg.key).terms), t => t);
-    const terms = [...termCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([t, n]) => `<span>${escapeHtml(t)} ${n}</span>`).join('');
-    const recent = series.slice(-2).reduce((a, b) => a + b, 0), before = series.slice(-4, -2).reduce((a, b) => a + b, 0);
-    return `<button type="button" class="segment-card${seg.key === profileSegment ? ' is-selected' : ''}" data-segment="${seg.key}"><h3>${seg.label_ko}</h3><div class="segment-count">${hits.length}<small>건 · 최근 1년 ${recent} / 그 전 1년 ${before}</small></div>${sparkline(series, '#10365f')}<div class="segment-terms">${terms || '<span>매칭 용어 없음</span>'}</div></button>`;
-  }).join('');
-  target.querySelectorAll('.segment-card').forEach(card => card.addEventListener('click', () => { profileSegment = card.dataset.segment; renderStrategyProfile(); }));
-}
-
-function renderProfileRace(allEvents, myEvents, quarters){
-  const target = document.querySelector('#profile-race');
-  const seg = profileData.segments.find(s => s.key === profileSegment);
-  const recentQ = new Set(quarters.slice(-4)), beforeQ = new Set(quarters.slice(-8, -4));
-  const hits = allEvents.filter(e => e.segments.some(s => s.key === profileSegment));
-  const byCompany = new Map();
-  for (const e of hits) {
-    if (!byCompany.has(e.company_id)) byCompany.set(e.company_id, { recent: 0, before: 0, total: 0 });
-    const row = byCompany.get(e.company_id); row.total += 1;
-    if (recentQ.has(e.quarter)) row.recent += 1; else if (beforeQ.has(e.quarter)) row.before += 1;
+// ② 국가 타일. 중국 밖의 거점·증설·합작·고객을 국가로 묶고 대륙 순으로 놓는다.
+function renderLedgerSites(facts){
+  const target = document.querySelector('#ledger-sites');
+  const abroad = facts.filter(f => f.country && f.country !== '중국' && ['capacity', 'site', 'partnership', 'customer', 'shipment'].includes(f.fact_type));
+  if (!abroad.length) { target.innerHTML = '<p class="fig-empty">아직 해외 거점 사실이 없습니다.</p>'; return; }
+  const byCountry = new Map();
+  for (const f of abroad) { if (!byCountry.has(f.country)) byCountry.set(f.country, []); byCountry.get(f.country).push(f); }
+  const regionOf = country => REGIONS.find(r => r.countries.includes(country))?.key || 'other';
+  const groups = [...REGIONS, { key: 'other', label: '기타 지역', countries: [] }].map(region => ({ ...region, list: [...byCountry.entries()].filter(([c]) => regionOf(c) === region.key).sort((a, b) => b[1].length - a[1].length) })).filter(g => g.list.length);
+  const tileW = 150, tileH = 96, gap = 10, cols = 3;
+  let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px">';
+  for (const g of groups) {
+    const rows = Math.ceil(g.list.length / cols);
+    const W = cols * (tileW + gap), H = 20 + rows * (tileH + gap);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${g.label} 거점"><text x="0" y="12" font-size="11" font-weight="700" fill="#617187">${g.label}</text>`;
+    g.list.forEach(([country, list], i) => {
+      const x = (i % cols) * (tileW + gap), y = 20 + Math.floor(i / cols) * (tileH + gap);
+      const suspended = list.some(f => f.status === 'suspended');
+      const korea = country === '한국';
+      const fill = suspended ? '#faece7' : korea ? '#faeeda' : '#e6f1fb';
+      const stroke = suspended ? '#d85a30' : korea ? '#ba7517' : '#378add';
+      const ink = suspended ? '#712b13' : korea ? '#633806' : '#0c447c';
+      const companies = [...new Set(list.map(f => f.company_id))];
+      const lines = list.slice().sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)).slice(0, 3).map(f => `${displayName(f.company_id).replace(/\(.*\)/, '').trim()} · ${f.item || f.counterparty || FACT_TYPE_KO[f.fact_type]}${f.quantity_text ? ` ${f.quantity_text}` : ''}`);
+      svg += `<g class="site-tile" data-country="${escapeHtml(country)}" style="cursor:pointer" data-tip="${escapeHtml(`${country} · 회사 ${companies.length}곳 · 사실 ${list.length}건`)}"><rect x="${x}" y="${y}" width="${tileW}" height="${tileH}" rx="6" fill="${fill}" stroke="${stroke}"/><text x="${x + 10}" y="${y + 18}" font-size="12" font-weight="700" fill="${ink}">${escapeHtml(country)} <tspan font-weight="500" fill="${stroke}">${list.length}</tspan></text>${lines.map((line, j) => `<text x="${x + 10}" y="${y + 38 + j * 16}" font-size="10.5" fill="${ink}">${escapeHtml(line.length > 22 ? line.slice(0, 22) + '…' : line)}</text>`).join('')}${list.length > 3 ? `<text x="${x + 10}" y="${y + 88}" font-size="10" fill="${stroke}">+${list.length - 3}건</text>` : ''}</g>`;
+    });
+    svg += '</svg>';
+    html += `<div>${svg}</div>`;
   }
-  const rows = [...byCompany.entries()].sort((a, b) => b[1].recent - a[1].recent || b[1].total - a[1].total).slice(0, 10).map(([id, r]) => {
-    const delta = r.recent - r.before;
-    return `<tr class="${id === profileCompany ? 'is-me' : ''}"><td>${escapeHtml(displayName(id))}</td><td class="num">${r.recent}</td><td class="num">${r.before}</td><td class="num race-delta ${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}</td></tr>`;
-  }).join('');
-  const mine = myEvents.filter(e => e.segments.some(s => s.key === profileSegment)).slice(0, 8);
-  const list = mine.map(e => `<div class="race-event" data-tip="${escapeHtml(`매칭 용어: ${e.segments.find(s => s.key === profileSegment).terms.join(', ')}`)}"><time>${escapeHtml(displayDate({ date: e.occurred_at, precision: e.precision }))}</time>${escapeHtml(e.title_ko)}${e.source_url ? `<a href="${escapeHtml(e.source_url)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`).join('') || '<p class="profile-empty">이 세그먼트에 해당하는 이벤트가 없습니다.</p>';
-  target.innerHTML = `<div><h3 style="margin:0 0 4px;font-size:14px">${seg.label_ko} · 회사별 이벤트 (최근 4분기 vs 그 전 4분기)</h3><p style="margin:0 0 10px;font-size:11.5px;color:var(--muted)">이 세그먼트 용어가 들어간 이벤트를 회사별로 센 것입니다. 최근 4분기 건수 순.</p><table class="race-table"><thead><tr><th>회사</th><th style="text-align:right">최근 4분기</th><th style="text-align:right">그 전 4분기</th><th style="text-align:right">변화</th></tr></thead><tbody>${rows || '<tr><td colspan="4">해당 이벤트 없음</td></tr>'}</tbody></table></div><div><h3 style="margin:0 0 10px;font-size:14px">${escapeHtml(displayName(profileCompany))} · ${seg.label_ko} 이벤트</h3><div class="race-events">${list}</div></div>`;
+  html += `</div><div class="fig-legend"><span><i class="sq" style="background:#e6f1fb;border:1px solid #378add"></i>거점</span><span><i class="sq" style="background:#faece7;border:1px solid #d85a30"></i>중단·지연 포함</span><span><i class="sq" style="background:#faeeda;border:1px solid #ba7517"></i>한국</span></div>`;
+  target.innerHTML = html;
+  target.querySelectorAll('.site-tile').forEach(tile => tile.addEventListener('click', () => showLedgerDetail(`${tile.dataset.country} 거점`, byCountry.get(tile.dataset.country) || [])));
 }
 
-function renderStrategyProfile(){
-  if (!profileData) return;
-  const quarters = quarterList();
-  const all = profileData.events.filter(e => quarters.includes(e.quarter));
-  const mine = all.filter(e => e.company_id === profileCompany);
-  const chain = companyById(profileCompany)?.value_chain;
-  const peerIds = companiesInValueChain(chain).map(c => c.id).filter(id => id !== profileCompany);
-  const peers = all.filter(e => peerIds.includes(e.company_id));
-  document.querySelector('#profile-count').textContent = `${displayName(profileCompany)} · 이벤트 ${mine.length}건 · ${quarters[0]}~${quarters[quarters.length - 1]}`;
-  renderProfileQuarters(mine, quarters);
-  renderProfilePeer(mine, peers, peerIds.length, `${valueChainLabels[chain] || '동종'} 그룹`);
-  renderProfileSegments(mine, quarters);
-  renderProfileRace(all, mine, quarters);
-}
-
-async function startStrategyProfile(){
-  const select = document.querySelector('#profile-company');
-  if (!select.options.length && companyCatalog.length) {
-    select.innerHTML = companyCatalog.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name_ko)}</option>`).join('');
-    profileCompany = currentCompany || companyCatalog[0].id;
-    select.value = profileCompany;
-    select.addEventListener('change', () => { profileCompany = select.value; renderStrategyProfile(); });
-    document.querySelector('.graph-aux').addEventListener('toggle', event => { if (event.target.open) startKnowledgeGraph(); });
+// ③ 왼쪽 중국 회사, 오른쪽 상대방. 선 굵기는 사실 수, 색은 상대방 종류, 한국 기업은 상자를 강조.
+function renderLedgerLinks(facts){
+  const target = document.querySelector('#ledger-links');
+  const rel = facts.filter(f => f.counterparty && ['customer', 'partnership'].includes(f.fact_type));
+  if (!rel.length) { target.innerHTML = '<p class="fig-empty">아직 고객·제휴 사실이 없습니다.</p>'; return; }
+  const pairs = new Map();
+  for (const f of rel) { const k = `${f.company_id}|${f.counterparty}`; if (!pairs.has(k)) pairs.set(k, []); pairs.get(k).push(f); }
+  const leftIds = ledgerCompanies().map(c => c.id).filter(id => rel.some(f => f.company_id === id));
+  const rightCount = new Map();
+  for (const f of rel) rightCount.set(f.counterparty, (rightCount.get(f.counterparty) || 0) + 1);
+  const rights = [...rightCount.entries()].sort((a, b) => (isKorean(b[0]) - isKorean(a[0])) || b[1] - a[1]).map(([n]) => n);
+  const rowH = 30, boxW = 170, W = 760, H = 24 + Math.max(leftIds.length, rights.length) * rowH;
+  const yL = i => 24 + i * rowH * (Math.max(leftIds.length, rights.length) / leftIds.length) ;
+  const yR = i => 24 + i * rowH * (Math.max(leftIds.length, rights.length) / rights.length);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="중국 회사와 상대방 연결도">`;
+  for (const [key, list] of pairs) {
+    const [cid, cp] = key.split('|');
+    const a = yL(leftIds.indexOf(cid)) + 11, b = yR(rights.indexOf(cp)) + 11;
+    const kind = list[0].counterparty_kind || 'other';
+    const tip = `${displayName(cid)} → ${cp}: ${[...new Set(list.map(f => f.relation).filter(Boolean))].join(', ') || '관계'} · ${list.length}건`;
+    svg += `<path class="link-line" data-pair="${escapeHtml(key)}" d="M${boxW} ${a} C ${W / 2} ${a}, ${W / 2} ${b}, ${W - boxW} ${b}" fill="none" stroke="${isKorean(cp) ? '#ba7517' : KIND_COLOR[kind]}" stroke-width="${Math.min(7, 1.2 + list.length * 1.1)}" opacity="0.75" style="cursor:pointer" data-tip="${escapeHtml(tip)}"/>`;
   }
-  if (profileData) { renderStrategyProfile(); return; }
-  if (profileLoading) return;
-  profileLoading = true;
+  leftIds.forEach((id, i) => { const y = yL(i); svg += `<g class="link-left" data-company="${id}" style="cursor:pointer"><rect x="0" y="${y}" width="${boxW}" height="22" rx="5" fill="#eeedfe" stroke="#7f77dd"/><text x="${boxW / 2}" y="${y + 15}" text-anchor="middle" font-size="11" font-weight="700" fill="#3c3489">${escapeHtml(displayName(id).length > 16 ? displayName(id).slice(0, 16) + '…' : displayName(id))}</text></g>`; });
+  rights.forEach((name, i) => { const y = yR(i); const ko = isKorean(name); svg += `<g class="link-right" data-cp="${escapeHtml(name)}" style="cursor:pointer"><rect x="${W - boxW}" y="${y}" width="${boxW}" height="22" rx="5" fill="${ko ? '#faeeda' : '#f1efe8'}" stroke="${ko ? '#ba7517' : '#b4b2a9'}"/><text x="${W - boxW / 2}" y="${y + 15}" text-anchor="middle" font-size="11" font-weight="700" fill="${ko ? '#633806' : '#444441'}">${escapeHtml(name.length > 18 ? name.slice(0, 18) + '…' : name)}</text></g>`; });
+  svg += '</svg>';
+  target.innerHTML = `${svg}<div class="fig-legend">${Object.entries(KIND_KO).filter(([k]) => rel.some(f => f.counterparty_kind === k)).map(([k, label]) => `<span><i style="background:${KIND_COLOR[k]}"></i>${label}</span>`).join('')}<span><i style="background:#ba7517"></i>한국 기업</span></div>`;
+  target.querySelectorAll('.link-line').forEach(line => line.addEventListener('click', () => { const [cid, cp] = line.dataset.pair.split('|'); showLedgerDetail(`${displayName(cid)} ↔ ${cp}`, pairs.get(line.dataset.pair)); }));
+  target.querySelectorAll('.link-left').forEach(box => box.addEventListener('click', () => showLedgerDetail(`${displayName(box.dataset.company)} · 고객·제휴`, rel.filter(f => f.company_id === box.dataset.company))));
+  target.querySelectorAll('.link-right').forEach(box => box.addEventListener('click', () => showLedgerDetail(`${box.dataset.cp} · 관계된 중국 회사`, rel.filter(f => f.counterparty === box.dataset.cp))));
+}
+
+// ④ 같은 지표를 같은 축에. 기간(period)이 있는 실적만 쓰고, 회사마다 기간별 최신 사실 하나.
+function renderLedgerFinancials(facts){
+  const target = document.querySelector('#ledger-financials');
+  const metric = document.querySelector('#ledger-fin-metric').value;
+  const chainIds = new Set(companiesInValueChain(ledgerFinChain).map(c => c.id));
+  const pick = f => chainIds.has(f.company_id) && f.period && f.quantity !== null && (metric === 'shipment' ? f.fact_type === 'shipment' : (f.fact_type === 'financial' && f.metric === metric && f.unit === 'CNY_100M'));
+  const rows = facts.filter(pick);
+  if (!rows.length) { target.innerHTML = '<p class="fig-empty">이 지표의 사실이 아직 없습니다.</p>'; return; }
+  const periods = [...new Set(rows.map(f => f.period))].sort();
+  const series = new Map();
+  for (const f of rows.slice().sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))) { if (!series.has(f.company_id)) series.set(f.company_id, new Map()); series.get(f.company_id).set(f.period, f); }
+  const unitLabel = metric === 'shipment' ? [...new Set(rows.map(f => f.unit))].join('/') : '억 위안';
+  const W = 760, H = 260, left = 56, right = 150, top = 14, bottom = 34;
+  const max = Math.max(1, ...rows.map(f => f.quantity)), min = Math.min(0, ...rows.map(f => f.quantity));
+  const x = i => left + (W - left - right) * (periods.length === 1 ? 0.5 : i / (periods.length - 1));
+  const y = v => top + (H - top - bottom) * (1 - (v - min) / (max - min || 1));
+  const palette = ['#10365f', '#1d9e75', '#d85a30', '#7f77dd', '#ba7517', '#378add', '#d4537e', '#639922', '#888780'];
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="실적 추이">`;
+  for (const t of [min, (min + max) / 2, max]) svg += `<line x1="${left}" x2="${W - right}" y1="${y(t)}" y2="${y(t)}" stroke="#edf1f4"/><text x="${left - 6}" y="${y(t) + 4}" text-anchor="end" font-size="10" fill="#8b98a8">${Math.round(t).toLocaleString()}</text>`;
+  periods.forEach((p, i) => { svg += `<text x="${x(i)}" y="${H - bottom + 16}" text-anchor="middle" font-size="10.5" fill="#617187">${escapeHtml(p)}</text>`; });
+  let k = 0;
+  for (const [cid, byPeriod] of series) {
+    const color = palette[k % palette.length]; k += 1;
+    const pts = periods.map((p, i) => byPeriod.has(p) ? { i, f: byPeriod.get(p) } : null).filter(Boolean);
+    if (pts.length > 1) svg += `<polyline points="${pts.map(pt => `${x(pt.i)},${y(pt.f.quantity)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="2"/>`;
+    for (const pt of pts) svg += `<circle cx="${x(pt.i)}" cy="${y(pt.f.quantity)}" r="4" fill="${color}" class="fin-pt" data-fact="${pt.f.id}" style="cursor:pointer" data-tip="${escapeHtml(`${displayName(cid)} ${pt.f.period}: ${pt.f.quantity_text} (${TIER_KO[pt.f.source_tier]})`)}"/>`;
+    const last = pts[pts.length - 1];
+    svg += `<text x="${x(last.i) + 8}" y="${y(last.f.quantity) + 4}" font-size="10.5" fill="${color}" font-weight="700">${escapeHtml(displayName(cid).replace(/\(.*\)/, '').trim())}</text>`;
+  }
+  svg += '</svg>';
+  target.innerHTML = `${svg}<div class="fig-legend"><span>단위: ${escapeHtml(unitLabel)} · 원문 표기 그대로, 환산 없음 · 점을 클릭하면 근거</span></div>`;
+  target.querySelectorAll('.fin-pt').forEach(pt => pt.addEventListener('click', () => { const f = rows.find(r => r.id === pt.dataset.fact); showLedgerDetail(`${displayName(f.company_id)} · ${f.period} ${FACT_TYPE_KO[f.fact_type]}`, [f]); }));
+}
+
+function renderFactLedger(){
+  if (!ledgerData) return;
+  const facts = ledgerFacts();
+  const status = document.querySelector('#ledger-status');
+  const pending = ledgerData.pending_events || 0;
+  status.textContent = `사실 ${facts.length}건 (전체 ${ledgerData.facts.length}건)${pending ? ` · 추출 대기 이벤트 ${pending}건 — 야간 유지 단계가 채웁니다` : ''}`;
+  renderLedgerCapacity(facts);
+  renderLedgerSites(facts);
+  renderLedgerLinks(facts);
+  renderLedgerFinancials(facts);
+}
+
+async function startFactLedger(){
+  const chainBox = document.querySelector('#ledger-fin-chain');
+  if (!chainBox.children.length) {
+    chainBox.innerHTML = Object.entries(valueChainLabels).map(([key, label]) => `<button type="button" class="segment${key === ledgerFinChain ? ' is-selected' : ''}" data-chain="${key}">${label}</button>`).join('');
+    chainBox.querySelectorAll('.segment').forEach(button => button.addEventListener('click', () => { ledgerFinChain = button.dataset.chain; chainBox.querySelectorAll('.segment').forEach(b => b.classList.toggle('is-selected', b === button)); renderLedgerFinancials(ledgerFacts()); }));
+    document.querySelector('#ledger-fin-metric').addEventListener('change', () => renderLedgerFinancials(ledgerFacts()));
+    document.querySelector('#ledger-tier').addEventListener('change', event => { ledgerTier = event.target.value; renderFactLedger(); });
+  }
+  if (ledgerData) { renderFactLedger(); return; }
+  if (ledgerLoading) return;
+  ledgerLoading = true;
+  document.querySelector('#ledger-status').textContent = '불러오는 중…';
   try {
-    const result = await fetch('/api/company?mode=strategy_profile', { cache: 'no-store' });
+    const result = await fetch('/api/company?mode=fact_ledger', { cache: 'no-store' });
     const payload = await result.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
-    profileData = payload;
-    renderStrategyProfile();
+    ledgerData = payload;
+    renderFactLedger();
   } catch (error) {
-    document.querySelector('#profile-quarters').innerHTML = `<p class="profile-empty">프로파일을 불러오지 못했습니다: ${escapeHtml(error.message)}</p>`;
+    document.querySelector('#ledger-status').textContent = `불러오지 못했습니다: ${error.message}`;
   } finally {
-    profileLoading = false;
+    ledgerLoading = false;
   }
 }
 
-// ── 키워드·기업·레이어 3D 연관 그래프 ──────────────────────────────
-// 서버가 pca3()로 미리 계산해 준 x,y,z를 그대로 초기 배치로 쓰고, 여기서는
-// 회전·확대만 다룬다. 라이브러리 없이 캔버스 2D에 직접 원근 투영한다.
-let knowledgeGraphData = null;
-let knowledgeGraphLoading = false;
-let graphProjectedCache = null;
-let graphSelectedNode = null;
-let graphRotation = { x: -0.3, y: 0.6 };
-let graphZoom = 1;
-let graphDrag = null;
-let graphDragMoved = false;
-let graphAutoRotate = true;
-let graphRAF = null;
-let graphFocusCompany = '';
-
-// 회사를 고르면 그 회사와 직접 이어진 점만 남긴다. 이어진 근거는 링크(의미 유사·같은 기사)와
-// 키워드·레이어가 가진 관련 회사 목록 두 가지다.
-function graphVisibleIds(){
-  if (!graphFocusCompany || !knowledgeGraphData) return null;
-  const focusId = `company:${graphFocusCompany}`;
-  const visible = new Set([focusId]);
-  for (const link of knowledgeGraphData.links) {
-    if (link.source === focusId) visible.add(link.target);
-    if (link.target === focusId) visible.add(link.source);
-  }
-  for (const node of knowledgeGraphData.nodes) {
-    if (node.kind !== 'company' && (node.companies || []).includes(graphFocusCompany)) visible.add(node.id);
-  }
-  return visible;
-}
-
-function graphNodeColor(kind){ return kind === 'company' ? '#2f6fed' : kind === 'keyword' ? '#e08a2f' : '#1f9d6b'; }
-function graphNodeRadius(node){ return 5 + Math.min(10, Math.sqrt(Math.max(1, node.count))); }
-
-function drawKnowledgeGraph(){
-  const canvas = document.querySelector('#knowledge-graph-canvas');
-  if (!canvas || !knowledgeGraphData?.nodes?.length) return;
-  const wrap = canvas.parentElement;
-  const w = wrap.clientWidth, h = wrap.clientHeight;
-  if (!w || !h) return;
-  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, w, h);
-  const cosY = Math.cos(graphRotation.y), sinY = Math.sin(graphRotation.y);
-  const cosX = Math.cos(graphRotation.x), sinX = Math.sin(graphRotation.x);
-  const unit = Math.min(w, h) / 190;
-  const perspective = 240;
-  const projected = new Map();
-  const visible = graphVisibleIds();
-  for (const node of knowledgeGraphData.nodes) {
-    if (visible && !visible.has(node.id)) continue;
-    const x1 = node.x * cosY - node.z * sinY;
-    const z1 = node.x * sinY + node.z * cosY;
-    const y1 = node.y * cosX - z1 * sinX;
-    const z2 = node.y * sinX + z1 * cosX;
-    const depthScale = (perspective / (perspective + z2)) * graphZoom;
-    projected.set(node.id, { sx: w / 2 + x1 * unit * depthScale, sy: h / 2 + y1 * unit * depthScale, depthScale, z: z2, node });
-  }
-  for (const link of knowledgeGraphData.links) {
-    const a = projected.get(link.source), b = projected.get(link.target);
-    if (!a || !b) continue;
-    const isSelected = graphSelectedNode && (link.source === graphSelectedNode.id || link.target === graphSelectedNode.id);
-    const alpha = Math.max(0.06, Math.min(0.5, link.weight * 0.4));
-    ctx.strokeStyle = isSelected ? 'rgba(22,116,197,0.85)' : `rgba(120,140,165,${alpha})`;
-    ctx.lineWidth = isSelected ? 1.6 : 0.8;
-    ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
-  }
-  const order = [...projected.values()].sort((p, q) => p.z - q.z);
-  for (const p of order) {
-    const r = graphNodeRadius(p.node) * Math.max(0.55, p.depthScale);
-    ctx.globalAlpha = Math.max(0.45, Math.min(1, p.depthScale));
-    ctx.fillStyle = graphNodeColor(p.node.kind);
-    ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2); ctx.fill();
-    if (graphSelectedNode && p.node.id === graphSelectedNode.id) {
-      ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.strokeStyle = '#10365f'; ctx.stroke();
-    }
-  }
-  // 라벨은 점을 다 찍은 뒤 위에 얹는다. 앞쪽 점일수록 크고 진하게, 뒤쪽은 작고 흐리게.
-  ctx.textBaseline = 'middle';
-  for (const p of order) {
-    const r = graphNodeRadius(p.node) * Math.max(0.55, p.depthScale);
-    const size = Math.round(Math.max(9, Math.min(14, 11 * p.depthScale)));
-    ctx.font = `${p.node.kind === 'company' ? '700' : '500'} ${size}px "Segoe UI","Noto Sans KR",sans-serif`;
-    ctx.globalAlpha = Math.max(0.5, Math.min(1, p.depthScale));
-    const label = p.node.label;
-    const tw = ctx.measureText(label).width;
-    ctx.fillStyle = 'rgba(255,255,255,0.82)';
-    ctx.fillRect(p.sx + r + 3, p.sy - size * 0.7, tw + 6, size * 1.4);
-    ctx.fillStyle = graphNodeColor(p.node.kind);
-    ctx.fillText(label, p.sx + r + 6, p.sy);
-  }
-  ctx.globalAlpha = 1;
-  graphProjectedCache = projected;
-}
-
-function hitTestGraphNode(event){
-  if (!graphProjectedCache) return null;
-  const canvas = document.querySelector('#knowledge-graph-canvas');
-  const rect = canvas.getBoundingClientRect();
-  const mx = event.clientX - rect.left, my = event.clientY - rect.top;
-  let best = null, bestDist = Infinity;
-  for (const p of graphProjectedCache.values()) {
-    const r = graphNodeRadius(p.node) * Math.max(0.55, p.depthScale) + 4;
-    const d = Math.hypot(p.sx - mx, p.sy - my);
-    if (d <= r && d < bestDist) { bestDist = d; best = p; }
-  }
-  return best;
-}
-
-function renderGraphInfo(node){
-  const panel = document.querySelector('#graph-info');
-  if (!node) { panel.innerHTML = '점을 클릭하면 상세 정보가 표시됩니다.'; return; }
-  const kindLabel = node.kind === 'company' ? '회사' : node.kind === 'keyword' ? '키워드' : '시장·기술 레이어';
-  const links = knowledgeGraphData.links.filter(l => l.source === node.id || l.target === node.id)
-    .sort((a, b) => b.weight - a.weight).slice(0, 10);
-  const rows = links.map(l => {
-    const otherId = l.source === node.id ? l.target : l.source;
-    const other = knowledgeGraphData.nodes.find(n => n.id === otherId);
-    return `<li>${escapeHtml(other?.label || otherId)} <span style="color:var(--muted)">· ${escapeHtml(l.reason)} (${l.weight})</span></li>`;
-  }).join('') || '<li style="color:var(--muted)">연결된 근거가 없습니다.</li>';
-  panel.innerHTML = `<span class="gi-kind">${kindLabel}</span><h3>${escapeHtml(node.label)}</h3><p style="margin:0;color:var(--muted)">근거 청크 ${node.count}개${node.companies?.length ? ` · 관련 회사 ${node.companies.length}곳` : ''}</p><ul>${rows}</ul>`;
-}
-
-function graphRenderLoop(){
-  const view = document.querySelector('#graph');
-  if (view?.classList.contains('is-visible') && document.querySelector('.graph-aux')?.open) {
-    if (!graphDrag && graphAutoRotate) graphRotation.y += 0.0025;
-    drawKnowledgeGraph();
-    graphRAF = requestAnimationFrame(graphRenderLoop);
-  } else {
-    graphRAF = null;
-  }
-}
-
-function setupGraphInteractions(){
-  const canvas = document.querySelector('#knowledge-graph-canvas');
-  if (!canvas) return;
-  canvas.addEventListener('pointerdown', event => {
-    graphDrag = { x: event.clientX, y: event.clientY, rx: graphRotation.x, ry: graphRotation.y };
-    graphDragMoved = false;
-    graphAutoRotate = false;
-    canvas.classList.add('is-dragging');
-    canvas.setPointerCapture(event.pointerId);
-  });
-  canvas.addEventListener('pointermove', event => {
-    if (graphDrag) {
-      const dx = event.clientX - graphDrag.x, dy = event.clientY - graphDrag.y;
-      if (Math.hypot(dx, dy) > 4) graphDragMoved = true;
-      graphRotation.y = graphDrag.ry + dx * 0.006;
-      graphRotation.x = Math.max(-1.3, Math.min(1.3, graphDrag.rx + dy * 0.006));
-      return;
-    }
-    const hit = hitTestGraphNode(event);
-    canvas.style.cursor = hit ? 'pointer' : 'grab';
-    if (hit) showTip(`${hit.node.label} · 근거 ${hit.node.count}개`, event.clientX, event.clientY);
-    else hideTip();
-  });
-  const endDrag = event => {
-    if (!graphDrag) return;
-    graphDrag = null;
-    canvas.classList.remove('is-dragging');
-    if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-  };
-  canvas.addEventListener('pointerup', endDrag);
-  canvas.addEventListener('pointerleave', endDrag);
-  canvas.addEventListener('wheel', event => {
-    event.preventDefault();
-    graphZoom = Math.max(0.5, Math.min(2.6, graphZoom - event.deltaY * 0.001));
-  }, { passive: false });
-  canvas.addEventListener('click', event => {
-    if (graphDragMoved) { graphDragMoved = false; return; }
-    const hit = hitTestGraphNode(event);
-    graphSelectedNode = hit ? hit.node : null;
-    renderGraphInfo(graphSelectedNode);
-  });
-}
-
-async function startKnowledgeGraph(){
-  if (!graphRAF) graphRAF = requestAnimationFrame(graphRenderLoop);
-  if (knowledgeGraphLoading || knowledgeGraphData) return;
-  knowledgeGraphLoading = true;
-  const empty = document.querySelector('#graph-empty');
-  try {
-    const result = await fetch('/api/company?mode=knowledge_graph', { cache: 'no-store' });
-    const payload = await result.json();
-    if (payload.status !== 'ok' || !payload.nodes?.length) {
-      empty.hidden = false;
-      empty.textContent = payload.note || payload.message || '아직 그래프를 그릴 만큼 벡터가 쌓이지 않았습니다.';
-      knowledgeGraphData = { nodes: [], links: [] };
-      return;
-    }
-    knowledgeGraphData = payload;
-    const select = document.querySelector('#graph-company');
-    const present = new Set(payload.nodes.filter(n => n.kind === 'company').map(n => n.key));
-    const options = companyCatalog.filter(c => present.has(c.id)).map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name_ko)}</option>`);
-    select.innerHTML = `<option value="">전체 보기</option>${options.join('')}`;
-    select.onchange = () => {
-      graphFocusCompany = select.value;
-      graphSelectedNode = graphFocusCompany ? payload.nodes.find(n => n.id === `company:${graphFocusCompany}`) || null : null;
-      renderGraphInfo(graphSelectedNode);
-    };
-  } catch (error) {
-    empty.hidden = false;
-    empty.textContent = `그래프를 불러오지 못했습니다: ${error.message}`;
-  } finally {
-    knowledgeGraphLoading = false;
-  }
-}
 document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompanyPicker(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });
 document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
 // 수집은 시작만 이 요청으로 하고, 본문 처리와 Daily 생성은 서버가 별도 호출로 이어 간다.
@@ -1384,7 +1254,6 @@ document.querySelector('#run-collection-button').addEventListener('click', async
   }
 });
 async function initialize(){
-  setupGraphInteractions();
   await loadCompanyCatalog();
   const compareA = document.querySelector('#compare-a');
   const compareB = document.querySelector('#compare-b');
