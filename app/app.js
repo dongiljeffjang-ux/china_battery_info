@@ -692,18 +692,37 @@ function renderCompanyEvents(timeline){
     const shown = list.slice(0, DIGEST_PREVIEW), rest = list.slice(DIGEST_PREVIEW);
     return `<div class="digest-col ${cls}"><h4>${name} <small>${list.length}</small></h4><ul class="digest-lines">${shown.map(line).join('')}</ul>${rest.length ? `<ul class="digest-lines digest-more" hidden>${rest.map(line).join('')}</ul><button type="button" class="digest-toggle">+${rest.length}건 더보기</button>` : ''}</div>`;
   };
-  grid.innerHTML = [...groups.entries()].map(([label, items]) => {
+  const card = ([label, items]) => {
     const first = items[0];
     const sorted = [...items].sort((x, y) => importanceOf(y) - importanceOf(x));
     const market = sorted.filter(event => event.track !== 'tech'), tech = sorted.filter(event => event.track === 'tech');
     const source = items.find(event => event.sourceUrl);
     return `<article class="digest-report"><header><span class="digest-period" data-tip="${escapeHtml(dateTip(first))}">${escapeHtml(label)}</span><span>${escapeHtml(evidenceLabels[first.kind] || '')}</span><span>사실 ${items.length}건</span>${source ? `<a href="${escapeHtml(source.sourceUrl)}" target="_blank" rel="noreferrer">원문 ↗</a>` : ''}</header><div class="digest-body">${column('시장', market, 'market')}${column('기술', tech, 'tech')}</div></article>`;
+  };
+  // 연도별로 접었다 펼친다. 가장 최근 연도만 펼쳐 두고 나머지는 접는다.
+  const years = new Map();
+  for (const entry of groups.entries()) {
+    const year = entry[1][0].date.slice(0, 4);
+    if (!years.has(year)) years.set(year, []);
+    years.get(year).push(entry);
+  }
+  grid.innerHTML = [...years.entries()].map(([year, entries], index) => {
+    const count = entries.reduce((sum, [, items]) => sum + items.length, 0);
+    return `<details class="digest-year"${index === 0 ? ' open' : ''}><summary><span class="digest-year-label">${escapeHtml(year)}년</span><span class="digest-year-meta">보고서 ${entries.length}건 · 사실 ${count}건</span></summary><div class="digest-year-body">${entries.map(card).join('')}</div></details>`;
   }).join('');
   grid.querySelectorAll('.digest-toggle').forEach(button => button.addEventListener('click', () => {
     button.previousElementSibling.hidden = false;
     button.remove();
   }));
 }
+// 시간은 위(최근)→아래(과거)로 흐르고, 왼쪽이 시장·오른쪽이 기술이다. 레이어 8개는 화면에서 2+2로 묶는다.
+// 데이터의 layer_key는 그대로 8개다. 묶음은 표시용이라 언제든 되돌릴 수 있다.
+const MATRIX_GROUPS = [
+  { track: 'market', label: '실적·생산기반', layers: ['supply-performance', 'investment-production'] },
+  { track: 'market', label: '고객·해외', layers: ['customer-commercialization', 'regional-overseas'] },
+  { track: 'tech', label: '소재·공정', layers: ['technology-material-chemistry', 'technology-process-performance'] },
+  { track: 'tech', label: 'IP·인증·양산', layers: ['technology-ip-standard', 'technology-development'] },
+];
 function renderLayerMatrix(timeline){
   const target = document.querySelector('#dual-track');
   const events = visibleEvents(timeline);
@@ -712,32 +731,28 @@ function renderLayerMatrix(timeline){
     target.innerHTML = `<p>${escapeHtml(notice || '선택한 기업에 표시할 공시 기반 이벤트가 아직 없습니다.')}</p>`;
     return;
   }
-  const periods = timelinePeriods(events);
-  const rowsFor = (group, labels) => {
-    const rows = Object.entries(labels).map(([key, label]) => ({ group, label, match: event => event.layer === key }));
-    if (events.some(event => event.layer === UNCLASSIFIED_LAYER && event.group === group)) {
-      rows.push({ group, label: '미분류', match: event => event.layer === UNCLASSIFIED_LAYER && event.group === group });
-    }
-    return rows;
+  const periods = timelinePeriods(events).slice().reverse();
+  // 미분류는 트랙만 알 수 있으므로 그 트랙의 첫 묶음에 넣고 '미분류' 표시를 단다.
+  const groupOf = event => {
+    const found = MATRIX_GROUPS.find(group => group.layers.includes(event.layer));
+    if (found) return found;
+    return MATRIX_GROUPS.find(group => group.track === (event.track === 'tech' ? 'tech' : 'market'));
   };
-  const rows = [...rowsFor('시장', marketLayerLabels), ...rowsFor('기술', technologyLayerLabels)];
-  const cell = (row, period) => {
-    const matched = events.filter(event => row.match(event) && periodOf(event.date) === period);
+  const cell = (group, period) => {
+    const matched = events.filter(event => groupOf(event) === group && periodOf(event.date) === period).sort((x, y) => importanceOf(y) - importanceOf(x));
     if (!matched.length) return `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`;
-    // 셀에는 방향과 수치만 남긴다. 설명 문장은 마우스를 올렸을 때만 보여준다.
     return matched.map(event => {
-      const tip = [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
-      return `<div class="matrix-item" data-tip="${escapeHtml(tip)}"><strong>${escapeHtml(event.title)}</strong>${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+      const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
+      const unclassified = event.layer === UNCLASSIFIED_LAYER ? '<span class="matrix-entity">미분류</span>' : '';
+      return `<div class="matrix-item" data-tip="${escapeHtml(tip)}"><strong>${escapeHtml(shortTitle(event.title))}</strong>${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('');
   };
-  const headCell = 'text-align:left;padding:10px;border-bottom:1px solid #dbe3ec';
-  const stickyGroup = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:0;background:#fff;z-index:1';
-  const stickyLayer = 'padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;font-weight:700;position:sticky;left:58px;background:#fff;z-index:1';
-  const table = `<table style="width:100%;min-width:${periods.length * 168 + 300}px;border-collapse:collapse;font-size:12px"><thead><tr><th style="${headCell};position:sticky;left:0;background:#fff;z-index:1">구분</th><th style="${headCell};position:sticky;left:58px;background:#fff;z-index:1">레이어</th>${periods.map(period => `<th style="${headCell};white-space:nowrap">${period}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><td style="${stickyGroup};color:${row.group === '시장' ? '#236aa6' : '#8b5a10'}">${row.group}</td><td style="${stickyLayer}">${escapeHtml(row.label)}</td>${periods.map(period => `<td style="padding:12px 10px;vertical-align:top;border-bottom:1px solid #edf1f4;min-width:150px">${cell(row, period)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto">${table}</div><p style="margin:10px 0 0;color:#617187;font-size:12px">처음에는 현재 시점(오른쪽 끝)이 보이고 왼쪽으로 밀면 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 칸에는 방향과 수치만 적었습니다. 자세한 사실은 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
-  // 시간축은 과거→현재 순서를 지키되, 처음 보이는 위치를 현재 시점(오른쪽 끝)으로 둔다.
-  const scroller = target.querySelector('.matrix-scroll');
-  if (scroller) scroller.scrollLeft = scroller.scrollWidth;
+  const head = MATRIX_GROUPS.map(group => `<th class="matrix-head ${group.track}">${group.label}</th>`);
+  const body = periods.map(period => {
+    const cells = MATRIX_GROUPS.map(group => `<td class="matrix-cell">${cell(group, period)}</td>`);
+    return `<tr>${cells[0]}${cells[1]}<th class="matrix-period">${period}</th>${cells[2]}${cells[3]}</tr>`;
+  }).join('');
+  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 자세한 사실과 원래 레이어는 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
 
 // 벡터 지식에 질문한다. 근거가 없으면 답을 만들지 않고 무엇을 확인할지 안내받는다.
