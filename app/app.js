@@ -901,7 +901,6 @@ ${para(payload.company_b, r.timeline?.b_ko)}
 ${para('갈린 지점', r.timeline?.divergence_ko)}
 <h2 class="insight">3. 한국 배터리사·소재사 관점 (해석)</h2>
 ${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
-${insight.watch_ko ? para('확인할 것', insight.watch_ko) : ''}
 <h2 class="check">4. 웹 검증</h2>
 <p class="row">${escapeHtml(check.checked_ko || '검증 정보 없음')}</p>
 ${fixes ? `<p class="row"><span class="lbl">수정</span></p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>'}
