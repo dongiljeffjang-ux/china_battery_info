@@ -64,6 +64,7 @@ function cleanEvents(list) {
       // 검증자가 "이 이벤트의 날짜가 틀렸다"고 짚을 수 있도록 id를 같이 넘긴다. 형식이 uuid가 아니면 버린다.
       id: /^[0-9a-f-]{36}$/i.test(String(event?.id || "")) ? String(event.id) : "",
       date: String(event?.date || "").slice(0, 10),
+      track: event?.track === "tech" || event?.track === "technology" ? "tech" : "market",
       title: String(event?.title || "").slice(0, 160),
       fact: String(event?.fact || "").slice(0, 400),
       sourceName: String(event?.sourceName || "").slice(0, 80)

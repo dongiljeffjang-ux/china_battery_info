@@ -896,7 +896,7 @@ h1{margin:2px 0 3px;font-size:16px;letter-spacing:-.3px}
 .meta{margin:0;font-size:8.2px;color:#617187}
 .headline{margin:0 0 8px;padding:7px 10px;border-left:3px solid #10365f;background:#f3f6fa;font-size:10.2px;font-weight:700}
 h2{margin:9px 0 5px;font-size:10.5px;color:#10365f;letter-spacing:.2px}
-h2.insight{color:#8b5a10}h2.check{color:#0c6b4e}
+h2.tech-h{color:#8b5a10}h2.insight{color:#8b5a10}h2.check{color:#0c6b4e}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .col{padding:6px 8px;border:1px solid #dbe3ec;border-radius:6px}
 .who{margin:0 0 2px;font-size:8.6px;font-weight:800;color:#1674c5}
@@ -919,11 +919,12 @@ footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8
 <h1>${A} vs ${B}</h1>
 <p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
 ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
-<h2>1. 전략 비교</h2>${pair(r.strategy, '대비', 'contrast_ko')}
-<h2>2. 시계열 비교</h2>${pair(r.timeline, '갈린 지점', 'divergence_ko')}
-<h2 class="insight">3. 한국 배터리사·소재사 관점 — 해석</h2>
+<h2>1. 시장 축 비교</h2>${pair(r.market, '대비', 'contrast_ko')}
+<h2 class="tech-h">2. 기술 축 비교</h2>${pair(r.technology, '대비', 'contrast_ko')}
+<h2>3. 시계열 비교</h2>${pair(r.timeline, '갈린 지점', 'divergence_ko')}
+<h2 class="insight">4. 한국 배터리사·소재사 관점 — 해석</h2>
 ${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
-<h2 class="check">4. 웹 검증</h2>
+<h2 class="check">5. 웹 검증</h2>
 <p class="txt">${escapeHtml(check.checked_ko || '검증 정보 없음')}</p>
 ${fixes ? `<p class="who" style="margin-top:4px">수정</p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>'}
 ${added ? `<p class="who" style="margin-top:4px">검색으로 새로 확인한 사실</p><ul>${added}</ul>` : ''}
@@ -1018,8 +1019,8 @@ async function generateCompareReport(){
       body: JSON.stringify({
         mode: 'compare_report',
         companyA: lastComparison.a, companyB: lastComparison.b,
-        eventsA: lastComparison.eventsA.map(event => ({ id: event.id, date: event.date, title: event.title, fact: event.fact, sourceName: event.sourceName })),
-        eventsB: lastComparison.eventsB.map(event => ({ id: event.id, date: event.date, title: event.title, fact: event.fact, sourceName: event.sourceName }))
+        eventsA: lastComparison.eventsA.map(event => ({ id: event.id, date: event.date, track: event.track, title: event.title, fact: event.fact, sourceName: event.sourceName })),
+        eventsB: lastComparison.eventsB.map(event => ({ id: event.id, date: event.date, track: event.track, title: event.title, fact: event.fact, sourceName: event.sourceName }))
       })
     });
     const payload = await response.json();
@@ -1063,8 +1064,9 @@ async function renderComparison(){
   // 비교 화면의 셀은 훑어보는 자리다. 사실 문장을 다 싣지 않고 제목과 핵심 수치만 개조식으로,
   // 중요한 것부터 최대 세 줄 보여준다. 전문은 마우스를 올리면 뜬다.
   const CELL_LIMIT = 3;
-  const eventsAt = (events, date) => {
-    const ranked = events.filter(event => displayDate(event) === date).sort((x, y) => importanceOf(y) - importanceOf(x));
+  // 한 회사를 기술/시장 두 갈래로 나눠 표시한다. both(시장·기술 모두) 이벤트는 양쪽에 다 걸린다.
+  const eventsAt = (events, date, track) => {
+    const ranked = events.filter(event => displayDate(event) === date && (event.track === track || event.both)).sort((x, y) => importanceOf(y) - importanceOf(x));
     const shown = ranked.slice(0, CELL_LIMIT);
     const rest = ranked.length - shown.length;
     return shown.map(event => {
@@ -1072,7 +1074,7 @@ async function renderComparison(){
       return `<div class="cmp-item" data-tip="${escapeHtml(eventTip(event))}"><span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('') + (rest > 0 ? `<div class="cmp-more">+${rest}건 (Excel 내보내기에서 전체 확인)</div>` : '');
   };
-  const eventCell = (events, date, side) => { const html = eventsAt(events, date); return `<div class="cmp-cell" style="min-height:54px;padding:8px 10px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:12px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
+  const eventCell = (events, date, track, side) => { const html = eventsAt(events, date, track); return `<div class="cmp-cell ${track}" style="min-height:54px;padding:8px 10px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:12px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
   // 두 회사의 근거 두께가 다르면 얇은 쪽이 조용해 보일 뿐 실제로 조용한 게 아니다. 머리에 적어 둔다.
   const coverageOf = events => {
     const reports = new Set(events.filter(e => e.kind === 'annual_report' || e.kind === 'periodic_report').map(e => e.sourceUrl || e.sourceName));
@@ -1082,7 +1084,9 @@ async function renderComparison(){
   const covA = coverageOf(eventsA), covB = coverageOf(eventsB);
   const ratio = Math.max(eventsA.length, eventsB.length) / Math.max(1, Math.min(eventsA.length, eventsB.length));
   const asym = ratio >= 2 ? `<p class="coverage-warn">근거 두께가 ${ratio.toFixed(1)}배 차이 납니다. 빈칸은 "확인된 사실 없음"이지 "일이 없었다"가 아닙니다.</p>` : '';
-  target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:900px">${asym}<div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:end;margin-bottom:14px"><div><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2><p class="coverage-note">${escapeHtml(covA)}</p></div><div style="text-align:center;color:#617187;font-size:12px">공통 시간축<br>↑ 최근</div><div style="text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2><p class="coverage-note">${escapeHtml(covB)}</p></div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:24px;align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'left')}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'right')}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
+  // 5열: 기업A 기술 | 기업A 시장 | 공통 시간축 | 기업B 시장 | 기업B 기술. 시장 열을 시간축 양옆에 붙여 대비시킨다.
+  const COLS = 'grid-template-columns:1fr 1fr 118px 1fr 1fr;gap:12px';
+  target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:1080px">${asym}<div style="display:grid;${COLS};align-items:end;margin-bottom:4px"><div style="grid-column:1/3"><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2><p class="coverage-note">${escapeHtml(covA)}</p></div><div style="text-align:center;color:#617187;font-size:12px">공통<br>시간축</div><div style="grid-column:4/6;text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2><p class="coverage-note">${escapeHtml(covB)}</p></div></div><div style="display:grid;${COLS};margin-bottom:10px"><div class="cmp-tracklabel tech" style="text-align:right">기술</div><div class="cmp-tracklabel market" style="text-align:right">시장</div><div></div><div class="cmp-tracklabel market">시장</div><div class="cmp-tracklabel tech">기술</div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;${COLS};align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'tech', 'right')}</div><div>${eventCell(eventsA, date, 'market', 'right')}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'market', 'left')}</div><div>${eventCell(eventsB, date, 'tech', 'left')}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
 }
 function activateView(view){
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('is-visible', el.id === view));
