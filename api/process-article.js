@@ -4,7 +4,7 @@ import { resolveGoogleNewsUrl } from "./lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { COMPANIES } from "../lib/china-sources.js";
 import { groupSummary, matchGroupEntities } from "../lib/company-groups.js";
-import { embedVerifiedArticle } from "../lib/vector-ingestion.js";
+import { embedVerifiedArticle, embedEvents } from "../lib/vector-ingestion.js";
 import { LAYER_ENUM, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
 
 const MAX_BODY_CHARS = 30000;
@@ -167,7 +167,9 @@ export async function processPendingArticle(articleId, companyId) {
     const entityNames = matchGroupEntities(companyId, [
       article.title_original, result.event_title_ko, result.event_fact_ko, factCheck.original_excerpt
     ].filter(Boolean).join(" "));
-    await supabaseRest("event", { method: "POST", body: {
+    // 이벤트는 만들어지는 즉시 벡터 검색 대상이 돼야 한다. 크론이나 버튼을 기다리게 하지 않는다.
+    // 임베딩 실패는 이벤트 적재를 되돌리지 않는다. 남은 것은 임베딩 크론이 채운다.
+    const storedEvents = await supabaseRest("event", { method: "POST", prefer: "return=representation", body: {
       entity_names: entityNames,
       company_id: companyId, article_id: articleId, occurred_at: result.occurred_at,
       title_ko: result.event_title_ko, fact_ko: result.event_fact_ko,
@@ -176,6 +178,11 @@ export async function processPendingArticle(articleId, companyId) {
       original_excerpt: factCheck.original_excerpt, original_excerpt_ko: factCheck.original_excerpt_ko,
       timeline_eligibility: result.timeline_eligibility
     } });
+    try {
+      await embedEvents((storedEvents || []).map((row) => ({ ...row, company_name_ko: company?.name_ko || companyId })));
+    } catch (error) {
+      console.error("[EVENT_EMBEDDING_FAILED]", JSON.stringify({ articleId, message: error.message }));
+    }
   }
   return { status: "pending_review", analysis: result, fact_check: factCheck, embedding, primary_provider: primaryProvider, verifier_provider: verifierProvider };
 }
