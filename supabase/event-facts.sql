@@ -50,3 +50,7 @@ comment on column public.event_fact.period is '수치가 가리키는 기간. 20
 -- 추출을 시도한 이벤트 표시. 사실이 0건이어도 다시 뽑지 않게 한다.
 alter table public.event add column if not exists facts_extracted_at timestamptz;
 create index if not exists event_facts_pending_idx on public.event (facts_extracted_at) where facts_extracted_at is null;
+
+-- 서버 키만 읽고 쓴다. 다른 테이블과 같은 방식(RLS 켜고 service_role에만 권한).
+alter table public.event_fact enable row level security;
+grant select, insert, update, delete on public.event_fact to service_role;
