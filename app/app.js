@@ -928,7 +928,7 @@ footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8
 `;
   const body = `<header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
 <h1>${A} vs ${B}</h1>
-<p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
+<p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 근거 범위: ${payload.include_supporting ? '공시·핵심 + 보조(참고) 데이터' : '공시·핵심 데이터만'} · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
 ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
 <h2>1. 시장 축 비교</h2>${pair(r.market, '대비', 'contrast_ko')}
 <h2 class="tech-h">2. 기술 축 비교</h2>${pair(r.technology, '대비', 'contrast_ko')}
@@ -1012,7 +1012,7 @@ async function loadCompareReportHistory(){
       return;
     }
     container.innerHTML = `<details class="compare-history-list" open><summary>지난 비교 리포트 (${payload.history.length}건)</summary><ul>${payload.history.map(item =>
-      `<li><button type="button" class="link-button" data-history-id="${item.id}">${compareHistoryDateLabel(item.created_at)} · ${item.company_a_name_ko} vs ${item.company_b_name_ko}${item.headline_ko ? ` — ${item.headline_ko}` : ''}</button></li>`
+      `<li><button type="button" class="link-button" data-history-id="${item.id}">${compareHistoryDateLabel(item.created_at)} · ${item.company_a_name_ko} vs ${item.company_b_name_ko} <span class="hist-scope">[${item.include_supporting ? '보조 포함' : '공시만'}]</span>${item.headline_ko ? ` — ${item.headline_ko}` : ''}</button></li>`
     ).join('')}</ul></details>`;
     container.querySelectorAll('[data-history-id]').forEach(button => button.addEventListener('click', () => openCompareHistoryItem(button.dataset.historyId)));
   } catch (error) {
@@ -1032,6 +1032,7 @@ async function generateCompareReport(){
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         mode: 'compare_report',
+        includeSupporting,
         companyA: lastComparison.a, companyB: lastComparison.b,
         eventsA: lastComparison.eventsA.map(event => ({ id: event.id, date: event.date, track: event.track, title: event.title, fact: event.fact, sourceName: event.sourceName })),
         eventsB: lastComparison.eventsB.map(event => ({ id: event.id, date: event.date, track: event.track, title: event.title, fact: event.fact, sourceName: event.sourceName }))

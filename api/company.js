@@ -81,6 +81,7 @@ async function runCompareReport(request, response) {
   if (idA === idB) return response.status(400).json({ status: "invalid_request", message: "서로 다른 두 회사를 골라 주세요." });
   const eventsA = cleanEvents(request.body?.eventsA);
   const eventsB = cleanEvents(request.body?.eventsB);
+  const includeSupporting = request.body?.includeSupporting === true;
   if (!eventsA.length && !eventsB.length) return response.status(400).json({ status: "no_evidence", message: "비교 화면에 근거로 쓸 이벤트가 없습니다." });
   try {
     const result = await buildCompareReport({ nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB });
@@ -103,6 +104,7 @@ async function runCompareReport(request, response) {
           company_a_id: idA, company_b_id: idB,
           company_a_name_ko: a.name_ko, company_b_name_ko: b.name_ko,
           events_a_count: eventsA.length, events_b_count: eventsB.length,
+          include_supporting: includeSupporting,
           report: result.report, model: result.model || null,
           verification_status: result.verification_status, searched_sources: result.searched_sources || []
         }
@@ -113,7 +115,7 @@ async function runCompareReport(request, response) {
     }
     return response.status(200).json({
       status: "ok", company_a: a.name_ko, company_b: b.name_ko,
-      events_a: eventsA.length, events_b: eventsB.length,
+      events_a: eventsA.length, events_b: eventsB.length, include_supporting: includeSupporting,
       generated_at: generatedAt, history_id: historyId, db_updates: dbUpdates, ...result
     });
   } catch (error) {
@@ -133,7 +135,7 @@ async function handleRequest(request, response) {
   if (String(request.query.compare_history || "") === "1") {
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", history: [] });
     try {
-      const rows = await supabaseRest("compare_report_history?select=id,created_at,company_a_id,company_b_id,company_a_name_ko,company_b_name_ko,headline_ko:report->>headline_ko&order=created_at.desc&limit=30");
+      const rows = await supabaseRest("compare_report_history?select=id,created_at,company_a_id,company_b_id,company_a_name_ko,company_b_name_ko,include_supporting,headline_ko:report->>headline_ko&order=created_at.desc&limit=30");
       return response.status(200).json({ status: "ok", history: rows });
     } catch (error) {
       console.error("[COMPARE_HISTORY_QUERY_FAILED]", JSON.stringify({ message: error.message }));
@@ -149,7 +151,7 @@ async function handleRequest(request, response) {
       const row = rows[0];
       return response.status(200).json({
         status: "ok", company_a: row.company_a_name_ko, company_b: row.company_b_name_ko,
-        events_a: row.events_a_count, events_b: row.events_b_count,
+        events_a: row.events_a_count, events_b: row.events_b_count, include_supporting: row.include_supporting,
         generated_at: row.created_at, history_id: row.id, report: row.report,
         model: row.model, verification_status: row.verification_status, searched_sources: row.searched_sources || []
       });
