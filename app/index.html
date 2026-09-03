@@ -30,7 +30,6 @@
         <a href="#daily" class="nav-link is-active" data-view="daily">Daily</a>
         <a href="#companies" class="nav-link" data-view="companies">기업 분석</a>
         <a href="#compare" class="nav-link" data-view="compare">비교</a>
-        <a href="#ledger" class="nav-link" data-view="ledger">전략 장부</a>
       </nav>
       <div class="as-of">데이터 기준 2026.08.31 · 내부 검토용</div>
     </header>
@@ -168,53 +167,6 @@
           <div id="comparison-grid" class="comparison-stack"></div>
       </section>
 
-      <section id="ledger" class="view" aria-labelledby="ledger-title">
-        <div class="page-heading compact">
-          <div>
-            <p class="eyebrow">STRATEGY LEDGER</p>
-            <h1 id="ledger-title">전략 장부</h1>
-            <p>공시·기사 이벤트에서 뽑은 숫자와 이름을 회사를 가로질러 같은 축에 놓습니다. 원문에 적힌 값만 쓰고 합산·환산·추정은 하지 않으며, 모든 값 옆에 근거 발췌와 원문 링크가 붙습니다.</p>
-          </div>
-          <div class="ledger-controls">
-            <label class="company-picker">출처 범위 <select id="ledger-tier"><option value="disclosure">공시만</option><option value="article">공시 + 기사</option><option value="web">공시 + 기사 + 웹(참고)</option></select></label>
-            <span id="ledger-status" class="source-rule"></span>
-          </div>
-        </div>
-
-        <section class="profile-section" aria-labelledby="ledger-cap-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">CAPACITY</p><h2 id="ledger-cap-title">① 생산능력 · 회사 × 품목</h2></div>
-            <span class="source-rule">원 크기 = 최신 공표 캐파 · 색 = 상태 · 클릭하면 근거</span>
-          </div>
-          <div id="ledger-capacity" class="ledger-figure"></div>
-        </section>
-
-        <section class="profile-section" aria-labelledby="ledger-site-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">OVERSEAS</p><h2 id="ledger-site-title">② 해외 거점 · 국가별</h2></div>
-            <span class="source-rule">중국 밖 거점·증설·합작을 국가로 묶음</span>
-          </div>
-          <div id="ledger-sites" class="ledger-figure"></div>
-        </section>
-
-        <section class="profile-section" aria-labelledby="ledger-link-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">CUSTOMERS &amp; PARTNERS</p><h2 id="ledger-link-title">③ 공급·파트너 연결도</h2></div>
-            <span class="source-rule">선 굵기 = 확인된 사실 수 · 한국 기업은 강조</span>
-          </div>
-          <div id="ledger-links" class="ledger-figure"></div>
-        </section>
-
-        <section class="profile-section" aria-labelledby="ledger-fin-title">
-          <div class="section-heading">
-            <div><p class="eyebrow">FINANCIALS</p><h2 id="ledger-fin-title">④ 실적 추이</h2></div>
-            <div class="ledger-controls"><div class="segmented-control" id="ledger-fin-chain"></div><select id="ledger-fin-metric"><option value="revenue">매출(억 위안)</option><option value="net_profit">순이익(억 위안)</option><option value="shipment">출하량</option></select></div>
-          </div>
-          <div id="ledger-financials" class="ledger-figure"></div>
-        </section>
-
-        <section id="ledger-detail" class="profile-section ledger-detail" hidden aria-live="polite"></section>
-      </section>
     </main>
     </div>
 
@@ -234,7 +186,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260904-digest-clean"></script>
+    <script src="./app.js?v=20260904-no-ledger"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

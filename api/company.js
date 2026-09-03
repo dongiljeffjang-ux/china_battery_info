@@ -5,7 +5,6 @@ import { COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
 import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
 import { buildCompareReport, applyVerifiedFacts } from "../lib/compare-report.js";
-import { COUNTERPARTY_KINDS } from "../lib/fact-extraction.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증)을 부르므로 기본 10초로는 끝나지 않는다.
 export const maxDuration = 60;
@@ -104,51 +103,13 @@ async function runCompareReport(request, response) {
   }
 }
 
-// 사람 검토. 오류로 표시된 사실은 장부 조회에서 빠지고, 확인된 사실은 배지가 붙는다.
-async function runFactReview(request, response) {
-  if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
-  const factId = String(request.body?.factId || "").trim();
-  const status = String(request.body?.status || "").trim();
-  if (!/^[0-9a-f-]{36}$/i.test(factId) || !["confirmed", "rejected", "unreviewed"].includes(status)) return response.status(400).json({ status: "invalid_review" });
-  try {
-    await supabaseRest(`event_fact?id=eq.${encodeURIComponent(factId)}`, { method: "PATCH", prefer: "return=minimal", body: { review_status: status, reviewed_at: status === "unreviewed" ? null : new Date().toISOString() } });
-    return response.status(200).json({ status: "saved", review_status: status });
-  } catch (error) {
-    console.error("[FACT_REVIEW_FAILED]", JSON.stringify({ factId, message: error.message }));
-    return response.status(502).json({ status: "review_failed", message: error.message });
-  }
-}
-
 async function handleRequest(request, response) {
   if (!requireAccess(request, response)) return;
   if (request.method === "POST") {
     if (String(request.body?.mode || "") === "compare_report") return runCompareReport(request, response);
-    if (String(request.body?.mode || "") === "fact_review") return runFactReview(request, response);
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
     return runAsk(request, response);
   }
-  // 전략 장부: 이벤트에서 뽑은 구조화 사실 전체와 회사별 읽은 공시 수. 세는 일은 화면이 한다.
-  if (String(request.query.mode || "") === "fact_ledger") {
-    if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", facts: [], coverage: [] });
-    try {
-      const [facts, ledger, pending] = await Promise.all([
-        supabaseRest("event_fact?select=id,event_id,company_id,fact_type,segment,item,metric,quantity,unit,quantity_text,status,country,city,counterparty,counterparty_original,counterparty_kind,relation,period,occurred_at,excerpt,source_tier,agreement,review_status,event(title_ko,source_url,source_name,occurred_precision)&review_status=neq.rejected&order=occurred_at.desc&limit=5000"),
-        supabaseRest("report_digest?select=company_id,kind,report_url"),
-        supabaseRest("event?select=id&facts_extracted_at=is.null&timeline_eligibility=neq.exclude&limit=1000"),
-      ]);
-      const coverage = {};
-      for (const row of ledger) {
-        if (row.report_url.startsWith("missing:") || row.report_url.startsWith("web:")) continue;
-        coverage[row.company_id] = (coverage[row.company_id] || 0) + 1;
-      }
-      response.setHeader("Cache-Control", "no-store, max-age=0");
-      return response.status(200).json({ status: "ok", facts, coverage, pending_events: pending.length, counterparty_kinds: COUNTERPARTY_KINDS, generated_at: new Date().toISOString() });
-    } catch (error) {
-      console.error("[FACT_LEDGER_FAILED]", JSON.stringify({ message: error.message }));
-      return response.status(502).json({ status: error.code || "db_error", message: error.message, facts: [], coverage: {} });
-    }
-  }
-
   const companyId = String(request.query.companyId || "").trim();
   if (!companyId) return response.status(200).json({ status: "ok", selection_basis: SELECTION_BASIS, companies: sortedCatalog() });
 

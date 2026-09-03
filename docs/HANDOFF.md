@@ -78,7 +78,7 @@
 | `/api/access` | 입장 키 검증·HttpOnly 쿠키 발급 |
 | `/api/ingest-rss?process=1` | 수집부터 분석·Daily까지 수동 1회 실행 |
 | `/api/dashboard` | Daily, Top 10, 회사 뉴스, Sankey 데이터 |
-| `/api/company` | companyId 없으면 31개 회사 마스터·그룹·선정 기준, 있으면 그 기업의 이벤트 시계열. `?mode=fact_ledger`는 구조화 사실 전체+회사별 읽은 공시 수, POST `mode=fact_review`는 사실 검토(맞음/오류) 저장 |
+| `/api/company` | companyId 없으면 31개 회사 마스터·그룹·선정 기준, 있으면 그 기업의 이벤트 시계열.  |
 | `/api/news` | GET 소스 후보, POST 좋아요/싫어요 |
 | `/api/raw-news` | Raw Excel용 기사 데이터 |
 | `/api/process-article` | 보호된 단일 기사 처리 |
@@ -225,3 +225,8 @@ git diff --check
 - 첫 소급: 이벤트 392건이 대기 중이며 야간 curate가 채운다. 화면 확인용으로 8개 회사 19건을 수동 시드(`extractor='manual_seed'`, 발췌 대조 SQL로 검증)했다.
 - **다음 할 일**: 소급이 끝나면 무작위 30건을 원문과 대조해 정확도를 기록하고 프롬프트를 손본다. 정확도가 부족하면 두 모델(DeepSeek·OpenAI) 교차 추출을 켜서 `agreement`를 채운다(스키마는 이미 있음).
 - 출처 등급 기본값은 "공시만". 기사·웹 사실은 화면 상단 셀렉트로 켠다. `review_status='rejected'`는 조회에서 빠진다.
+
+### 2026-09-04 (2): 전략 장부 폐기, 비교 페이지에 집중
+- 전략 장부 탭·API 모드(`fact_ledger`, `fact_review`)·curate 훅의 사실 추출 호출을 뺐다. 이유: 회사 31곳 중 데이터가 있는 곳이 일부이고 백필이 얇아 화면이 거의 비어 있었다.
+- `event_fact` 테이블과 `lib/fact-extraction.js`는 남겨 두었다(시드 19건). 비교 리포트에 구조화 수치를 넣을 때 재사용할 수 있다. 다시 켜려면 `runCurationHop`에 `extractMissingFacts({ deadline })`를 embed 다음에 넣으면 된다.
+- 다음 초점: 기업 비교 페이지의 정보 품질과 백필 보충.
