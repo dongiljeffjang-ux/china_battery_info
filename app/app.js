@@ -658,30 +658,51 @@ function eventTip(event){
   return [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
 }
 
+// 제목이 "매출 134억·순이익 11억·출하 13만 톤·…"처럼 길면 앞 두 토막만 남긴다. 나머지는 툴팁에 있다.
+function shortTitle(title){
+  const parts = String(title || '').split('·').map(part => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return title;
+  let out = parts[0];
+  for (const part of parts.slice(1)) { if ((out + part).length > 40) return `${out} …`; out += ` · ${part}`; }
+  return out;
+}
+const DIGEST_PREVIEW = 4;
 function renderCompanyEvents(timeline){
   const grid = document.querySelector('#snapshot-grid');
+  grid.className = 'snapshot-grid digest-stack';
   const events = visibleEvents(timeline).filter(event => event.kind === 'annual_report' || event.kind === 'periodic_report');
   if (!events.length) {
     grid.innerHTML = `<p>${escapeHtml(timelineNotice(timeline.status) || '아직 읽어들인 정기보고서가 없습니다. 매일 밤 수집 뒤 자동으로 채워집니다.')}</p>`;
     return;
   }
-  // 시점별로 묶고, 한 시점 안에서는 중요한 것부터 개조식 한 줄씩. 전문은 마우스를 올리면 뜬다.
+  // 보고서(시점)마다 카드 하나. 안에서는 시장/기술 두 열로 나누고 중요한 것부터 몇 줄만 보인다.
   const groups = new Map();
   [...events].sort((a, b) => b.date.localeCompare(a.date)).forEach(event => {
     const label = displayDate(event);
     if (!groups.has(label)) groups.set(label, []);
     groups.get(label).push(event);
   });
+  const line = event => {
+    const title = shortTitle(event.title);
+    const metrics = [...new Set([...String(event.fact || '').matchAll(METRIC_PATTERN)].map(m => m[1].trim()))].filter(m => !title.includes(m)).slice(0, 2).join(' · ');
+    return `<li class="digest-line" data-tip="${escapeHtml(eventTip(event))}"><span class="digest-title">${escapeHtml(title)}</span>${metrics ? `<span class="digest-metric">${escapeHtml(metrics)}</span>` : ''}</li>`;
+  };
+  const column = (name, list, cls) => {
+    if (!list.length) return '';
+    const shown = list.slice(0, DIGEST_PREVIEW), rest = list.slice(DIGEST_PREVIEW);
+    return `<div class="digest-col ${cls}"><h4>${name} <small>${list.length}</small></h4><ul class="digest-lines">${shown.map(line).join('')}</ul>${rest.length ? `<ul class="digest-lines digest-more" hidden>${rest.map(line).join('')}</ul><button type="button" class="digest-toggle">+${rest.length}건 더보기</button>` : ''}</div>`;
+  };
   grid.innerHTML = [...groups.entries()].map(([label, items]) => {
     const first = items[0];
-    const head = [label, evidenceLabels[first.kind] || ''].filter(Boolean).join(' · ');
-    const lines = [...items].sort((x, y) => importanceOf(y) - importanceOf(x)).map(event => {
-      const metrics = keyMetrics(event);
-      const tags = [event.label !== '미분류' ? event.label : '', entityLabel(event)].filter(Boolean).join(' · ');
-      return `<li class="digest-item" data-tip="${escapeHtml(eventTip(event))}"><span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${tags ? `<span class="digest-tags">${escapeHtml(tags)}</span>` : ''} ${sourceLink(event, '11px')}</li>`;
-    }).join('');
-    return `<article class="snapshot digest ${first.track}"><span class="snapshot-year" data-tip="${escapeHtml(dateTip(first))}">${escapeHtml(head)}</span><ul class="digest-list">${lines}</ul></article>`;
+    const sorted = [...items].sort((x, y) => importanceOf(y) - importanceOf(x));
+    const market = sorted.filter(event => event.track !== 'tech'), tech = sorted.filter(event => event.track === 'tech');
+    const source = items.find(event => event.sourceUrl);
+    return `<article class="digest-report"><header><span class="digest-period" data-tip="${escapeHtml(dateTip(first))}">${escapeHtml(label)}</span><span>${escapeHtml(evidenceLabels[first.kind] || '')}</span><span>사실 ${items.length}건</span>${source ? `<a href="${escapeHtml(source.sourceUrl)}" target="_blank" rel="noreferrer">원문 ↗</a>` : ''}</header><div class="digest-body">${column('시장', market, 'market')}${column('기술', tech, 'tech')}</div></article>`;
   }).join('');
+  grid.querySelectorAll('.digest-toggle').forEach(button => button.addEventListener('click', () => {
+    button.previousElementSibling.hidden = false;
+    button.remove();
+  }));
 }
 function renderLayerMatrix(timeline){
   const target = document.querySelector('#dual-track');
