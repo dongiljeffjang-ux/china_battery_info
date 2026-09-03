@@ -133,8 +133,8 @@ async function handleRequest(request, response) {
   if (String(request.query.compare_history || "") === "1") {
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", history: [] });
     try {
-      const rows = await supabaseRest("compare_report_history?select=id,created_at,company_a_id,company_b_id,company_a_name_ko,company_b_name_ko,report->>headline_ko&order=created_at.desc&limit=30");
-      return response.status(200).json({ status: "ok", history: rows.map((row) => ({ ...row, headline_ko: row["headline_ko"] })) });
+      const rows = await supabaseRest("compare_report_history?select=id,created_at,company_a_id,company_b_id,company_a_name_ko,company_b_name_ko,headline_ko:report->>headline_ko&order=created_at.desc&limit=30");
+      return response.status(200).json({ status: "ok", history: rows });
     } catch (error) {
       console.error("[COMPARE_HISTORY_QUERY_FAILED]", JSON.stringify({ message: error.message }));
       return response.status(502).json({ status: error.code || "db_error", history: [] });

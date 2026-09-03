@@ -878,8 +878,11 @@ function compareReportParts(payload){
   const points = (insight.points || []).map(item => `
     <div class="point"><p class="lead"><span class="seg">${escapeHtml(item.segment || '')}</span>${escapeHtml(item.implication_ko || '')}</p>
     <p class="txt">${escapeHtml(item.point_ko || '')}</p><p class="basis">근거 · ${escapeHtml(item.basis_ko || '')}</p></div>`).join('');
-  const fixes = (check.corrections || []).map(item => `
-    <li><span class="was">${escapeHtml(item.original_ko || '')}</span><span class="now">${escapeHtml(item.corrected_ko || '')}</span><span class="basis">${escapeHtml(item.reason_ko || '')}${item.event_id ? ' · DB 이벤트 시점 수정 반영' : ''}</span></li>`).join('');
+  const fixes = (check.corrections || []).map(item => {
+    // DB에 실제로 되돌리는 것은 날짜(시점) 교정뿐이다. 그 밖의 교정은 리포트 본문만 고친 것이라 라벨을 구분한다.
+    const dbNote = item.field === 'occurred_at' && item.event_id ? ' · DB 이벤트 시점 수정 반영' : ' · 리포트 본문만 수정(DB 미반영)';
+    return `<li><span class="was">${escapeHtml(item.original_ko || '')}</span><span class="now">${escapeHtml(item.corrected_ko || '')}</span><span class="basis">${escapeHtml(item.reason_ko || '')}${dbNote}</span></li>`;
+  }).join('');
   const added = (check.added_evidence || []).map(item => `
     <li><strong>${escapeHtml(item.company === 'B' ? payload.company_b : payload.company_a)}</strong> · ${escapeHtml(item.occurred_at || '')} · ${escapeHtml(item.fact_ko || '')}<span class="basis">${escapeHtml(item.source_name || '')} · <a href="${escapeHtml(item.source_url || '')}">${escapeHtml(item.source_url || '')}</a></span></li>`).join('');
   const stamp = new Date(payload.generated_at || Date.now()).toLocaleString('ko-KR');
@@ -996,8 +999,11 @@ async function loadCompareReportHistory(){
     const response = await fetch('/api/company?compare_history=1');
     const payload = await response.json();
     if (payload.status !== 'ok') { container.innerHTML = ''; return; }
-    if (!payload.history.length) { container.innerHTML = ''; return; }
-    container.innerHTML = `<details class="compare-history-list"><summary>지난 비교 리포트 (${payload.history.length}건)</summary><ul>${payload.history.map(item =>
+    if (!payload.history.length) {
+      container.innerHTML = '<p class="compare-history-empty">아직 저장된 비교 리포트가 없습니다. "비교 리포트 생성"을 누르면 여기에 히스토리로 쌓입니다.</p>';
+      return;
+    }
+    container.innerHTML = `<details class="compare-history-list" open><summary>지난 비교 리포트 (${payload.history.length}건)</summary><ul>${payload.history.map(item =>
       `<li><button type="button" class="link-button" data-history-id="${item.id}">${compareHistoryDateLabel(item.created_at)} · ${item.company_a_name_ko} vs ${item.company_b_name_ko}${item.headline_ko ? ` — ${item.headline_ko}` : ''}</button></li>`
     ).join('')}</ul></details>`;
     container.querySelectorAll('[data-history-id]').forEach(button => button.addEventListener('click', () => openCompareHistoryItem(button.dataset.historyId)));
@@ -1064,14 +1070,16 @@ async function renderComparison(){
   // 비교 화면의 셀은 훑어보는 자리다. 사실 문장을 다 싣지 않고 제목과 핵심 수치만 개조식으로,
   // 중요한 것부터 최대 세 줄 보여준다. 전문은 마우스를 올리면 뜬다.
   const CELL_LIMIT = 3;
-  // 한 회사를 기술/시장 두 갈래로 나눠 표시한다. both(시장·기술 모두) 이벤트는 양쪽에 다 걸린다.
+  // 한 회사를 기술/시장 두 갈래로 나눠 표시한다. 이벤트는 layer_key 분류에 따라 한 열에만 놓는다.
+  // 시장·기술 양쪽 성격을 가진 이벤트는 중복해 싣지 않고, 대표 열에 두되 작은 표식을 붙인다.
   const eventsAt = (events, date, track) => {
-    const ranked = events.filter(event => displayDate(event) === date && (event.track === track || event.both)).sort((x, y) => importanceOf(y) - importanceOf(x));
+    const ranked = events.filter(event => displayDate(event) === date && event.track === track).sort((x, y) => importanceOf(y) - importanceOf(x));
     const shown = ranked.slice(0, CELL_LIMIT);
     const rest = ranked.length - shown.length;
     return shown.map(event => {
       const metrics = keyMetrics(event);
-      return `<div class="cmp-item" data-tip="${escapeHtml(eventTip(event))}"><span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+      const both = event.both ? '<span class="cmp-both">시장·기술</span>' : '';
+      return `<div class="cmp-item" data-tip="${escapeHtml(eventTip(event))}">${both}<span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('') + (rest > 0 ? `<div class="cmp-more">+${rest}건 (Excel 내보내기에서 전체 확인)</div>` : '');
   };
   const eventCell = (events, date, track, side) => { const html = eventsAt(events, date, track); return `<div class="cmp-cell ${track}" style="min-height:54px;padding:8px 10px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:12px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
