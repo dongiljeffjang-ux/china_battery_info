@@ -162,9 +162,10 @@
         <div class="compare-controls">
           <label>기업 A <select id="compare-a"></select></label>
           <label>기업 B <select id="compare-b"></select></label>
-          <button id="compare-report" class="secondary-button" type="button">비교 리포트 PDF</button>
+          <button id="compare-report" class="secondary-button" type="button">비교 리포트 생성</button>
         </div>
           <div id="comparison-grid" class="comparison-stack"></div>
+          <section id="compare-report-panel" class="compare-report-panel" hidden aria-live="polite"></section>
       </section>
 
     </main>
@@ -186,7 +187,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260904-matrix-vertical"></script>
+    <script src="./app.js?v=20260904-report-inline"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

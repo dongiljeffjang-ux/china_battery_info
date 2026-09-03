@@ -854,7 +854,7 @@ async function exportRawNews(){
 // 비교 리포트를 A4 한 장으로 인쇄용 창에 띄운다.
 // 서버가 PDF 바이트를 만들지 않는 이유는 한글 PDF에 CJK 폰트를 통째로 실어야 하기 때문이다.
 // 브라우저 인쇄는 시스템 폰트를 그대로 쓰므로 한글이 깨지지 않고, 사용자가 PDF로 저장할 수 있다.
-function compareReportHtml(payload){
+function compareReportParts(payload){
   const r = payload.report || {};
   const insight = r.korea_insight || {};
   const check = r.verification || {};
@@ -876,7 +876,7 @@ function compareReportHtml(payload){
   const dbLine = payload.verification_status === 'draft_only'
     ? '웹 검증에 실패해 초안 상태입니다.'
     : `DB 반영 · 시점 수정 ${db.dates_fixed || 0}건 · 참고 이벤트 추가 ${db.events_added || 0}건`;
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${A} vs ${B} 비교 리포트</title><style>
+  const styles = `
 @page{size:A4;margin:13mm 14mm}
 *{box-sizing:border-box}
 body{margin:0;font-family:"Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;font-size:9.6px;line-height:1.6;color:#14263d}
@@ -904,8 +904,8 @@ ul{margin:0;padding-left:12px}li{margin-bottom:3px}
 a{color:#1674c5;text-decoration:none;word-break:break-all}
 footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8px;color:#617187}
 @media screen{body{max-width:186mm;margin:18px auto;padding:0 14px}}
-</style></head><body>
-<header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
+`;
+  const body = `<header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
 <h1>${A} vs ${B}</h1>
 <p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
 ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
@@ -917,8 +917,49 @@ ${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
 <p class="txt">${escapeHtml(check.checked_ko || '검증 정보 없음')}</p>
 ${fixes ? `<p class="who" style="margin-top:4px">수정</p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>'}
 ${added ? `<p class="who" style="margin-top:4px">검색으로 새로 확인한 사실</p><ul>${added}</ul>` : ''}
-<footer>1~2장은 수집된 사실 정리, 3장은 해석입니다. 투자 판단 자료가 아닙니다. ${escapeHtml(dbLine)}</footer>
-</body></html>`;
+<footer>1~2장은 수집된 사실 정리, 3장은 해석입니다. 투자 판단 자료가 아닙니다. ${escapeHtml(dbLine)}</footer>`;
+  return { title: `${A} vs ${B} 비교 리포트`, styles, body };
+}
+// 인쇄용 전체 문서. "PDF로 저장" 버튼이 새 창에 이 문서를 쓰고 인쇄 대화상자를 연다.
+function compareReportHtml(payload){
+  const { title, styles, body } = compareReportParts(payload);
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title><style>${styles}</style></head><body>${body}</body></html>`;
+}
+// 인쇄용 CSS를 화면 안의 리포트 상자에만 적용되게 선택자 앞에 범위를 붙인다. @page·@media는 뺀다.
+function scopeReportCss(css, scope){
+  return css.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('@')) return '';
+    return trimmed.split('}').filter(Boolean).map(rule => {
+      const brace = rule.indexOf('{');
+      if (brace < 0) return '';
+      const selectors = rule.slice(0, brace).split(',').map(sel => sel.trim() === 'body' ? scope : `${scope} ${sel.trim()}`);
+      return `${selectors.join(',')}${rule.slice(brace)}}`;
+    }).join('');
+  }).join('\n');
+}
+let lastReportPayload = null;
+// 리포트는 비교 화면 아래 접이식 상자에 그린다. 새 창을 바로 띄우면 화면을 떠나게 되고 팝업 차단에도 걸린다.
+function renderCompareReportPanel(payload){
+  lastReportPayload = payload;
+  const panel = document.querySelector('#compare-report-panel');
+  const { title, styles, body } = compareReportParts(payload);
+  panel.hidden = false;
+  panel.innerHTML = `<details class="report-panel" open><summary><span class="report-title">${title}</span><span class="report-actions"><button type="button" class="secondary-button" id="report-save-pdf">PDF로 저장</button><button type="button" class="secondary-button" id="report-close">닫기</button></span></summary><style>${scopeReportCss(styles, '.report-doc')}</style><div class="report-doc">${body}</div></details>`;
+  panel.querySelector('#report-close').addEventListener('click', event => { event.preventDefault(); panel.hidden = true; });
+  panel.querySelector('#report-save-pdf').addEventListener('click', event => {
+    event.preventDefault();
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) { window.alert('팝업이 차단됐습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도해 주세요.'); return; }
+    printWindow.document.open();
+    printWindow.document.write(compareReportHtml(lastReportPayload));
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => printWindow.print(), 400);
+  });
+  // summary 안의 버튼 클릭이 접기/펼치기로 번지지 않게 한다.
+  panel.querySelector('.report-actions').addEventListener('click', event => event.stopPropagation());
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 async function generateCompareReport(){
@@ -926,9 +967,6 @@ async function generateCompareReport(){
     window.alert('비교할 이벤트가 화면에 없습니다. 두 기업을 고른 뒤 다시 시도해 주세요.');
     return;
   }
-  // 새 창은 클릭 직후에 열어야 한다. 요청을 기다린 뒤 열면 팝업 차단에 걸린다.
-  const printWindow = window.open('', '_blank');
-  if (printWindow) printWindow.document.write('<!doctype html><meta charset="utf-8"><title>비교 리포트 생성 중</title><p style="font-family:sans-serif;padding:24px;color:#617187">비교 리포트를 만들고 있습니다. 창을 닫지 마세요.</p>');
   const button = document.querySelector('#compare-report');
   button.disabled = true;
   showBusy('비교 리포트 생성 중', 'LLM이 두 기업을 비교하고, 웹 검색으로 사실관계를 한 번 대조합니다. 1분 정도 걸립니다.');
@@ -944,18 +982,8 @@ async function generateCompareReport(){
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
-    const html = compareReportHtml(payload);
-    if (printWindow) {
-      printWindow.document.open();
-      printWindow.document.write(html);
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => printWindow.print(), 400);
-    } else {
-      window.alert('팝업이 차단됐습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도해 주세요.');
-    }
+    renderCompareReportPanel(payload);
   } catch (error) {
-    if (printWindow) printWindow.close();
     window.alert(`비교 리포트를 만들지 못했습니다: ${error.message}`);
   } finally {
     hideBusy();
