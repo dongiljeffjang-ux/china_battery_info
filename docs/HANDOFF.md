@@ -181,3 +181,17 @@ git diff --check
 - Python `pipeline/`과 SQLite 설명은 초기 프로토타입 흔적이며 현재 운영 Vercel/Supabase 경로와 동일하지 않다.
 - 문서 간 "뉴스 원문 미저장" 표현은 최신 구현과 충돌한다. 최신 결정은 원문 DB 보관 + 서버 접근통제이며, 향후 정책 확정이 필요하다.
 - 2026-09-02 작업의 결정 근거는 `docs/DECISIONS-2026-09-02.md`에 있다.
+
+## 2026-09-03 변경 요약
+
+- 수집 파이프라인을 세 호출로 분리: `ingest-rss`(수집) → `?stage=process`(본문 처리, 42초 예산, 최대 4회 자체 연쇄) → `?stage=daily`(Daily 생성). 연쇄 호출은 `CRON_SECRET` Bearer로 인증하고 `@vercel/functions`의 `waitUntil`로 응답 후에도 일을 마친다. 한 호출 60초에 Daily가 잘리던 문제의 해법이다.
+- 크론 시간대 교정: Vercel 크론은 UTC다. 수집 `0 14`(23:00 KST), 임베딩 `0 16`(01:00 KST).
+- 기사에서 뽑은 이벤트는 적재 직후 같은 함수에서 임베딩한다. 버튼·크론은 백로그용이다.
+- `event.occurred_precision`/`occurred_basis` 도입. 연간 집계는 보고 기간 말일+`year`, 시점 사건은 실제 시기. `?redate=<id>`와 "시점 재확인" 버튼이 미확인(`occurred_basis is null`) 이벤트를 20건씩 처리한다.
+- `article.processing_status/note/processed_at`로 본문 처리 실패 사유를 남긴다. `body_unavailable`/`body_too_short`는 헤드라인 선별에서 제외한다.
+- 비교 리포트 PDF: `api/company` POST `mode=compare_report`. 초안(화면 이벤트만) → 웹 검증 1회. 인쇄용 창에 A4 한 장.
+- 접근 세션 12시간 → 7일.
+- Daily Top 10 후보는 최근 3일 검증 통과 기사 전체. 사실 요약은 회사별로 묶고 해석은 줄글.
+
+### 검증 규칙 추가
+- `npm run check`가 `api/*.js`를 실제로 import한다. `node --check`는 구문만 보므로 같은 함수 안의 `let`/`const` 이름 충돌처럼 링크 단계 오류를 놓친다. 이 오류는 배포 직후 모든 호출을 500으로 만든 전례가 있다(2026-09-03). JS 수정 후 `node --check`와 함께 반드시 실행한다.

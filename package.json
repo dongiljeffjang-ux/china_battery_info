@@ -9,5 +9,8 @@
     "@vercel/functions": "^3.9.5",
     "langsmith": "^0.3.74",
     "pdfjs-dist": "5.6.205"
+  },
+  "scripts": {
+    "check": "node scripts/check-modules.mjs"
   }
 }
