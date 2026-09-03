@@ -19,3 +19,7 @@ create table if not exists compare_report_history (
 
 create index if not exists compare_report_history_created_at_idx
   on compare_report_history (created_at desc);
+
+-- 리포트 생성 시 "보조 데이터 포함" 토글 상태. 켜져 있으면 참고(reference) 등급
+-- 이벤트까지 근거로 LLM에 들어갔다는 뜻이라, 나중에 리포트를 볼 때 근거 범위를 구분한다.
+alter table compare_report_history add column if not exists include_supporting boolean not null default false;
