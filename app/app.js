@@ -410,6 +410,13 @@ function renderCompanyNews(){
     const node = template.content.cloneNode(true);
     const sector = node.querySelector('.sector-tag'); sector.textContent = displayName(item.company); sector.classList.toggle('anode', false);
     const confidenceTag = node.querySelector('.confidence-tag'); confidenceTag.textContent = item.confidence; confidenceTag.title = item.confidenceTitle || '';
+    // Top 10에도 오른 기사는 표식을 달아 첫 화면과 겹쳐 보이는 이유를 알 수 있게 한다.
+    if (item.top10Rank) {
+      const badge = document.createElement('span');
+      badge.className = 'top10-badge';
+      badge.textContent = `Top 10 · ${item.top10Rank}위`;
+      confidenceTag.after(badge);
+    }
     node.querySelector('time').textContent = item.date;
     node.querySelector('h3').textContent = item.title;
     node.querySelector('.news-fact').innerHTML = renderFactHtml(item.fact);
@@ -434,6 +441,7 @@ function mapDashboardArticle(article){
     why: `출처: ${article.source_name || '출처 미상'}`,
     confidence: article.verification_status === 'pending_review' ? '본문대조 완료' : article.verification_status === 'pending' ? '미분석' : article.source_tier || '검수 완료',
     confidenceTitle: article.verification_status === 'pending_review' ? '원문 본문 대조 팩트체크 완료' : article.verification_status === 'pending' ? '미분석 수집 원문' : article.source_tier || '검수 완료',
+    top10Rank: article.is_top10 ? article.top10_rank : null,
     url: article.canonical_url,
     sourceName: article.source_name,
     classification: classifyCandidate(article)
@@ -521,8 +529,9 @@ async function loadDashboardFromApi(){
       window.alert(`서버 조회 일부 실패:\n${payload.errors.map(item => `· ${item.name}: ${item.message}`).join('\n')}`);
     }
     approvedTop10 = (payload.top10 || []).map(mapDashboardArticle);
-    approvedCompanyNews = (payload.companyNews || []).map(mapDashboardArticle)
-      .filter(article => !approvedTop10.some(top10 => top10.url === article.url));
+    // Top 10에 뽑힌 기사도 회사별 뉴스에 그대로 싣는다. 예전에는 중복을 피한다고 걸러냈는데,
+    // 하루 분석량이 적을 때 대부분이 Top 10으로 빠져 회사별 뉴스가 한두 건만 남았다.
+    approvedCompanyNews = (payload.companyNews || []).map(mapDashboardArticle);
     pendingCandidates = (payload.pendingNews || []).map(mapDashboardArticle);
     rangeFlows = payload.flows || [];
     if (payload.report?.summary_ko) {
