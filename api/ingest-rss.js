@@ -21,7 +21,11 @@ const STAGE_BUDGET_MS = 42000;
 // 다음 단계 호출을 넘기고 기다리는 최대 시간. 요청이 나갔는지만 확인하면 되므로 짧게 둔다.
 const CHAIN_HANDOFF_MS = 1500;
 // 본문 처리 호출을 최대 몇 번 이어 붙일지. 하루치 헤드라인 10건이면 두어 번이면 끝난다.
-const MAX_PROCESS_HOPS = 4;
+// 야간 크론은 기다리는 사람이 없으니 넉넉히 이어 붙여 그날 수집분을 최대한 소화한다.
+const MAX_PROCESS_HOPS = 6;
+// 화면 버튼으로 도는 실행은 사용자가 결과를 보려고 누른 것이라 한 훅만 돌고 끝낸다.
+// 상위 10건을 읽고 바로 Daily로 넘어가므로 1분 안팎에 끝난다.
+const MANUAL_PROCESS_HOPS = 1;
 // 유지 단계(보고서 읽기·시점 재확인·임베딩) 호출을 한 번의 실행에서 최대 몇 번 이어 붙일지.
 // 회사 23곳 × 최근 3년 보고서 6건이면 백여 건이라, 처음 며칠은 한 실행에 수십 번 이어야 한다.
 const MAX_CURATE_HOPS = 40;
@@ -152,6 +156,10 @@ async function runBackfill(response, companyId, sinceParam, mode) {
 function wantsCurate(request) {
   return String(request.query?.curate || "") === "1";
 }
+// 깊게 도는 실행인지(야간 크론) 빠르게 끝내는 실행인지(화면 버튼) 구분해 훅 상한을 다르게 준다.
+function wantsDeep(request) {
+  return String(request.query?.deep || "") === "1";
+}
 // 자기 자신을 부를 주소. 크론 호출에는 host 헤더가 없거나 배포 별칭과 다를 수 있어
 // Vercel이 넣어 주는 운영 배포 URL 환경변수를 우선하고, 없을 때만 요청 헤더로 떨어진다.
 function chainBaseUrl(request) {
@@ -159,14 +167,14 @@ function chainBaseUrl(request) {
     || request.headers["x-forwarded-host"] || request.headers.host;
   return host ? `https://${host}` : null;
 }
-async function chainStage(request, stage, hop = 1, { curate = wantsCurate(request) } = {}) {
+async function chainStage(request, stage, hop = 1, { curate = wantsCurate(request), deep = wantsDeep(request) } = {}) {
   const secret = process.env.CRON_SECRET;
   const base = chainBaseUrl(request);
   if (!secret || !base) {
     console.error("[STAGE_CHAIN_SKIPPED]", JSON.stringify({ stage, reason: !secret ? "no_cron_secret" : "no_host" }));
     return;
   }
-  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}`;
+  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}${deep ? "&deep=1" : ""}`;
   // 호출이 "나갔다"는 것만 보장하고 응답은 기다리지 않는다.
   //   - waitUntil로만 넘기면 크론처럼 응답을 기다리는 쪽이 없는 실행에서 fetch가 나가기도 전에 함수가 끝난다.
   //   - 그렇다고 응답을 끝까지 await하면 앞 단계가 뒷 단계 작업을 기다리며 직렬로 늘어붙어
@@ -201,8 +209,9 @@ async function runProcessStage(request, hop) {
   // 20~30건이어도 10건만 읽고 끝났다. 배치가 가득 찼다면 아직 남았다는 뜻이므로 다음 훅으로 이어 간다.
   const batchWasFull = selected.length >= TOP10_LIMIT;
   const more = leftover > 0 || batchWasFull;
-  console.info("[PROCESS_STAGE]", JSON.stringify({ hop, selected: selected.length, processed: results.length, leftover, more, counts, ms: Date.now() - started }));
-  if (more && hop < MAX_PROCESS_HOPS) await chainStage(request, "process", hop + 1);
+  const hopCap = wantsDeep(request) ? MAX_PROCESS_HOPS : MANUAL_PROCESS_HOPS;
+  console.info("[PROCESS_STAGE]", JSON.stringify({ hop, hopCap, selected: selected.length, processed: results.length, leftover, more, counts, ms: Date.now() - started }));
+  if (more && hop < hopCap) await chainStage(request, "process", hop + 1);
   else await chainStage(request, "daily");
   await flushTraces();
 }
@@ -338,7 +347,8 @@ async function handleRequest(request, response) {
     const llmReady = Boolean(process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL));
     // 본문 처리와 Daily 생성은 이 호출에서 하지 않는다. 60초 안에 다 못 끝나 Daily가 빠지던 원인이다.
     // 다음 단계를 새 호출로 넘기고 여기서는 수집 결과만 돌려준다.
-    if (shouldProcess && llmReady) await chainStage(request, "process", 1, { curate: isCronRequest(request) });
+    // 크론이 시작한 실행만 깊게 돈다(훅 6회). 화면 버튼은 한 훅만 돌아 1분 안팎에 끝난다.
+    if (shouldProcess && llmReady) await chainStage(request, "process", 1, { curate: isCronRequest(request), deep: isCronRequest(request) });
     return response.status(200).json({
       status: shouldProcess && llmReady ? "started" : "ok",
       search_runs: (llmConfig("openai") ? 3 : 0) + (llmConfig("deepseek") ? 3 : 0), discovered: candidates.length, stored: storedArticles.length,
