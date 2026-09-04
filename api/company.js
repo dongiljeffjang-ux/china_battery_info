@@ -102,7 +102,10 @@ async function runCompareReport(request, response) {
     console.info("[COMPARE_REPORT]", JSON.stringify({ idA, idB, events: eventsA.length + eventsB.length, status: result.verification_status, db: dbUpdates }));
     const generatedAt = new Date().toISOString();
     // 히스토리 저장. 실패해도(예: 일시적 DB 오류) 방금 만든 리포트는 그대로 응답한다.
+    // 다만 저장 실패를 화면에 알려야 한다. 안 그러면 리포트는 보이는데 히스토리에는 없는 상태를
+    // 사용자가 알 방법이 없다. 이유를 함께 내려보낸다.
     let historyId = null;
+    let historyError = null;
     try {
       const [saved] = await supabaseRest("compare_report_history", {
         method: "POST", prefer: "return=representation",
@@ -116,13 +119,16 @@ async function runCompareReport(request, response) {
         }
       });
       historyId = saved?.id || null;
+      if (!historyId) historyError = "저장 요청은 성공했으나 저장된 행을 돌려받지 못했습니다.";
     } catch (error) {
       console.error("[COMPARE_REPORT_HISTORY_SAVE_FAILED]", JSON.stringify({ idA, idB, message: error.message }));
+      historyError = error.message || "알 수 없는 오류";
     }
     return response.status(200).json({
       status: "ok", company_a: a.name_ko, company_b: b.name_ko,
       events_a: eventsA.length, events_b: eventsB.length, include_supporting: includeSupporting,
-      generated_at: generatedAt, history_id: historyId, db_updates: dbUpdates, ...result
+      generated_at: generatedAt, history_id: historyId, history_error: historyError,
+      db_updates: dbUpdates, ...result
     });
   } catch (error) {
     console.error("[COMPARE_REPORT_FAILED]", JSON.stringify({ idA, idB, message: error.message }));

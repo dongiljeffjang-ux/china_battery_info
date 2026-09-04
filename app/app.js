@@ -1131,7 +1131,11 @@ function renderCompareReportPanel(payload){
   const panel = document.querySelector('#compare-report-panel');
   const { title, styles, body } = compareReportParts(payload);
   panel.hidden = false;
-  panel.innerHTML = `<details class="report-panel" open><summary><span class="report-title">${title}</span><span class="report-actions"><button type="button" class="secondary-button" id="report-save-pdf">PDF로 저장</button><button type="button" class="secondary-button" id="report-close">닫기</button></span></summary><style>${scopeReportCss(styles, '.report-doc')}</style><div class="report-doc">${body}</div></details>`;
+  // 방금 만든 리포트인데 history_id가 없으면 히스토리에 남지 않았다는 뜻이다. 화면을 닫으면 사라진다.
+  const unsaved = payload.history_error || (payload.history_id === null && payload.db_updates)
+    ? `<p class="load-failure">이 리포트는 히스토리에 저장되지 않았습니다${payload.history_error ? ` (${escapeHtml(payload.history_error)})` : ''}. 창을 닫으면 다시 열 수 없으니 필요하면 PDF로 저장해 주세요.</p>`
+    : '';
+  panel.innerHTML = `<details class="report-panel" open><summary><span class="report-title">${title}</span><span class="report-actions"><button type="button" class="secondary-button" id="report-save-pdf">PDF로 저장</button><button type="button" class="secondary-button" id="report-close">닫기</button></span></summary><style>${scopeReportCss(styles, '.report-doc')}</style>${unsaved}<div class="report-doc">${body}</div></details>`;
   panel.querySelector('#report-close').addEventListener('click', event => { event.preventDefault(); panel.hidden = true; });
   panel.querySelector('#report-save-pdf').addEventListener('click', event => {
     event.preventDefault();
@@ -1163,14 +1167,18 @@ async function openCompareHistoryItem(id){
     window.alert(`지난 리포트를 불러오지 못했습니다: ${error.message}`);
   }
 }
-// 새로 만들거나 화면에 처음 들어올 때 지난 비교 리포트 목록을 보여준다. 본문은 클릭해야 불러온다.
+// 새로 만들거나 비교 화면에 들어올 때마다 지난 리포트 목록을 다시 읽는다. 본문은 클릭해야 불러온다.
+// 실패를 빈 화면으로 두면 "리포트가 없다"와 구분되지 않으므로 이유를 적어 남긴다.
+function showCompareHistoryFailure(container, reason){
+  container.innerHTML = `<p class="load-failure">지난 비교 리포트 목록을 불러오지 못했습니다. ${escapeHtml(reason)} — 저장된 리포트가 없다는 뜻은 아닙니다. 새로고침 후에도 계속되면 접근 세션을 확인해 주세요.</p>`;
+}
 async function loadCompareReportHistory(){
   const container = document.querySelector('#compare-report-history');
   if (!container) return;
   try {
     const response = await fetch('/api/company?compare_history=1');
     const payload = await response.json();
-    if (payload.status !== 'ok') { container.innerHTML = ''; return; }
+    if (payload.status !== 'ok') { showCompareHistoryFailure(container, payload.message || payload.status || `HTTP ${response.status}`); return; }
     if (!payload.history.length) {
       container.innerHTML = '<p class="compare-history-empty">아직 저장된 비교 리포트가 없습니다. "비교 리포트 생성"을 누르면 여기에 히스토리로 쌓입니다.</p>';
       return;
@@ -1180,7 +1188,9 @@ async function loadCompareReportHistory(){
     ).join('')}</ul></details>`;
     container.querySelectorAll('[data-history-id]').forEach(button => button.addEventListener('click', () => openCompareHistoryItem(button.dataset.historyId)));
   } catch (error) {
+    // 파싱 실패 원문("Unexpected token '<'…")은 화면에 쓸모가 없다. 상세는 콘솔로 넘긴다.
     console.error('비교 리포트 히스토리를 불러오지 못했습니다', error);
+    showCompareHistoryFailure(container, '서버 응답을 읽지 못했습니다.');
   }
 }
 async function generateCompareReport(){
@@ -1275,6 +1285,8 @@ async function renderComparison(){
 function activateView(view){
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('is-visible', el.id === view));
   document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('is-active',el.dataset.view===view));
+  // 히스토리는 다른 기기·다른 탭에서도 쌓이므로 비교 화면에 들어올 때마다 다시 읽는다.
+  if (view === 'compare') loadCompareReportHistory();
 }
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
 
@@ -1396,7 +1408,7 @@ async function initialize(){
   makeChainTabs(document.querySelector('#compare-chain-a'), chainA, chain => { makeSelect(compareA, '', chain); renderComparison(); });
   makeChainTabs(document.querySelector('#compare-chain-b'), chainB, chain => { makeSelect(compareB, '', chain); renderComparison(); });
   document.querySelector('#compare-report').addEventListener('click', generateCompareReport);
-  loadCompareReportHistory();
+  // 목록은 비교 화면을 열 때 activateView가 읽는다. 첫 화면은 Daily라 여기서 미리 받아둘 이유가 없다.
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
