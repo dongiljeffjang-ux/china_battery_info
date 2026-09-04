@@ -197,8 +197,12 @@ async function runProcessStage(request, hop) {
   const counts = results.reduce((acc, result) => ({ ...acc, [result.status]: (acc[result.status] || 0) + 1 }), {});
   const attempted = new Set(results.map((result) => result.articleId));
   const leftover = selected.filter((article) => !attempted.has(article.id)).length;
-  console.info("[PROCESS_STAGE]", JSON.stringify({ hop, selected: selected.length, processed: results.length, leftover, counts, ms: Date.now() - started }));
-  if (leftover > 0 && hop < MAX_PROCESS_HOPS) await chainStage(request, "process", hop + 1);
+  // 한 훅은 상위 10건만 집는다. 예전에는 그 10건을 다 처리하면 바로 Daily로 넘어가, 그날 수집분이
+  // 20~30건이어도 10건만 읽고 끝났다. 배치가 가득 찼다면 아직 남았다는 뜻이므로 다음 훅으로 이어 간다.
+  const batchWasFull = selected.length >= TOP10_LIMIT;
+  const more = leftover > 0 || batchWasFull;
+  console.info("[PROCESS_STAGE]", JSON.stringify({ hop, selected: selected.length, processed: results.length, leftover, more, counts, ms: Date.now() - started }));
+  if (more && hop < MAX_PROCESS_HOPS) await chainStage(request, "process", hop + 1);
   else await chainStage(request, "daily");
   await flushTraces();
 }

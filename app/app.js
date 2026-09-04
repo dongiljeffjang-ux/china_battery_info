@@ -399,7 +399,9 @@ function renderCompanyNews(){
   companyTarget.innerHTML = `<option value="all">${valueChainLabels[currentNewsValueChain]} 전체</option>${companiesInChain.map(company => `<option value="${escapeHtml(company.id)}" ${company.id === currentNewsCompany ? 'selected' : ''}>${escapeHtml(company.name_ko)}</option>`).join('')}`;
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#company-news-feed'); target.innerHTML = '';
-  const filtered = approvedCompanyNews.filter(item => item.valueChain === currentNewsValueChain && (currentNewsCompany === 'all' || item.company === currentNewsCompany));
+  const filtered = approvedCompanyNews.filter(item =>
+    (item.valueChains || [item.valueChain]).includes(currentNewsValueChain)
+    && (currentNewsCompany === 'all' || (item.companies || [item.company]).includes(currentNewsCompany)));
   if (!filtered.length) {
     const who = currentNewsCompany === 'all' ? valueChainLabels[currentNewsValueChain] : companyTarget.selectedOptions[0]?.textContent;
     const from = document.querySelector('#news-from')?.value, to = document.querySelector('#news-to')?.value;
@@ -408,7 +410,15 @@ function renderCompanyNews(){
   }
   filtered.forEach(item => {
     const node = template.content.cloneNode(true);
-    const sector = node.querySelector('.sector-tag'); sector.textContent = displayName(item.company); sector.classList.toggle('anode', false);
+    // 여러 회사에 걸린 기사는 그 회사들을 함께 보여 준다. 지금 고른 회사를 앞에 세운다.
+    const linked = item.companies || [item.company];
+    const ordered = currentNewsCompany !== 'all' && linked.includes(currentNewsCompany)
+      ? [currentNewsCompany, ...linked.filter(id => id !== currentNewsCompany)]
+      : linked;
+    const sector = node.querySelector('.sector-tag');
+    sector.textContent = ordered.slice(0, 3).map(displayName).join(' · ');
+    sector.title = ordered.map(displayName).join(', ');
+    sector.classList.toggle('anode', false);
     const confidenceTag = node.querySelector('.confidence-tag'); confidenceTag.textContent = item.confidence; confidenceTag.title = item.confidenceTitle || '';
     // Top 10에도 오른 기사는 표식을 달아 첫 화면과 겹쳐 보이는 이유를 알 수 있게 한다.
     if (item.top10Rank) {
@@ -430,7 +440,16 @@ function renderCompanyNews(){
 }
 function mapDashboardArticle(article){
   const relation = article.article_company?.[0];
+  // 기사 하나가 여러 회사에 걸릴 수 있다. 첫 회사만 보면 "CATL, 후난위넝 지분 감축" 같은
+  // 기사가 한쪽에서만 보인다. 연결된 회사와 밸류체인을 모두 들고 다니며 걸러 낸다.
+  const links = (article.article_company || []).filter((row) => row?.company_id);
+  const companies = [...new Set(links.map((row) => row.company_id))];
+  const valueChains = [...new Set(links
+    .map((row) => row.company?.type_tags?.[0] || companyById(row.company_id)?.value_chain)
+    .filter(Boolean))];
   return {
+    companies: companies.length ? companies : ['기타'],
+    valueChains: valueChains.length ? valueChains : ['other'],
     id: article.id,
     sector: 'all',
     company: relation?.company_id || '기타',
