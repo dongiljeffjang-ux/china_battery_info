@@ -126,3 +126,19 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 /* 보조 성격 표시 */
 .sankey-notice,.coverage-warn,.load-note{background:var(--band);border-radius:4px;color:var(--ink)}
 .hover-tip{background:var(--ink);border-radius:4px}
+
+/* ── 본문 볼드 금지 ─────────────────────────────────────────────
+   제목(h1·h2·h3)과 표 머리, 라벨만 굵게 둔다. 본문에서 회사명·수치를
+   굵게 하면 지면이 얼룩덜룩해진다. 강조는 굵기가 아니라 색으로만 한다. */
+.summary-block li,.summary-block li strong,.news-fact,.news-fact strong,
+.matrix-item,.matrix-item strong,.digest-title,.digest-metric,
+.cmp-title,.cmp-metric,.event-title,.event-fact,
+.insight-point,.insight-point strong,.insight-basis,
+.chip-name,.chip-meta,.ask-answer,.ask-sources li,
+.report-doc .txt,.report-doc .txt strong,.report-doc .who,
+.sankey-notice,.sankey-notice strong,.coverage-note,.impact-reason,
+.news-footer a,.matrix-src,.link-button,.hist-scope{font-weight:400}
+/* 굵기를 뺀 자리를 색으로 메운다 */
+.summary-block li strong,.matrix-item strong,.pt-company,.news-fact strong{color:var(--ink)}
+.pt-fact,.cmp-metric,.digest-metric{color:var(--blue)}
+.news-footer a,.matrix-src,.link-button{color:var(--blue)}
