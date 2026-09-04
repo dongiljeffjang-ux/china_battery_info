@@ -92,6 +92,8 @@ async function selectTop10(candidates, preferenceExamples = []) {
 }
 
 const CANDIDATE_SELECT = "id,title_ko,summary_ko,source_name,published_at,article_company(company(name_ko))";
+// Daily Top 10을 채우는 데 필요한 후보 수. 그날 수집분이 이보다 적으면 전날까지 넓힌다.
+const TOP10_TARGET = 10;
 
 // 리포트 날짜(한국시간) 하루의 시작·끝. Daily는 그날 뉴스만 싣는다.
 function koreaDayBounds(reportDate) {
@@ -107,17 +109,17 @@ export async function generateDailyReport(articleIds = []) {
   const reportDate = koreaDate();
   const { start, end } = koreaDayBounds(reportDate);
   const fetchWindow = (from) => supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&published_at=gte.${from}&published_at=lt.${end}&order=published_at.desc&limit=80`);
-  let recent = await fetchWindow(start);
-  // 그날 기사가 하나도 없으면 리포트가 통째로 빠진다. 그때만 전날까지 넓혀 한 건이라도 싣는다.
-  let windowDays = 1;
-  if (!recent.length) {
-    recent = await fetchWindow(new Date(new Date(start).getTime() - 86400000).toISOString());
-    windowDays = 2;
-  }
   const justProcessed = articleIds.length
     ? await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&id=in.(${articleIds.join(",")})`)
     : [];
-  const candidates = [...new Map([...justProcessed, ...recent].map((article) => [article.id, article])).values()];
+  const merge = (rows) => [...new Map([...justProcessed, ...rows].map((article) => [article.id, article])).values()];
+  let candidates = merge(await fetchWindow(start));
+  // 그날 수집분만으로 Top 10을 채울 수 없다고 판단되면 전날까지 넓혀 후보를 다시 모은다.
+  let windowDays = 1;
+  if (candidates.length < TOP10_TARGET) {
+    candidates = merge(await fetchWindow(new Date(new Date(start).getTime() - 86400000).toISOString()));
+    windowDays = 2;
+  }
   if (!candidates.length) return { status: "no_reviewed_articles" };
   if (windowDays > 1) console.info("[DAILY_WINDOW_WIDENED]", JSON.stringify({ reportDate, candidates: candidates.length }));
   let preferenceExamples = [];
