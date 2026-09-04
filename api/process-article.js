@@ -59,7 +59,7 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
       original_excerpt: { type: "string" },
       original_excerpt_ko: { type: "string" },
       occurred_at: { type: ["string", "null"] },
-      trajectory_track: { type: "string", enum: ["market", "technology", "both"] },
+      trajectory_track: { type: "string", enum: ["market", "technology"] },
       layer_key: { type: "string", enum: LAYER_ENUM },
       region_scope: { type: ["string", "null"] },
       timeline_eligibility: { type: "string", enum: ["core", "reference", "exclude"] },
@@ -204,7 +204,11 @@ export async function processPendingArticle(articleId, companyId) {
       entity_names: entityNames,
       company_id: companyId, article_id: articleId, occurred_at: result.occurred_at,
       title_ko: result.event_title_ko, fact_ko: result.event_fact_ko,
-      trajectory_track: result.trajectory_track, layer_key: normalizeLayerKey(result.layer_key),
+      // layer_key 소속에 맞춰 트랙을 맞춘다. 시장 레이어인데 기술로 들어가는 어긋남을 막는다.
+      trajectory_track: normalizeLayerKey(result.layer_key)?.startsWith("technology-") ? "technology"
+        : normalizeLayerKey(result.layer_key) ? "market"
+        : (result.trajectory_track === "technology" ? "technology" : "market"),
+      layer_key: normalizeLayerKey(result.layer_key),
       region_scope: result.region_scope, source_url: resolvedUrl, source_name: article.source_name,
       original_excerpt: factCheck.original_excerpt, original_excerpt_ko: factCheck.original_excerpt_ko,
       // 거래소 공시는 회사가 직접 낸 1차 출처다. 언론 기사와 등급·출처 표기를 구분한다.
