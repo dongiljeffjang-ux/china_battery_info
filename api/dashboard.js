@@ -29,8 +29,11 @@ export default async function handler(request, response) {
     const to = toBound.toISOString().slice(0, 10);
     // 회사별 뉴스는 기본이 오늘 하루다. 지난 것까지 보고 싶을 때만 화면이 기간을 넓혀 준다.
     // 종료일은 그날 자정 이후 기사가 빠지지 않도록 다음 날 0시 미만으로 본다.
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const newsFrom = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.newsFrom || "") ? request.query.newsFrom : today;
+    const koreaDay = (offsetDays = 0) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(new Date(Date.now() + offsetDays * 86400000));
+    const today = koreaDay();
+    // 수집이 밤 23시에 돌아 이른 시간에는 오늘 기사가 아직 없다. 기본을 어제부터로 잡는다.
+    const newsFrom = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.newsFrom || "") ? request.query.newsFrom : koreaDay(-1);
     const newsToInput = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.newsTo || "") ? request.query.newsTo : today;
     const newsToBound = new Date(`${newsToInput}T00:00:00Z`);
     newsToBound.setUTCDate(newsToBound.getUTCDate() + 1);

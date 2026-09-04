@@ -1,9 +1,10 @@
 const valueChainLabels = { cell: '셀사', cathode: '양극재', anode: '음극재' };
 // 헤드라인 흐름도에 한 번에 세울 기업 수. 넘으면 출하 순위 상위만 남기고 나머지는 안내문으로 알린다.
 const SANKEY_COMPANY_LIMIT = 12;
-// 밸류체인별 표식 색. 셀·양극재·음극재를 색으로도 가른다.
-const CHAIN_COLORS = { cell: '#1f5f99', cathode: '#236aa6', anode: '#8b5a10' };
-const CHAIN_BG = { cell: '#dde8f4', cathode: '#e0eef8', anode: '#fbeed6' };
+// 밸류체인별 표식 색. 파랑·보라·주황 세 계열로 갈라 한눈에 구분되게 한다.
+// 흐름도 링크가 초록(확대)·빨강(축소)을 쓰므로 그 두 색은 피한다.
+const CHAIN_COLORS = { cell: '#10365f', cathode: '#5b3d94', anode: '#7d5010' };
+const CHAIN_BG = { cell: '#cfe0f2', cathode: '#e2d9f3', anode: '#f7e3c4' };
 const marketLayerLabels = {
   'supply-performance': '수급·실적',
   'investment-production': '투자·생산기반',
@@ -1412,8 +1413,8 @@ async function initialize(){
   };
   document.querySelector('#sankey-from').value = localDate(-1);
   document.querySelector('#sankey-to').value = localDate(0);
-  // 회사별 뉴스는 오늘 하루가 기본이다. 더 보고 싶으면 기간을 넓혀 적용한다.
-  document.querySelector('#news-from').value = localDate(0);
+  // 회사별 뉴스 기본은 어제~오늘이다. 수집이 밤 23시에 돌아 오늘 것만 보면 이른 시간에 비어 보인다.
+  document.querySelector('#news-from').value = localDate(-1);
   document.querySelector('#news-to').value = localDate(0);
   document.querySelector('#news-range-apply').addEventListener('click', loadDashboardFromApi);
   renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
