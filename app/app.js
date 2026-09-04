@@ -1,6 +1,8 @@
 const valueChainLabels = { cell: '셀사', cathode: '양극재', anode: '음극재' };
 // 헤드라인 흐름도에 한 번에 세울 기업 수. 넘으면 출하 순위 상위만 남기고 나머지는 안내문으로 알린다.
 const SANKEY_COMPANY_LIMIT = 12;
+// 밸류체인별 표식 색. 셀·양극재·음극재를 색으로도 가른다.
+const CHAIN_COLORS = { cell: '#1f5f99', cathode: '#236aa6', anode: '#8b5a10' };
 const marketLayerLabels = {
   'supply-performance': '수급·실적',
   'investment-production': '투자·생산기반',
@@ -335,8 +337,12 @@ function renderHeadlineSankey(){
   const negativeNodes = selectedNodes.filter(node => node.direction === 'negative');
   const height = Math.max(300, sourceNames.length * 34 + 70, selectedNodes.length * 34 + 112);
   const yFor = (names, name, top, gap) => top + names.indexOf(name) * gap;
-  // 회사명 앞에 밸류체인 구분을 붙여 셀·양극재·음극재를 한눈에 가른다.
-  const label = id => `${valueChainLabels[companyById(id)?.value_chain] || '기타'} · ${displayName(id)}`;
+  // 회사명 앞에 밸류체인 구분을 붙이되, 색과 굵기를 달리해 구분과 회사명이 섞이지 않게 한다.
+  const label = id => {
+    const chain = companyById(id)?.value_chain;
+    return `<tspan fill="${CHAIN_COLORS[chain] || '#7b8a9c'}" font-weight="800">${escapeHtml(valueChainLabels[chain] || '기타')}</tspan>`
+      + `<tspan fill="#14263d" font-weight="600">   ${escapeHtml(displayName(id))}</tspan>`;
+  };
   const curve = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 130} ${y1}, ${x2 - 130} ${y2}, ${x2} ${y2}`;
   const nodeY = node => node.direction === 'positive' ? 62 + positiveNodes.indexOf(node) * 34 : 96 + positiveNodes.length * 34 + negativeNodes.indexOf(node) * 34;
   const links = visible.map(flow => {

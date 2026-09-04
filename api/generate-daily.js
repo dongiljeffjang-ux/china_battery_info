@@ -92,14 +92,21 @@ async function selectTop10(candidates, preferenceExamples = []) {
 }
 
 const CANDIDATE_SELECT = "id,title_ko,summary_ko,source_name,published_at,article_company(company(name_ko))";
-const CANDIDATE_DAYS = 3;
+
+// 리포트 날짜(한국시간) 하루의 시작·끝. Daily는 그날 뉴스만 싣는다.
+function koreaDayBounds(reportDate) {
+  const start = new Date(`${reportDate}T00:00:00+09:00`);
+  const end = new Date(start.getTime() + 86400000);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
 
 export async function generateDailyReport(articleIds = []) {
-  // Top 10 후보를 이번 실행에서 처리한 기사로만 좁히면, 한 회차에 본문 분석이 최대 열 건이고
-  // 그중 팩트체크 탈락분을 빼면 서너 건만 남는다. 추적 대상이 서른 곳이 넘는데 그 수로는 하루를 못 담는다.
-  // 최근 며칠간 검증을 통과한 기사 전부를 후보로 두고, 이번에 처리한 기사는 발행일과 무관하게 합친다.
-  const since = new Date(Date.now() - CANDIDATE_DAYS * 86400000).toISOString();
-  const recent = await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&published_at=gte.${since}&order=published_at.desc&limit=80`);
+  // Top 10 후보는 리포트 날짜 하루치로 끊는다. 예전에는 최근 3일을 후보로 둬서 어제·그제
+  // 기사가 오늘 리포트 상위를 차지했다. Daily는 그날 무슨 일이 있었는지를 담는 자리다.
+  // 다만 이번 회차에 막 처리한 기사는 발행일과 무관하게 합쳐, 방금 읽은 것이 빠지지 않게 한다.
+  const reportDate = koreaDate();
+  const { start, end } = koreaDayBounds(reportDate);
+  const recent = await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&published_at=gte.${start}&published_at=lt.${end}&order=published_at.desc&limit=80`);
   const justProcessed = articleIds.length
     ? await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&id=in.(${articleIds.join(",")})`)
     : [];
@@ -135,7 +142,6 @@ export async function generateDailyReport(articleIds = []) {
   for (const item of selected) {
     await supabaseRest(`article?id=eq.${encodeURIComponent(item.article_id)}`, { method: "PATCH", body: { is_top10: true, top10_rank: item.rank, updated_at: new Date().toISOString() } });
   }
-  const reportDate = koreaDate();
   const insightKo = serializeInsight(result.insight);
   await supabaseRest("daily_report?on_conflict=report_date", {
     method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
