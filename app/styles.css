@@ -138,9 +138,11 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .report-doc .txt,.report-doc .txt strong,.report-doc .who,
 .sankey-notice,.sankey-notice strong,.coverage-note,.impact-reason,
 .news-footer a,.matrix-src,.link-button,.hist-scope{font-weight:400}
-/* 굵기를 뺀 자리를 색으로 메운다 */
-.summary-block li strong,.matrix-item strong,.pt-company,.news-fact strong{color:var(--ink)}
-.pt-fact,.cmp-metric,.digest-metric{color:var(--blue)}
+/* 굵기를 뺀 자리를 색으로 메운다. 색은 훑을 때 먼저 걸려야 하는 것 — 주체(회사)와 수치 — 에만 준다.
+   서술까지 파랑이면 지면 대부분이 파랑이 되어 정작 강조한 자리가 묻힌다. */
+.pt-company,.summary-block li strong,.news-fact strong,.insight-point strong{color:var(--blue)}
+.pt-fact,.matrix-item strong{color:var(--ink)}
+.cmp-metric,.digest-metric{color:var(--blue)}
 .news-footer a,.matrix-src,.link-button{color:var(--blue)}
 /* 회사 마크 — 공식 사이트 아이콘이 있으면 이미지, 없으면 한자 첫 글자 */
 .chip-logo{width:20px;height:20px;object-fit:contain;display:block}
