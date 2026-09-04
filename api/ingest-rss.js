@@ -54,7 +54,9 @@ function headlineScore(article) {
   const highSignals = HIGH_SIGNAL_TERMS.filter((term) => title.includes(term)).length;
   const lowSignals = LOW_SIGNAL_TERMS.filter((term) => title.includes(term)).length;
   const ageDays = Math.max(0, (Date.now() - new Date(article.published_at || Date.now()).getTime()) / 86400000);
-  return (highSignals * 20) - (lowSignals * 45) + (article.article_company?.length ? 3 : 0) - Math.min(ageDays, 30) / 10;
+  // 공시는 회사가 직접 낸 1차 출처라 제목에 신호 단어가 없어도 언론 기사보다 우선해 읽는다.
+  const disclosureBonus = article.source_tier === "official_disclosure" ? 25 : 0;
+  return (highSignals * 20) - (lowSignals * 45) + disclosureBonus + (article.article_company?.length ? 3 : 0) - Math.min(ageDays, 30) / 10;
 }
 
 async function selectHeadlineTop10() {
@@ -68,7 +70,8 @@ async function selectHeadlineTop10() {
     if (key && !unique.has(key)) unique.set(key, article);
   }
   return [...unique.values()]
-    .filter((article) => article.source_tier.startsWith("web_search_") || article.source_name === "CATL Newsroom")
+    // 웹 검색 기사·CATL 뉴스룸에 더해 거래소 공시(1차 출처)도 본문 분석 대상에 넣는다.
+    .filter((article) => article.source_tier.startsWith("web_search_") || article.source_tier === "official_disclosure" || article.source_name === "CATL Newsroom")
     .map((article) => ({ ...article, headline_score: headlineScore(article) }))
     .sort((a, b) => b.headline_score - a.headline_score || new Date(b.published_at) - new Date(a.published_at))
     .slice(0, TOP10_LIMIT);

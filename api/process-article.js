@@ -7,6 +7,7 @@ import { groupSummary, matchGroupEntities } from "../lib/company-groups.js";
 import { embedVerifiedArticle, embedEvents } from "../lib/vector-ingestion.js";
 import { LAYER_ENUM, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
 import { sameFact } from "../lib/curation.js";
+import { extractPdfText } from "../lib/report-reader.js";
 
 const MAX_BODY_CHARS = 30000;
 
@@ -65,7 +66,10 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
       confidence_note: { type: "string" }
     }
   };
-  const input = `${companyContext}\n원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}\n본문:\n${bodyText}`;
+  const disclosureNote = article.source_tier === "official_disclosure"
+    ? "\n\n이 문서는 거래소에 제출된 회사의 공식 공시 원문이다. 제3자 언론 보도가 아니므로 본문에 적힌 사실은 timeline_eligibility를 core로 둘 수 있다."
+    : "";
+  const input = `${companyContext}\n원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}${disclosureNote}\n본문:\n${bodyText}`;
   const { data } = await createJsonResponse({
     name: "battery_article_event", schema,
     instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. summary_ko는 서술형 문단이 아니라 개조식으로 쓴다: 확인된 사실 하나당 '- '로 시작하는 한 줄을 만들고, 각 줄은 명사형으로 끝내며 회사명과 핵심 수치를 앞에 둔다(예: '- CATL, 헝가리 1공장 1기 라인 가동 개시 - 연 40GWh'). 접속사·수식어 없이 사실만 나열하고 2~4줄로 쓴다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). headline_signals는 이 기사가 산업의 무엇을 확대(expansion) 또는 축소(contraction)시키는 신호인지 신호별로 판단한 것이다. keyword_ko에는 회사명·기관명·부처명·매체명·일반 산업명을 쓰지 않는다(예: 공업정보화부, 리튬전지 산업, 출하량 순위는 신호가 아니다). 생산능력·출하·수주·고객·가격·투자·기술 같은 실제로 늘거나 주는 대상을 쓴다. direction은 본문에 적힌 사실을 근거로 정하고, 판단 근거가 약하면 neutral을 쓴다. reason_ko에는 왜 그 방향인지 본문 사실을 들어 한 문장으로 쓴다. 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다. " + LAYER_PROMPT_GUIDE,
@@ -122,13 +126,25 @@ export async function processPendingArticle(articleId, companyId) {
   const article = articles[0];
   if (!article) return { status: "not_pending" };
   const resolvedUrl = await resolveGoogleNewsUrl(article.canonical_url);
-  const sourceResponse = await fetch(resolvedUrl, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ChinaBatteryLens/0.1; research)" } });
-  const contentType = sourceResponse.headers.get("content-type") || "";
-  if (!sourceResponse.ok || !contentType.includes("text/html")) {
-    await recordProcessing(articleId, "body_unavailable", `HTTP ${sourceResponse.status} · content-type: ${contentType || "없음"} · ${resolvedUrl}`);
-    return { status: "body_unavailable", contentType };
+  // 거래소 공시는 HTML이 아니라 PDF다. 정기보고서에서 쓰는 추출기를 그대로 재사용한다.
+  const isDisclosure = article.source_tier === "official_disclosure" || /\.pdf($|\?)/i.test(resolvedUrl);
+  let bodyText;
+  if (isDisclosure) {
+    try {
+      bodyText = String(await extractPdfText(resolvedUrl)).slice(0, MAX_BODY_CHARS);
+    } catch (error) {
+      await recordProcessing(articleId, "body_unavailable", `PDF 추출 실패: ${error.message} · ${resolvedUrl}`);
+      return { status: "body_unavailable", reason: "pdf_extract_failed" };
+    }
+  } else {
+    const sourceResponse = await fetch(resolvedUrl, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ChinaBatteryLens/0.1; research)" } });
+    const contentType = sourceResponse.headers.get("content-type") || "";
+    if (!sourceResponse.ok || !contentType.includes("text/html")) {
+      await recordProcessing(articleId, "body_unavailable", `HTTP ${sourceResponse.status} · content-type: ${contentType || "없음"} · ${resolvedUrl}`);
+      return { status: "body_unavailable", contentType };
+    }
+    bodyText = htmlToText(await sourceResponse.text()).slice(0, MAX_BODY_CHARS);
   }
-  const bodyText = htmlToText(await sourceResponse.text()).slice(0, MAX_BODY_CHARS);
   if (bodyText.length < 500) {
     await recordProcessing(articleId, "body_too_short", `본문 ${bodyText.length}자로 최소 500자에 못 미침 · ${resolvedUrl}`);
     return { status: "body_too_short" };
@@ -191,7 +207,9 @@ export async function processPendingArticle(articleId, companyId) {
       trajectory_track: result.trajectory_track, layer_key: normalizeLayerKey(result.layer_key),
       region_scope: result.region_scope, source_url: resolvedUrl, source_name: article.source_name,
       original_excerpt: factCheck.original_excerpt, original_excerpt_ko: factCheck.original_excerpt_ko,
-      timeline_eligibility: result.timeline_eligibility
+      // 거래소 공시는 회사가 직접 낸 1차 출처다. 언론 기사와 등급·출처 표기를 구분한다.
+      evidence_kind: isDisclosure ? "disclosure" : "article",
+      timeline_eligibility: isDisclosure ? "core" : result.timeline_eligibility
     } });
     try {
       await embedEvents((storedEvents || []).map((row) => ({ ...row, company_name_ko: company?.name_ko || companyId })));

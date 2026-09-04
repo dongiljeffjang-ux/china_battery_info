@@ -1,4 +1,6 @@
 const valueChainLabels = { cell: '셀사', cathode: '양극재', anode: '음극재' };
+// 헤드라인 흐름도에 한 번에 세울 기업 수. 넘으면 출하 순위 상위만 남기고 나머지는 안내문으로 알린다.
+const SANKEY_COMPANY_LIMIT = 12;
 const marketLayerLabels = {
   'supply-performance': '수급·실적',
   'investment-production': '투자·생산기반',
@@ -318,13 +320,23 @@ function renderHeadlineSankey(){
     .filter(([key]) => key.startsWith(`${direction}\u0000`))
     .sort((a, b) => b[1] - a[1]).slice(0, 4)
     .map(([key, count]) => ({ direction, keyword: key.split('\u0000')[1], count })));
-  const visible = flows.filter(flow => selectedNodes.some(node => node.direction === flow.direction && node.keyword === flow.keyword));
-  const sourceNames = [...new Set(visible.map(flow => flow.company))];
+  const matchedFlows = flows.filter(flow => selectedNodes.some(node => node.direction === flow.direction && node.keyword === flow.keyword));
+  // 기간을 넓히면 신호가 잡힌 회사가 계속 늘어 그래프가 읽기 힘들 만큼 길어진다.
+  // 그럴 때는 출하 순위(SNE) 상위 기업만 남기고, 몇 개사를 감췄는지 그래프 위에 알린다.
+  const allCompanies = [...new Set(matchedFlows.map(flow => flow.company))];
+  const rank = id => companyById(id)?.priority ?? 99;
+  const flowCount = id => matchedFlows.filter(flow => flow.company === id).reduce((sum, flow) => sum + flow.count, 0);
+  const sourceNames = allCompanies.length > SANKEY_COMPANY_LIMIT
+    ? [...allCompanies].sort((x, y) => rank(x) - rank(y) || flowCount(y) - flowCount(x)).slice(0, SANKEY_COMPANY_LIMIT)
+    : allCompanies;
+  const hiddenCount = allCompanies.length - sourceNames.length;
+  const visible = matchedFlows.filter(flow => sourceNames.includes(flow.company));
   const positiveNodes = selectedNodes.filter(node => node.direction === 'positive');
   const negativeNodes = selectedNodes.filter(node => node.direction === 'negative');
   const height = Math.max(300, sourceNames.length * 34 + 70, selectedNodes.length * 34 + 112);
   const yFor = (names, name, top, gap) => top + names.indexOf(name) * gap;
-  const label = displayName;
+  // 회사명 앞에 밸류체인 구분을 붙여 셀·양극재·음극재를 한눈에 가른다.
+  const label = id => `${valueChainLabels[companyById(id)?.value_chain] || '기타'} · ${displayName(id)}`;
   const curve = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 130} ${y1}, ${x2 - 130} ${y2}, ${x2} ${y2}`;
   const nodeY = node => node.direction === 'positive' ? 62 + positiveNodes.indexOf(node) * 34 : 96 + positiveNodes.length * 34 + negativeNodes.indexOf(node) * 34;
   const links = visible.map(flow => {
@@ -333,11 +345,11 @@ function renderHeadlineSankey(){
     const ky = nodeY(node) + 12;
     const color = flow.direction === 'positive' ? '#398261' : '#bc5b5b';
     const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${flow.reasons.length ? `\n\n${flow.reasons.join('\n\n')}` : ''}`;
-    return `<path d="${curve(164, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58" data-tip="${escapeHtml(tip)}"/>`;
+    return `<path d="${curve(268, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58" data-tip="${escapeHtml(tip)}"/>`;
   }).join('');
-  const nodes = (names, x, top, gap, fill, formatter = value => value) => names.map(name => {
+  const nodes = (names, x, top, gap, fill, formatter = value => value, width = 190) => names.map(name => {
     const y = yFor(names, name, top, gap);
-    return `<g><rect x="${x}" y="${y}" width="190" height="24" rx="4" fill="${fill}"/><text x="${x + 8}" y="${y + 16}" fill="#14263d" font-size="11" font-weight="700">${formatter(name)}</text></g>`;
+    return `<g><rect x="${x}" y="${y}" width="${width}" height="24" rx="4" fill="${fill}"/><text x="${x + 8}" y="${y + 16}" fill="#14263d" font-size="11" font-weight="700">${formatter(name)}</text></g>`;
   }).join('');
   const nodeReasons = node => {
     const lines = visible.filter(flow => flow.direction === node.direction && flow.keyword === node.keyword).flatMap(flow => flow.reasons);
@@ -348,7 +360,10 @@ function renderHeadlineSankey(){
       : `${head}\n\n근거로 쓸 기사 요약이 없습니다. 수집·분석을 다시 실행하면 채워집니다.`;
   };
   const signalNodes = selectedNodes.map(node => `<g data-tip="${escapeHtml(nodeReasons(node))}"><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${escapeHtml(node.keyword)} · ${node.count}건</text></g>`).join('');
-  target.innerHTML = `<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${nodes(sourceNames, 14, 48, 34, '#eaf3fb', label)}${signalNodes}</svg>`;
+  const notice = hiddenCount
+    ? `<p class="sankey-notice">신호가 잡힌 ${allCompanies.length}개사 중 <strong>출하 순위 상위 ${sourceNames.length}개사</strong>만 표시합니다. 나머지 ${hiddenCount}개사는 기간을 좁히면 보입니다.</p>`
+    : '';
+  target.innerHTML = `${notice}<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${nodes(sourceNames, 14, 48, 34, '#eaf3fb', label, 244)}${signalNodes}</svg>`;
 }
 function normalizeSankeyKeyword(value){
   const keyword = String(value || '').replace(/[·•]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -480,9 +495,10 @@ let includeSupporting = false;
 
 // 기업 시계열은 공시 원문에서 나온 사실과 핵심 등급 기사만 기본으로 보여준다.
 // 참고 등급 기사와 웹 검색 백필은 '보조 데이터 포함'을 켤 때만 나온다.
-const evidenceLabels = { annual_report: '연차보고서', periodic_report: '반기·분기보고서', article: '언론', web_backfill: '웹 검색' };
+const evidenceLabels = { annual_report: '연차보고서', periodic_report: '반기·분기보고서', disclosure: '거래소 공시', article: '언론', web_backfill: '웹 검색' };
 function isPrimaryEvidence(event){
-  if (event.kind === 'annual_report' || event.kind === 'periodic_report') return true;
+  // 거래소 공시는 회사가 직접 낸 1차 출처라 정기보고서와 같은 핵심 등급으로 본다.
+  if (event.kind === 'annual_report' || event.kind === 'periodic_report' || event.kind === 'disclosure') return true;
   return event.kind === 'article' && event.eligibility === '핵심';
 }
 function visibleEvents(timeline){
@@ -680,7 +696,7 @@ async function renderCompany(){
 // 훑어보는 화면에서 무엇을 먼저 보여줄지 정하는 중요도. 정기보고서와 핵심 등급, 수치가 있는 사실을 앞에 둔다.
 function importanceOf(event){
   let score = 0;
-  if (event.kind === 'annual_report' || event.kind === 'periodic_report') score += 3;
+  if (event.kind === 'annual_report' || event.kind === 'periodic_report' || event.kind === 'disclosure') score += 3;
   if (event.eligibility === '핵심') score += 2;
   if (event.kind === 'web_backfill') score -= 1;
   if (METRIC_PATTERN.test(`${event.title} ${event.fact}`)) score += 2;
@@ -1124,7 +1140,7 @@ async function renderComparison(){
   const eventCell = (events, date, track, side) => { const html = eventsAt(events, date, track); return `<div class="cmp-cell ${track}" style="min-height:54px;padding:8px 10px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:12px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
   // 두 회사의 근거 두께가 다르면 얇은 쪽이 조용해 보일 뿐 실제로 조용한 게 아니다. 머리에 적어 둔다.
   const coverageOf = events => {
-    const reports = new Set(events.filter(e => e.kind === 'annual_report' || e.kind === 'periodic_report').map(e => e.sourceUrl || e.sourceName));
+    const reports = new Set(events.filter(e => e.kind === 'annual_report' || e.kind === 'periodic_report' || e.kind === 'disclosure').map(e => e.sourceUrl || e.sourceName));
     const first = events.map(e => e.date).filter(Boolean).sort()[0];
     return `공시 ${reports.size}건 · 이벤트 ${events.length}건${first ? ` · ${first.slice(0, 4)}년~` : ''}`;
   };
