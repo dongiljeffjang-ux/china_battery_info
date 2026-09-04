@@ -783,7 +783,9 @@ function renderLayerMatrix(timeline){
     return matched.map(event => {
       const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
       const unclassified = event.layer === UNCLASSIFIED_LAYER ? '<span class="matrix-entity">미분류</span>' : '';
-      return `<div class="matrix-item" data-tip="${escapeHtml(tip)}"><strong>${escapeHtml(shortTitle(event.title))}</strong>${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+      // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다.
+      const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
+      return `<div class="matrix-item${supporting}" data-tip="${escapeHtml(tip)}"><span class="matrix-title">${escapeHtml(shortTitle(event.title))}</span>${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('');
   };
   const head = MATRIX_GROUPS.map(group => `<th class="matrix-head ${group.track}">${group.label}</th>`);
