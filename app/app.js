@@ -596,9 +596,11 @@ function renderCompanyPicker(){
     `<button class="segment ${key === currentChain ? 'is-selected' : ''}" type="button" data-chain="${key}">${label}<span class="segment-count">${companiesInValueChain(key).length}</span></button>`).join('');
   chips.innerHTML = companiesInValueChain(currentChain).map(company => {
     const mark = (company.name_zh || company.name_en || '?').slice(0, 1);
-    const meta = [company.priority ? `SNE ${company.priority}위` : '순위 미확인', company.group ? `계열사 ${company.group.members_ko.length}` : ''].filter(Boolean).join(' · ');
+    // 목록을 표처럼 읽는다. 중국어명과 종목코드를 함께 보여 어느 법인인지 바로 확인되게 한다.
+    const meta = [company.name_zh, company.ticker || '비상장', company.group ? `계열사 ${company.group.members_ko.length}` : ''].filter(Boolean).join(' · ');
+    const rank = company.priority ? `SNE ${company.priority}위` : '순위 미확인';
     const full = [company.name_zh, company.name_en].filter(Boolean).join(' · ');
-    return `<button class="company-chip ${company.value_chain} ${company.id === currentCompany ? 'is-selected' : ''}" type="button" data-company="${escapeHtml(company.id)}" title="${escapeHtml(full)}"><span class="chip-mark">${escapeHtml(mark)}</span><span class="chip-body"><span class="chip-name">${escapeHtml(company.name_ko)}</span><span class="chip-meta">${escapeHtml(meta)}</span></span></button>`;
+    return `<button class="company-chip ${company.value_chain} ${company.id === currentCompany ? 'is-selected' : ''}" type="button" data-company="${escapeHtml(company.id)}" title="${escapeHtml(full)}"><span class="chip-mark">${escapeHtml(mark)}</span><span class="chip-body"><span class="chip-name">${escapeHtml(company.name_ko)}</span><span class="chip-meta">${escapeHtml(meta)}</span></span><span class="chip-rank">${escapeHtml(rank)}</span></button>`;
   }).join('');
   tabs.querySelectorAll('[data-chain]').forEach(button => button.addEventListener('click', () => {
     currentChain = button.dataset.chain;

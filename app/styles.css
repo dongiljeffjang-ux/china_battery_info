@@ -16,3 +16,96 @@ body.single-report .topbar nav,body.single-report #companies,body.single-report 
 .compare-report-panel{margin-top:22px}.report-panel{border:1px solid var(--navy);border-radius:12px;background:#fff}.report-panel summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;background:var(--pale);border-radius:12px 12px 0 0}.report-panel summary::-webkit-details-marker{display:none}.report-panel summary::before{content:"▾";color:var(--navy);margin-right:8px}.report-panel:not([open]) summary{border-radius:12px}.report-panel:not([open]) summary::before{content:"▸"}.report-title{font-weight:800;color:var(--navy);font-size:14px;flex:1}.report-actions{display:flex;gap:8px}.report-actions .secondary-button{padding:6px 11px;font-size:12px}.report-doc{padding:22px 26px 18px;font-size:13px;line-height:1.65}.report-doc h1{font-size:22px}.report-doc h2{font-size:15px;margin:16px 0 8px}.report-doc .eyebrow{font-size:11px}.report-doc .meta{font-size:12px}.report-doc .headline{font-size:14px;padding:10px 14px}.report-doc .who{font-size:12px}.report-doc .tag,.report-doc .seg{font-size:11px;padding:1px 8px}.report-doc .basis,.report-doc .none{font-size:12px}.report-doc footer{font-size:11px;margin-top:16px}.report-doc .pair{gap:14px}.report-doc .col,.report-doc .point{padding:10px 12px}
 
 .compare-controls{align-items:flex-end;flex-wrap:wrap}.compare-pick{display:grid;gap:6px}.compare-pick-label{font-size:12px;color:var(--muted)}.compare-pick .segmented-control{width:max-content}.compare-pick select{min-width:230px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
+
+/* ============================================================
+   IEA 스타일 디자인 레이어 (docs/design-spec.md 기준)
+   기존 규칙을 지우지 않고 뒤에서 덮어쓴다. 색은 토큰 재정의로 대부분 해결하고,
+   그림자·모서리·버튼·태그처럼 값이 박혀 있는 것만 개별로 잡는다.
+   ============================================================ */
+:root{
+  --ink:#000000; --muted:#6F6F6F; --faint:#949494;
+  --paper:#FFFFFF; --card:#FFFFFF; --band:#F3F3F3;
+  --line:#E6E6E6; --navy:#000000; --blue:#0044FF; --pale:#F2F6FF;
+  --market:#0044FF; --tech:#A85B00; --tech-bg:#FFFFFF;
+  --good:#00875A; --good-bg:#FFFFFF; --alert:#E34946;
+}
+body{background:var(--paper);font-family:Inter,Pretendard,"Pretendard Variable","Noto Sans KR","Segoe UI",Arial,sans-serif;color:var(--ink)}
+/* 입체감을 쓰지 않는다. 구분은 선과 배경 띠로만 한다. */
+*{box-shadow:none!important}
+h1{font-size:40px;font-weight:700;letter-spacing:-.8px;line-height:1.1}
+h2{font-size:20px;font-weight:700;letter-spacing:-.4px}
+h3{font-size:16px;font-weight:700;letter-spacing:-.2px}
+.eyebrow{color:var(--blue);font-size:11px;font-weight:600;letter-spacing:.05em}
+/* 상단바 — 활성 탭만 검정 굵게 + 파란 밑줄 */
+.topbar{height:76px;border-bottom:1px solid var(--line)}
+.brand{color:var(--ink)}
+.brand-mark{background:var(--blue);border-radius:4px}
+.nav-link{font-weight:400;color:var(--muted);border-bottom:2px solid transparent}
+.nav-link.is-active{color:var(--ink);font-weight:700;border-color:var(--blue)}
+/* 패널 — 테두리 없는 흰 바탕, 아래 구분선. 카드가 아니라 지면처럼 보이게 한다 */
+.daily-summary,.news-section,.snapshot-section,.dual-track-section,.company-picker-panel,.compare-card{
+  background:var(--card);border:0;border-bottom:1px solid var(--line);border-radius:0;padding:32px 0}
+.ask-panel{background:var(--pale);border:0;border-left:2px solid var(--blue);border-radius:8px;padding:24px 26px}
+.daily-insight{background:var(--pale);border:0;border-left:2px solid var(--blue);border-radius:8px}
+.insight-head .eyebrow,.summary-cat.insight,.insight-seg{color:var(--blue)}
+.insight-seg{background:#fff;border:1px solid var(--blue)}
+/* 회사 프로필 — 남색 배너를 걷어내고 큰 제목 블록으로 */
+.company-profile{background:transparent;color:var(--ink);border-radius:0;border-bottom:1px solid var(--line);padding:0 0 24px}
+.company-profile h2{font-size:40px;letter-spacing:-.8px}
+.company-profile p{color:var(--muted)}
+.company-profile .eyebrow{color:var(--blue)!important}
+.company-badge{border:1px solid var(--line);color:var(--ink);border-radius:100px}
+/* 버튼 — 채워진 버튼을 쓰지 않는다 */
+.secondary-button{border:1px solid var(--ink);border-radius:4px;color:var(--ink);font-weight:600;background:#fff}
+.secondary-button:hover{background:var(--ink);color:#fff}
+.link-button{color:var(--blue);font-weight:600;text-decoration:none}
+.link-button:hover{text-decoration:underline}
+/* 태그 — 전부 흰 배경 + 1px 테두리 */
+.sector-tag,.confidence-tag,.summary-cat,.evidence-tag,.cmp-both,.hist-scope,.ask-label{
+  background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:100px;font-weight:600}
+.confidence-tag{border-color:var(--good);color:var(--good)}
+.top10-badge{background:#fff;border:1px solid var(--blue);color:var(--blue);border-radius:100px}
+.summary-cat.cell{border-color:var(--blue);color:var(--blue)}
+.summary-cat.cathode{border-color:#6F42C1;color:#6F42C1}
+.summary-cat.anode{border-color:var(--tech);color:var(--tech)}
+.summary-cat.policy{border-color:var(--good);color:var(--good)}
+/* 세그먼트 — 알약 버튼 대신 텍스트 탭 */
+.segmented-control{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:0;gap:18px}
+.segment{border-radius:0;border-bottom:2px solid transparent;padding:8px 2px;color:var(--muted)}
+.segment.is-selected{background:transparent;color:var(--ink);font-weight:700;border-color:var(--blue)}
+.segment-count{color:var(--faint)}
+/* 표 — 가로선만 남긴다 */
+.matrix-table th,.matrix-table td{border-bottom:1px solid var(--line)}
+.matrix-head{border-bottom:1px solid var(--ink)!important;color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.matrix-track{border-radius:0;background:transparent;font-size:11px;letter-spacing:.05em}
+.matrix-track.market{color:var(--blue)}
+.matrix-track.tech{color:var(--tech)}
+.matrix-period{background:var(--band);color:var(--ink)}
+.matrix-src,.news-footer a,.ask-sources a{color:var(--blue)}
+/* 뉴스 항목 — 카드 테두리를 빼고 구분선으로 */
+.news-card{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:20px 0}
+.news-card h3{font-size:24px;letter-spacing:-.48px;line-height:1.33}
+.news-side time,.impact-reason{color:var(--muted);font-size:13px}
+/* 보고서 요약 — 흰 바탕에 선으로만 구분 */
+.digest-report{border:0;border-top:1px solid var(--line);border-radius:0}
+.digest-report header{background:transparent;border-bottom:1px solid var(--line)}
+.digest-col h4{color:var(--blue);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.digest-col.tech h4{color:var(--tech)}
+.digest-col+.digest-col{border-left:1px solid var(--line)}
+.digest-year>summary{border-bottom:1px solid var(--line)}
+/* 회사 목록 — 칩 그리드에서 표에 가까운 목록으로 */
+.company-chips{grid-template-columns:1fr;gap:0}
+.company-chip{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:12px 10px 12px 13px;background:#fff;box-shadow:none}
+.company-chip:hover{background:var(--band)}
+.company-chip.is-selected{background:#fff;border-left:3px solid var(--blue);padding-left:10px}
+.chip-mark{display:none}
+.chip-name{font-size:15px}
+.chip-meta{font-size:12px;color:var(--muted)}
+.chip-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--faint)}
+.chip-rank{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+/* 입력 */
+select,input[type=date],input[type=text],.ask-form input{border:1px solid var(--line);border-radius:4px}
+select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue)}
+/* 보조 성격 표시 */
+.sankey-notice,.coverage-warn,.load-note{background:var(--band);border-radius:4px;color:var(--ink)}
+.hover-tip{background:var(--ink);border-radius:4px}

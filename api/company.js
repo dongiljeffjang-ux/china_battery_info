@@ -21,6 +21,10 @@ function catalogEntry(company) {
     type_tags: company.type_tags,
     value_chain: VALUE_CHAINS.find((tag) => company.type_tags.includes(tag)) || "other",
     priority: company.priority ?? null,
+    // 화면 목록에 종목코드를 함께 보여 준다. 비상장사는 코드가 없어 null이다.
+    ticker: company.cninfo?.codes?.[0]
+      ? `${company.cninfo.codes[0]}.${company.cninfo.column === "sse" ? "SH" : "SZ"}`
+      : company.hkex?.code ? `${company.hkex.code}.HK` : null,
     note_ko: company.note_ko || null,
     group: groupSummary(company.id),
   };
