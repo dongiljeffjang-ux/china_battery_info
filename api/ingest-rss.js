@@ -132,25 +132,38 @@ async function runBackfill(response, companyId, sinceParam, mode) {
 // 다음 단계를 같은 함수의 새 호출로 넘긴다.
 //
 // 수집·본문 처리·Daily 생성을 한 호출에 몰아 넣으면 60초에 잘려 Daily가 만들어지지 않았다.
-// 각 단계를 별도 호출로 나누고, 앞 단계가 뒷 단계를 HTTP로 부른다. 부름을 받은 쪽은 곧바로
-// 응답하고 waitUntil 안에서 일을 계속하므로, 부른 쪽은 기다리지 않고 자기 예산을 다 쓰지 않는다.
+// 각 단계를 별도 호출로 나누고, 앞 단계가 뒷 단계를 HTTP로 부른다. 부름을 받은 쪽은 202를 곧바로
+// 돌려주고 waitUntil 안에서 일을 계속하므로, 부른 쪽이 그 호출을 await해도 수십 ms만 쓴다.
 // 인증은 크론과 같은 CRON_SECRET을 쓴다. 비밀이 없으면 이어 붙이지 못하므로 그 사실을 남긴다.
 // 유지 단계(공시 백필·보강·시점 재확인)는 LLM 호출이 많다. 화면 버튼으로 수집할 때마다 돌면
 // 토큰이 과하게 나가므로, 야간 크론이 시작한 실행에서만 Daily 뒤에 이어 붙인다. 그 표시가 curate=1이다.
 function wantsCurate(request) {
   return String(request.query?.curate || "") === "1";
 }
-function chainStage(request, stage, hop = 1, { curate = wantsCurate(request) } = {}) {
+// 자기 자신을 부를 주소. 크론 호출에는 host 헤더가 없거나 배포 별칭과 다를 수 있어
+// Vercel이 넣어 주는 운영 배포 URL 환경변수를 우선하고, 없을 때만 요청 헤더로 떨어진다.
+function chainBaseUrl(request) {
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
+    || request.headers["x-forwarded-host"] || request.headers.host;
+  return host ? `https://${host}` : null;
+}
+async function chainStage(request, stage, hop = 1, { curate = wantsCurate(request) } = {}) {
   const secret = process.env.CRON_SECRET;
-  const host = request.headers["x-forwarded-host"] || request.headers.host;
-  if (!secret || !host) {
+  const base = chainBaseUrl(request);
+  if (!secret || !base) {
     console.error("[STAGE_CHAIN_SKIPPED]", JSON.stringify({ stage, reason: !secret ? "no_cron_secret" : "no_host" }));
     return;
   }
-  const url = `https://${host}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}`;
-  waitUntil(fetch(url, { method: "POST", headers: { Authorization: `Bearer ${secret}` } })
-    .then((upstream) => console.info("[STAGE_CHAINED]", JSON.stringify({ stage, hop, status: upstream.status })))
-    .catch((error) => console.error("[STAGE_CHAIN_FAILED]", JSON.stringify({ stage, hop, message: error.message }))));
+  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}`;
+  // 다음 단계는 202를 곧바로 돌려주고 자기 waitUntil에서 일하므로 여기서 기다리는 비용은 수십 ms다.
+  // waitUntil로 넘기면 크론처럼 응답을 기다리는 쪽이 없는 실행에서 fetch가 나가기 전에 함수가 끝날 수 있어
+  // 응답 전에 호출이 나간 것을 확실히 한다.
+  try {
+    const upstream = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${secret}` } });
+    console.info("[STAGE_CHAINED]", JSON.stringify({ stage, hop, status: upstream.status }));
+  } catch (error) {
+    console.error("[STAGE_CHAIN_FAILED]", JSON.stringify({ stage, hop, message: error.message }));
+  }
 }
 
 // 본문 처리 단계. 헤드라인을 골라 예산 안에서 처리하고, 남으면 자신을 다시 부르고, 끝나면 Daily를 부른다.
@@ -162,8 +175,8 @@ async function runProcessStage(request, hop) {
   const attempted = new Set(results.map((result) => result.articleId));
   const leftover = selected.filter((article) => !attempted.has(article.id)).length;
   console.info("[PROCESS_STAGE]", JSON.stringify({ hop, selected: selected.length, processed: results.length, leftover, counts, ms: Date.now() - started }));
-  if (leftover > 0 && hop < MAX_PROCESS_HOPS) chainStage(request, "process", hop + 1);
-  else chainStage(request, "daily");
+  if (leftover > 0 && hop < MAX_PROCESS_HOPS) await chainStage(request, "process", hop + 1);
+  else await chainStage(request, "daily");
   await flushTraces();
 }
 
@@ -176,7 +189,7 @@ async function runDailyStage(request) {
     console.error("[DAILY_STAGE_FAILED]", JSON.stringify({ message: error.message }));
   }
   // Daily가 끝나면 시계열 유지 작업으로 넘어간다. 단, 크론이 시작한 실행일 때만. 수동 수집은 여기서 끝난다.
-  if (wantsCurate(request)) chainStage(request, "curate", 1);
+  if (wantsCurate(request)) await chainStage(request, "curate", 1);
   else console.info("[CURATE_SKIPPED]", JSON.stringify({ reason: "manual_run" }));
   await flushTraces();
 }
@@ -192,7 +205,7 @@ async function runCurateStage(request, hop) {
   } catch (error) {
     console.error("[CURATE_STAGE_FAILED]", JSON.stringify({ hop, message: error.message }));
   }
-  if (more && hop < MAX_CURATE_HOPS) chainStage(request, "curate", hop + 1);
+  if (more && hop < MAX_CURATE_HOPS) await chainStage(request, "curate", hop + 1);
   await flushTraces();
 }
 
@@ -250,7 +263,7 @@ async function handleRequest(request, response) {
   // 시계열 백필 1회 실행. 화면 버튼이 부른다(입장 세션). 뉴스 수집과 달리 유지 단계만 돌린다.
   if (request.method === "POST" && String(request.query?.curate_run || "") === "1") {
     if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
-    chainStage(request, "curate", 1, { curate: true });
+    await chainStage(request, "curate", 1, { curate: true });
     return response.status(202).json({ status: "started", stage: "curate", next_step: "정기보고서 읽기·보강·시점 재확인이 서버에서 최대 40회 이어집니다. 20~30분 뒤 기업 분석을 새로 고침하면 반영됩니다." });
   }
   // 이어 붙은 단계 호출. 곧바로 응답하고 일은 waitUntil 안에서 마저 한다.
@@ -298,7 +311,7 @@ async function handleRequest(request, response) {
     const llmReady = Boolean(process.env.DEEPSEEK_API_KEY || (process.env.OPENAI_API_KEY && process.env.OPENAI_MODEL));
     // 본문 처리와 Daily 생성은 이 호출에서 하지 않는다. 60초 안에 다 못 끝나 Daily가 빠지던 원인이다.
     // 다음 단계를 새 호출로 넘기고 여기서는 수집 결과만 돌려준다.
-    if (shouldProcess && llmReady) chainStage(request, "process", 1, { curate: isCronRequest(request) });
+    if (shouldProcess && llmReady) await chainStage(request, "process", 1, { curate: isCronRequest(request) });
     return response.status(200).json({
       status: shouldProcess && llmReady ? "started" : "ok",
       search_runs: (llmConfig("openai") ? 3 : 0) + (llmConfig("deepseek") ? 3 : 0), discovered: candidates.length, stored: storedArticles.length,
