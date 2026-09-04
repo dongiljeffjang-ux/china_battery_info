@@ -3,6 +3,7 @@ const valueChainLabels = { cell: '셀사', cathode: '양극재', anode: '음극�
 const SANKEY_COMPANY_LIMIT = 12;
 // 밸류체인별 표식 색. 셀·양극재·음극재를 색으로도 가른다.
 const CHAIN_COLORS = { cell: '#1f5f99', cathode: '#236aa6', anode: '#8b5a10' };
+const CHAIN_BG = { cell: '#dde8f4', cathode: '#e0eef8', anode: '#fbeed6' };
 const marketLayerLabels = {
   'supply-performance': '수급·실적',
   'investment-production': '투자·생산기반',
@@ -338,11 +339,6 @@ function renderHeadlineSankey(){
   const height = Math.max(300, sourceNames.length * 34 + 70, selectedNodes.length * 34 + 112);
   const yFor = (names, name, top, gap) => top + names.indexOf(name) * gap;
   // 회사명 앞에 밸류체인 구분을 붙이되, 색과 굵기를 달리해 구분과 회사명이 섞이지 않게 한다.
-  const label = id => {
-    const chain = companyById(id)?.value_chain;
-    return `<tspan fill="${CHAIN_COLORS[chain] || '#7b8a9c'}" font-weight="800">${escapeHtml(valueChainLabels[chain] || '기타')}</tspan>`
-      + `<tspan fill="#14263d" font-weight="600">   ${escapeHtml(displayName(id))}</tspan>`;
-  };
   const curve = (x1, y1, x2, y2) => `M ${x1} ${y1} C ${x1 + 130} ${y1}, ${x2 - 130} ${y2}, ${x2} ${y2}`;
   const nodeY = node => node.direction === 'positive' ? 62 + positiveNodes.indexOf(node) * 34 : 96 + positiveNodes.length * 34 + negativeNodes.indexOf(node) * 34;
   const links = visible.map(flow => {
@@ -353,9 +349,17 @@ function renderHeadlineSankey(){
     const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${flow.reasons.length ? `\n\n${flow.reasons.join('\n\n')}` : ''}`;
     return `<path d="${curve(268, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58" data-tip="${escapeHtml(tip)}"/>`;
   }).join('');
-  const nodes = (names, x, top, gap, fill, formatter = value => value, width = 190) => names.map(name => {
-    const y = yFor(names, name, top, gap);
-    return `<g><rect x="${x}" y="${y}" width="${width}" height="24" rx="4" fill="${fill}"/><text x="${x + 8}" y="${y + 16}" fill="#14263d" font-size="11" font-weight="700">${formatter(name)}</text></g>`;
+  // 밸류체인 구분과 회사명을 아예 다른 상자로 나눈다. 구분은 좁은 색 상자, 회사명은 그 옆 상자다.
+  const CHAIN_BOX = 52, GAP = 6, NAME_BOX = 186;
+  const companyNodes = sourceNames.map(id => {
+    const y = yFor(sourceNames, id, 48, 34);
+    const chain = companyById(id)?.value_chain;
+    return `<g>`
+      + `<rect x="14" y="${y}" width="${CHAIN_BOX}" height="24" rx="4" fill="${CHAIN_BG[chain] || '#eef2f6'}"/>`
+      + `<text x="${14 + CHAIN_BOX / 2}" y="${y + 16}" text-anchor="middle" fill="${CHAIN_COLORS[chain] || '#7b8a9c'}" font-size="10.5" font-weight="800">${escapeHtml(valueChainLabels[chain] || '기타')}</text>`
+      + `<rect x="${14 + CHAIN_BOX + GAP}" y="${y}" width="${NAME_BOX}" height="24" rx="4" fill="#eaf3fb"/>`
+      + `<text x="${14 + CHAIN_BOX + GAP + 8}" y="${y + 16}" fill="#14263d" font-size="11" font-weight="600">${escapeHtml(displayName(id))}</text>`
+      + `</g>`;
   }).join('');
   const nodeReasons = node => {
     const lines = visible.filter(flow => flow.direction === node.direction && flow.keyword === node.keyword).flatMap(flow => flow.reasons);
@@ -369,7 +373,7 @@ function renderHeadlineSankey(){
   const notice = hiddenCount
     ? `<p class="sankey-notice">신호가 잡힌 ${allCompanies.length}개사 중 <strong>출하 순위 상위 ${sourceNames.length}개사</strong>만 표시합니다. 나머지 ${hiddenCount}개사는 기간을 좁히면 보입니다.</p>`
     : '';
-  target.innerHTML = `${notice}<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${nodes(sourceNames, 14, 48, 34, '#eaf3fb', label, 244)}${signalNodes}</svg>`;
+  target.innerHTML = `${notice}<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${companyNodes}${signalNodes}</svg>`;
 }
 function normalizeSankeyKeyword(value){
   const keyword = String(value || '').replace(/[·•]/g, ' ').replace(/\s+/g, ' ').trim();
