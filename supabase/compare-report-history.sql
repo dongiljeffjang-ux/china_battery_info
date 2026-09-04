@@ -23,3 +23,9 @@ create index if not exists compare_report_history_created_at_idx
 -- 리포트 생성 시 "보조 데이터 포함" 토글 상태. 켜져 있으면 참고(reference) 등급
 -- 이벤트까지 근거로 LLM에 들어갔다는 뜻이라, 나중에 리포트를 볼 때 근거 범위를 구분한다.
 alter table compare_report_history add column if not exists include_supporting boolean not null default false;
+
+-- 이 테이블은 만들어질 때 service_role 권한을 못 받아, API가 저장도 조회도 403으로
+-- 거절당했다(42501 permission denied). 화면에는 "히스토리 없음"으로만 보여 한동안
+-- 원인을 찾지 못했다. event·daily_report 등 다른 테이블과 같은 권한으로 맞춘다.
+-- GRANT는 여러 번 실행해도 결과가 같다.
+grant select, insert, update, delete on public.compare_report_history to service_role;
