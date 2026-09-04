@@ -13,7 +13,26 @@ body.single-report .topbar nav,body.single-report #companies,body.single-report 
 .digest-year{border:1px solid var(--line);border-radius:10px;background:#fff}.digest-year summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:13px}.digest-year summary::-webkit-details-marker{display:none}.digest-year summary::before{content:"▸";color:var(--muted);font-size:12px;transition:transform .15s}.digest-year[open] summary::before{transform:rotate(90deg)}.digest-year-label{font-weight:800;color:var(--navy);font-size:15px}.digest-year-meta{color:var(--muted);font-size:12px}.digest-year-body{display:grid;gap:10px;padding:0 12px 12px}.digest-year-body .digest-report{border-color:#edf1f4}
 
 .compare-report-history{margin-top:14px}.compare-report-history summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--navy);list-style:none}.compare-report-history summary::-webkit-details-marker{display:none}.compare-report-history summary::before{content:"▸ ";}.compare-report-history[open] summary::before{content:"▾ ";}.compare-report-history ul{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}.link-button{background:none;border:none;padding:2px 0;text-align:left;font-size:12px;color:var(--navy);text-decoration:underline;cursor:pointer}.link-button:hover{opacity:.75}
-.compare-report-panel{margin-top:22px}.report-panel{border:1px solid var(--navy);border-radius:12px;background:#fff}.report-panel summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;background:var(--pale);border-radius:12px 12px 0 0}.report-panel summary::-webkit-details-marker{display:none}.report-panel summary::before{content:"▾";color:var(--navy);margin-right:8px}.report-panel:not([open]) summary{border-radius:12px}.report-panel:not([open]) summary::before{content:"▸"}.report-title{font-weight:800;color:var(--navy);font-size:14px;flex:1}.report-actions{display:flex;gap:8px}.report-actions .secondary-button{padding:6px 11px;font-size:12px}.report-doc{padding:22px 26px 18px;font-size:13px;line-height:1.65}.report-doc h1{font-size:22px}.report-doc h2{font-size:15px;margin:16px 0 8px}.report-doc .eyebrow{font-size:11px}.report-doc .meta{font-size:12px}.report-doc .headline{font-size:14px;padding:10px 14px}.report-doc .who{font-size:12px}.report-doc .tag,.report-doc .seg{font-size:11px;padding:1px 8px}.report-doc .basis,.report-doc .none{font-size:12px}.report-doc footer{font-size:11px;margin-top:16px}.report-doc .pair{gap:14px}.report-doc .col,.report-doc .point{padding:10px 12px}
+.compare-report-panel{margin-top:22px}.report-panel{border:1px solid var(--navy);border-radius:12px;background:#fff}.report-panel summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;background:var(--pale);border-radius:12px 12px 0 0}.report-panel summary::-webkit-details-marker{display:none}.report-panel summary::before{content:"▾";color:var(--navy);margin-right:8px}.report-panel:not([open]) summary{border-radius:12px}.report-panel:not([open]) summary::before{content:"▸"}.report-title{font-weight:800;color:var(--navy);font-size:14px;flex:1}.report-actions{display:flex;gap:8px}.report-actions .secondary-button{padding:6px 11px;font-size:12px}/* 리포트 본문 스타일은 A4 인쇄용이라 활자가 9.6px 안팎이고, 그 CSS가 패널 안에 인라인 <style>로
+   주입돼 화면에도 그대로 걸린다. 인쇄용은 PDF 출력에 그대로 필요하므로 건드리지 않고,
+   화면에서만 덮어쓴다. 주입된 규칙이 `.report-doc x` 형태라 여기서는 한 단계 더 좁혀 이긴다.
+   폭은 화면에 맞춰 늘이지 않고 한 단으로 묶어 세로로 긴 문서처럼 읽히게 한다. */
+.report-panel .report-doc{max-width:840px;margin:0 auto;padding:30px 34px 24px;font-size:15px;line-height:1.75}
+.report-panel .report-doc h1{font-size:28px;margin:4px 0 6px}
+.report-panel .report-doc h2{font-size:18px;margin:24px 0 10px}
+.report-panel .report-doc .eyebrow{font-size:12px}
+.report-panel .report-doc .meta{font-size:13px}
+.report-panel .report-doc .headline{font-size:17px;padding:14px 18px;margin-bottom:16px}
+.report-panel .report-doc .who{font-size:14px}
+.report-panel .report-doc .axis-tag,.report-panel .report-doc .tag,.report-panel .report-doc .seg{font-size:12px;padding:1px 9px}
+.report-panel .report-doc .basis,.report-panel .report-doc .none{font-size:13px}
+.report-panel .report-doc footer{font-size:12px;margin-top:24px;padding-top:10px}
+.report-panel .report-doc .pair{gap:18px}
+.report-panel .report-doc .col,.report-panel .report-doc .point{padding:14px 16px}
+.report-panel .report-doc .contrast{margin-top:8px;padding:10px 14px}
+.report-panel .report-doc ul{padding-left:20px}
+.report-panel .report-doc li{margin-bottom:6px}
+@media(max-width:760px){.report-panel .report-doc{padding:20px 18px}.report-panel .report-doc .pair{grid-template-columns:1fr}}
 
 .compare-controls{align-items:flex-end;flex-wrap:wrap}.compare-pick{display:grid;gap:6px}.compare-pick-label{font-size:12px;color:var(--muted)}.compare-pick .segmented-control{width:max-content}.compare-pick select{min-width:230px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
 
