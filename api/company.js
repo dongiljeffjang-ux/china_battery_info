@@ -21,6 +21,8 @@ function catalogEntry(company) {
     type_tags: company.type_tags,
     value_chain: VALUE_CHAINS.find((tag) => company.type_tags.includes(tag)) || "other",
     priority: company.priority ?? null,
+    // 공식 홈페이지. 화면이 이 도메인의 파비콘을 회사 마크로 쓴다. 확인된 회사만 채워져 있다.
+    homepage: company.homepage || null,
     // 화면 목록에 종목코드를 함께 보여 준다. 비상장사는 코드가 없어 null이다.
     ticker: company.cninfo?.codes?.[0]
       ? `${company.cninfo.codes[0]}.${company.cninfo.column === "sse" ? "SH" : "SZ"}`

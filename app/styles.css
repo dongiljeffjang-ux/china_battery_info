@@ -142,3 +142,6 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .summary-block li strong,.matrix-item strong,.pt-company,.news-fact strong{color:var(--ink)}
 .pt-fact,.cmp-metric,.digest-metric{color:var(--blue)}
 .news-footer a,.matrix-src,.link-button{color:var(--blue)}
+/* 회사 마크 — 공식 사이트 아이콘이 있으면 이미지, 없으면 한자 첫 글자 */
+.chip-logo{width:20px;height:20px;object-fit:contain;display:block}
+.company-chip.is-selected .chip-mark:has(.chip-logo){background:#fff;border-color:var(--blue)}

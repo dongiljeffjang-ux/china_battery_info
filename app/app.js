@@ -599,11 +599,21 @@ function renderCompanyPicker(){
     // 칸이 좁으므로 종목코드와 순위만 한 줄로 담고, 중국어·영어 법인명은 툴팁으로 넘긴다.
     const meta = [company.ticker || '비상장', company.priority ? `SNE ${company.priority}위` : '순위 미확인'].join(' · ');
     const full = [company.name_zh, company.name_en].filter(Boolean).join(' · ');
-    return `<button class="company-chip ${company.value_chain} ${company.id === currentCompany ? 'is-selected' : ''}" type="button" data-company="${escapeHtml(company.id)}" title="${escapeHtml(full)}"><span class="chip-mark">${escapeHtml(mark)}</span><span class="chip-body"><span class="chip-name">${escapeHtml(company.name_ko)}</span><span class="chip-meta">${escapeHtml(meta)}</span></span></button>`;
+    // 공식 홈페이지가 확인된 회사는 그 사이트의 아이콘을 마크로 쓴다. 못 불러오면 한자 첫 글자로 되돌린다.
+    // 구글 파비콘은 아이콘이 없어도 지구본을 200으로 돌려줘 폴백이 걸리지 않는다. 없으면 404를 주는 쪽을 쓴다.
+    const markInner = company.homepage
+      ? `<img class="chip-logo" src="https://icons.duckduckgo.com/ip3/${encodeURIComponent(company.homepage)}.ico" alt="" loading="lazy" data-fallback="${escapeHtml(mark)}">`
+      : escapeHtml(mark);
+    return `<button class="company-chip ${company.value_chain} ${company.id === currentCompany ? 'is-selected' : ''}" type="button" data-company="${escapeHtml(company.id)}" title="${escapeHtml(full)}"><span class="chip-mark">${markInner}</span><span class="chip-body"><span class="chip-name">${escapeHtml(company.name_ko)}</span><span class="chip-meta">${escapeHtml(meta)}</span></span></button>`;
   }).join('');
   tabs.querySelectorAll('[data-chain]').forEach(button => button.addEventListener('click', () => {
     currentChain = button.dataset.chain;
     renderCompanyPicker();
+  }));
+  // 아이콘을 못 가져오면 한자 첫 글자로 되돌린다. 인라인 핸들러를 쓰지 않으려고 여기서 건다.
+  chips.querySelectorAll('.chip-logo').forEach(img => img.addEventListener('error', () => {
+    const holder = img.parentElement;
+    if (holder) holder.textContent = img.dataset.fallback || '';
   }));
   chips.querySelectorAll('[data-company]').forEach(button => button.addEventListener('click', () => {
     if (button.dataset.company === currentCompany) return;
