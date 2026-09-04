@@ -27,6 +27,15 @@ export default async function handler(request, response) {
     const toBound = new Date(`${toInput}T00:00:00Z`);
     toBound.setUTCDate(toBound.getUTCDate() + 1);
     const to = toBound.toISOString().slice(0, 10);
+    // 회사별 뉴스는 기본이 오늘 하루다. 지난 것까지 보고 싶을 때만 화면이 기간을 넓혀 준다.
+    // 종료일은 그날 자정 이후 기사가 빠지지 않도록 다음 날 0시 미만으로 본다.
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const newsFrom = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.newsFrom || "") ? request.query.newsFrom : today;
+    const newsToInput = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.newsTo || "") ? request.query.newsTo : today;
+    const newsToBound = new Date(`${newsToInput}T00:00:00Z`);
+    newsToBound.setUTCDate(newsToBound.getUTCDate() + 1);
+    const newsTo = newsToBound.toISOString().slice(0, 10);
+
     const errors = [];
     // ?report=YYYY-MM-DD를 주면 그날 리포트를, 없으면 가장 최근 리포트를 돌려준다.
     // 지난 리포트는 사라지지 않고 날짜별로 쌓이므로 목록도 함께 실어 화면이 고를 수 있게 한다.
@@ -38,14 +47,14 @@ export default async function handler(request, response) {
       dashboardQuery("report", reportPath, errors),
       dashboardQuery("report_dates", "daily_report?select=report_date&status=eq.published&order=report_date.desc&limit=90", errors),
       dashboardQuery("top10", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,top10_rank,article_company(company_id,company(name_ko,type_tags))&is_top10=eq.true&verification_status=in.(pending_review,approved)&order=top10_rank.asc&limit=10", errors),
-      dashboardQuery("company_news", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=in.(pending_review,approved)&order=published_at.desc&limit=100", errors),
+      dashboardQuery("company_news", `article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=in.(pending_review,approved)&published_at=gte.${newsFrom}&published_at=lt.${newsTo}&order=published_at.desc&limit=300`, errors),
       dashboardQuery("raw_pending", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.pending&order=published_at.desc&limit=100", errors),
       dashboardQuery("sankey", `article?select=id,title_ko,title_original,summary_ko,published_at,keywords_ko,headline_signals,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lt.${to}&verification_status=in.(pending_review,approved)&is_top10=eq.false&order=published_at.desc&limit=500`, errors),
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
     const flows = sankeyFlowsFromArticles(flowEvents);
     return response.status(200).json({
-      status: "ok", errors, range: { from, to },
+      status: "ok", errors, range: { from, to }, news_range: { from: newsFrom, to: newsToInput },
       report: reports[0] || null,
       report_dates: (reportDates || []).map((row) => row.report_date),
       requested_report: reportDate,

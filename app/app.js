@@ -396,7 +396,12 @@ function renderCompanyNews(){
   const template = document.querySelector('#news-template');
   const target = document.querySelector('#company-news-feed'); target.innerHTML = '';
   const filtered = approvedCompanyNews.filter(item => item.valueChain === currentNewsValueChain && (currentNewsCompany === 'all' || item.company === currentNewsCompany));
-  if (!filtered.length) target.innerHTML = `<p>${currentNewsCompany === 'all' ? valueChainLabels[currentNewsValueChain] : companyTarget.selectedOptions[0]?.textContent}의 자동 팩트체크 완료 뉴스가 아직 없습니다.</p>`;
+  if (!filtered.length) {
+    const who = currentNewsCompany === 'all' ? valueChainLabels[currentNewsValueChain] : companyTarget.selectedOptions[0]?.textContent;
+    const from = document.querySelector('#news-from')?.value, to = document.querySelector('#news-to')?.value;
+    const period = from && to ? (from === to ? from : `${from} ~ ${to}`) : '선택 기간';
+    target.innerHTML = `<p>${escapeHtml(period)}에 ${escapeHtml(who || '')}의 자동 팩트체크 완료 뉴스가 없습니다. 기간을 넓혀 다시 적용해 보세요.</p>`;
+  }
   filtered.forEach(item => {
     const node = template.content.cloneNode(true);
     const sector = node.querySelector('.sector-tag'); sector.textContent = displayName(item.company); sector.classList.toggle('anode', false);
@@ -491,6 +496,11 @@ async function loadDashboardFromApi(){
     const from = document.querySelector('#sankey-from')?.value;
     const to = document.querySelector('#sankey-to')?.value;
     const params = new URLSearchParams(); if (from) params.set('from', from); if (to) params.set('to', to);
+    // 회사별 뉴스 기간. 비워 두면 서버가 오늘 하루로 잡는다.
+    const newsFrom = document.querySelector('#news-from')?.value;
+    const newsTo = document.querySelector('#news-to')?.value;
+    if (newsFrom) params.set('newsFrom', newsFrom);
+    if (newsTo) params.set('newsTo', newsTo);
     // 특정 날짜 리포트를 요청받았으면 그 날짜를 서버에 넘긴다.
     const wantedReport = reportDateFromUrl();
     if (wantedReport) params.set('report', wantedReport);
@@ -1347,6 +1357,10 @@ async function initialize(){
   };
   document.querySelector('#sankey-from').value = localDate(-1);
   document.querySelector('#sankey-to').value = localDate(0);
+  // 회사별 뉴스는 오늘 하루가 기본이다. 더 보고 싶으면 기간을 넓혀 적용한다.
+  document.querySelector('#news-from').value = localDate(0);
+  document.querySelector('#news-to').value = localDate(0);
+  document.querySelector('#news-range-apply').addEventListener('click', loadDashboardFromApi);
   renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
   await loadDashboardFromApi();
   await renderCompany();
