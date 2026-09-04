@@ -423,13 +423,24 @@ function showLoadFailure(text){
   const sankey = document.querySelector('#headline-sankey');
   if (sankey) sankey.innerHTML = `<p class="load-failure">${escapeHtml(text)}</p>`;
 }
-// 상단바 "데이터 기준" 라벨을 최근 성공한 크롤링(=Daily 리포트) 시점으로 갱신한다.
-// 리포트가 없으면(아직 한 번도 안 돌았거나 실패) 기존 표시를 건드리지 않는다.
-function updateAsOf(report){
+// 상단바 "데이터 기준" 라벨을 실제 수집된 최신 데이터 날짜로 갱신한다.
+// 최신 뉴스(기사 발행일)와 Daily 리포트 날짜 중 더 최근을 쓴다. 데이터가 하나도
+// 없으면(아직 크롤링 전) 기존 표시를 건드리지 않는다.
+function updateAsOf(payload){
   const el = document.querySelector('.as-of');
-  const stamp = report?.report_date || (report?.generated_at ? String(report.generated_at).slice(0, 10) : '');
-  if (!el || !/^\d{4}-\d{2}-\d{2}/.test(stamp)) return;
-  el.textContent = `데이터 기준 ${stamp.slice(0, 10).replace(/-/g, '.')} · 내부 검토용`;
+  if (!el) return;
+  const dates = [];
+  for (const list of [payload?.top10, payload?.companyNews, payload?.pendingNews]) {
+    for (const item of (list || [])) {
+      const day = String(item?.published_at || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day)) dates.push(day);
+    }
+  }
+  const reportDay = payload?.report?.report_date || String(payload?.report?.generated_at || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(reportDay)) dates.push(reportDay);
+  if (!dates.length) return;
+  const latest = dates.sort().at(-1);
+  el.textContent = `데이터 기준 ${latest.replace(/-/g, '.')} · 내부 검토용`;
 }
 async function loadDashboardFromApi(){
   try {
@@ -457,8 +468,8 @@ async function loadDashboardFromApi(){
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }
     dailyReportInsight = payload.report?.insight_ko ? payload.report.insight_ko.split(/\n+/).filter(Boolean) : null;
-    // 크롤링이 문제없이 끝나 Daily 리포트가 생성됐을 때만 "데이터 기준" 날짜를 그 시점으로 갱신한다.
-    updateAsOf(payload.report);
+    // 수집된 최신 데이터 날짜로 "데이터 기준"을 갱신한다.
+    updateAsOf(payload);
     renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
   } catch {
     // 환경변수 미설정·DB 초기화 전에는 시드 화면을 유지한다.
