@@ -1012,7 +1012,9 @@ async function exportRawNews(){
     if (!result.ok) throw new Error('raw_export_failed');
     const rows = [['기사 ID','회사','기업 유형','원문 제목','한국어 제목','발행일','매체','원문 링크','한국어 요약','키워드','상태','출처 등급','Top 10','순위']];
     (payload.articles || []).forEach(article => {
-      const links = article.article_company || [{company_id:'', company:{}}];
+      // article_company가 빈 배열이면(회사 매칭 전) truthy라서 그냥 두면 forEach가 아무 일도 안 하고
+      // 그 기사가 통째로 빠진다. length로 판정해야 빈 배열도 폴백을 탄다.
+      const links = article.article_company?.length ? article.article_company : [{company_id:'', company:{}}];
       links.forEach(link => rows.push([article.id, link.company?.name_ko || link.company_id, (link.company?.type_tags || []).join(', '), article.title_original, article.title_ko, article.published_at, article.source_name, article.canonical_url, article.summary_ko, (article.keywords_ko || []).join(', '), article.verification_status, article.source_tier, article.is_top10 ? 'Y' : '', article.top10_rank || '']));
     });
     if (window.XLSX) {

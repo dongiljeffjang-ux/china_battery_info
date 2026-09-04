@@ -186,3 +186,9 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .insight-basis{font-size:12.5px}
 .chip-meta,.matrix-src,.impact-reason,.news-side time{font-size:12px}
 .compare-row{font-size:14px}
+
+/* 기업 분석 화면 목록에도 비교 화면과 같은 글머리 점을 붙여 항목 경계를 분명히 한다.
+   레이어별 시간축 셀과 연차보고서 핵심 사실 모두 한 칸에 여러 건이 쌓여 구분이 필요하다. */
+.matrix-item,.digest-line{position:relative;padding-left:11px}
+.matrix-item::before,.digest-line::before{content:"";position:absolute;left:0;top:7px;width:4px;height:4px;border-radius:50%;background:#b8c9d9}
+.matrix-item.is-supporting::before,.digest-line.is-supporting::before{background:#cbd4de}
