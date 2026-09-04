@@ -214,6 +214,7 @@ function feedbackClientKey(){
 }
 function attachFeedback(node, article){
   if (!article.id) return;
+  const toast = node.querySelector('.feedback-toast');
   node.querySelectorAll('.feedback-button').forEach(button => button.addEventListener('click', async () => {
     const vote = button.dataset.vote;
     const buttons = [...node.querySelectorAll('.feedback-button')];
@@ -225,6 +226,12 @@ function attachFeedback(node, article){
         throw new Error(`${result.status}${payload.status ? ` · ${payload.status}` : ''}`);
       }
       buttons.forEach(item => item.classList.toggle('is-selected', item.dataset.vote === vote));
+      if (toast) {
+        toast.textContent = '반영했습니다. 다음 Daily 선별에 참고합니다.';
+        toast.hidden = false;
+        clearTimeout(toast._hideTimer);
+        toast._hideTimer = setTimeout(() => { toast.hidden = true; }, 1000);
+      }
     } catch (error) { window.alert(`의견을 저장하지 못했습니다. ${error.message || '응답을 확인할 수 없습니다.'}`); }
     finally { buttons.forEach(item => { item.disabled = false; }); }
   }));
