@@ -28,8 +28,15 @@ export default async function handler(request, response) {
     toBound.setUTCDate(toBound.getUTCDate() + 1);
     const to = toBound.toISOString().slice(0, 10);
     const errors = [];
-    const [reports, top10, companyNews, pendingNews, flowEvents] = await Promise.all([
-      dashboardQuery("report", "daily_report?select=report_date,summary_ko,insight_ko,generated_at,status&status=eq.published&order=report_date.desc&limit=1", errors),
+    // ?report=YYYY-MM-DD를 주면 그날 리포트를, 없으면 가장 최근 리포트를 돌려준다.
+    // 지난 리포트는 사라지지 않고 날짜별로 쌓이므로 목록도 함께 실어 화면이 고를 수 있게 한다.
+    const reportDate = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.report || "") ? request.query.report : null;
+    const reportPath = reportDate
+      ? `daily_report?select=report_date,summary_ko,insight_ko,generated_at,status&status=eq.published&report_date=eq.${reportDate}&limit=1`
+      : "daily_report?select=report_date,summary_ko,insight_ko,generated_at,status&status=eq.published&order=report_date.desc&limit=1";
+    const [reports, reportDates, top10, companyNews, pendingNews, flowEvents] = await Promise.all([
+      dashboardQuery("report", reportPath, errors),
+      dashboardQuery("report_dates", "daily_report?select=report_date&status=eq.published&order=report_date.desc&limit=90", errors),
       dashboardQuery("top10", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,top10_rank,article_company(company_id,company(name_ko,type_tags))&is_top10=eq.true&verification_status=in.(pending_review,approved)&order=top10_rank.asc&limit=10", errors),
       dashboardQuery("company_news", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=in.(pending_review,approved)&order=published_at.desc&limit=100", errors),
       dashboardQuery("raw_pending", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.pending&order=published_at.desc&limit=100", errors),
@@ -37,7 +44,14 @@ export default async function handler(request, response) {
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
     const flows = sankeyFlowsFromArticles(flowEvents);
-    return response.status(200).json({ status: "ok", errors, range: { from, to }, report: reports[0] || null, top10, companyNews, pendingNews, flows, counts: { top10: top10.length, company_verified: companyNews.length, raw_pending: pendingNews.length } });
+    return response.status(200).json({
+      status: "ok", errors, range: { from, to },
+      report: reports[0] || null,
+      report_dates: (reportDates || []).map((row) => row.report_date),
+      requested_report: reportDate,
+      top10, companyNews, pendingNews, flows,
+      counts: { top10: top10.length, company_verified: companyNews.length, raw_pending: pendingNews.length },
+    });
   } catch (error) {
     return response.status(502).json({ status: error.code || "db_error", message: "Dashboard data could not be loaded." });
   }

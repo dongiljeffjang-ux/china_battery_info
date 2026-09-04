@@ -13,6 +13,8 @@ import { embedEvents } from "../lib/vector-ingestion.js";
 export const maxDuration = 60;
 
 const TOP10_LIMIT = 10;
+// 본문 분석 후보로 볼 기간. 수집이 최근 3일치를 훑으므로 같은 창으로 맞춘다.
+const PROCESS_WINDOW_DAYS = 3;
 const PROCESS_CONCURRENCY = 3;
 // 한 함수는 60초 안에 끝나야 한다. 본문 처리는 이 시간까지만 새 기사를 집고 나머지는 다음 호출로 넘긴다.
 const STAGE_BUDGET_MS = 42000;
@@ -63,7 +65,12 @@ async function selectHeadlineTop10() {
   // 본문을 못 가져온 기사는 다시 집어도 같은 결과다. 한 회차 본문 분석 예산이 열 건뿐이라
   // 죽은 URL이 그 자리를 계속 차지하면 새 기사가 밀린다. body_unavailable과 body_too_short는
   // URL 자체가 쓸모없다는 뜻이므로 제외하고, processing_failed는 일시적 오류일 수 있어 다시 시도한다.
-  const rows = await supabaseRest("article?select=id,title_original,source_name,source_tier,published_at,article_company(company_id)&verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)&order=published_at.desc&limit=500");
+  //
+  // 후보는 최근 며칠치로 끊는다. 예전에는 미처리 기사 전체(수년치)를 놓고 점수를 매겨,
+  // 신호 단어가 많은 옛 기사가 오늘 기사를 계속 밀어내고 재고만 쌓였다. Daily는 오늘 것을
+  // 읽는 게 목적이므로, 그 창을 벗어난 기사는 다시 집지 않고 흘려보낸다.
+  const since = new Date(Date.now() - PROCESS_WINDOW_DAYS * 86400000).toISOString();
+  const rows = await supabaseRest(`article?select=id,title_original,source_name,source_tier,published_at,article_company(company_id)&verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)&published_at=gte.${since}&order=published_at.desc&limit=500`);
   const unique = new Map();
   for (const article of rows) {
     const key = normalizeHeadline(article.title_original);

@@ -438,6 +438,29 @@ function showLoadFailure(text){
   const sankey = document.querySelector('#headline-sankey');
   if (sankey) sankey.innerHTML = `<p class="load-failure">${escapeHtml(text)}</p>`;
 }
+// 지난 Daily 리포트는 날짜별로 DB에 쌓인다. 목록을 채워 두고, 고른 날짜는 새 탭으로 연다.
+function renderReportArchive(dates, current){
+  const picker = document.querySelector('#report-date-picker');
+  if (!picker) return;
+  const list = Array.isArray(dates) ? dates : [];
+  if (!list.length) { picker.innerHTML = '<option value="">저장된 리포트 없음</option>'; picker.disabled = true; return; }
+  picker.disabled = false;
+  picker.innerHTML = list.map(date =>
+    `<option value="${escapeHtml(date)}"${date === current ? ' selected' : ''}>${escapeHtml(date)}${date === list[0] ? ' (최신)' : ''}</option>`
+  ).join('');
+}
+// ?report=YYYY-MM-DD로 열면 그날 리포트만 보여준다. 새 탭으로 띄워 여러 날짜를 나란히 볼 수 있다.
+function reportDateFromUrl(){
+  const value = new URLSearchParams(window.location.search).get('report') || '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+function enterSingleReportView(date){
+  document.body.classList.add('single-report');
+  const heading = document.querySelector('#daily-title');
+  if (heading) heading.textContent = `${date} 리포트`;
+  const sub = heading?.nextElementSibling;
+  if (sub) sub.textContent = '저장된 날짜별 Daily 리포트입니다. 이 화면은 해당 날짜의 사실과 해석만 보여줍니다.';
+}
 // 상단바 "데이터 기준" 라벨을 실제 수집된 최신 데이터 날짜로 갱신한다.
 // 최신 뉴스(기사 발행일)와 Daily 리포트 날짜 중 더 최근을 쓴다. 데이터가 하나도
 // 없으면(아직 크롤링 전) 기존 표시를 건드리지 않는다.
@@ -462,6 +485,9 @@ async function loadDashboardFromApi(){
     const from = document.querySelector('#sankey-from')?.value;
     const to = document.querySelector('#sankey-to')?.value;
     const params = new URLSearchParams(); if (from) params.set('from', from); if (to) params.set('to', to);
+    // 특정 날짜 리포트를 요청받았으면 그 날짜를 서버에 넘긴다.
+    const wantedReport = reportDateFromUrl();
+    if (wantedReport) params.set('report', wantedReport);
     params.set('_', Date.now().toString());
     const sankeyBox = document.querySelector('#headline-sankey');
     if (sankeyBox) sankeyBox.innerHTML = `<p class="load-note">${escapeHtml(from && to ? `${from} ~ ${to} 기간을 불러오는 중…` : '불러오는 중…')}</p>`;
@@ -483,6 +509,9 @@ async function loadDashboardFromApi(){
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }
     dailyReportInsight = payload.report?.insight_ko ? payload.report.insight_ko.split(/\n+/).filter(Boolean) : null;
+    renderReportArchive(payload.report_dates, payload.report?.report_date);
+    // 특정 날짜를 요청했는데 그날 리포트가 없으면 이전 화면 내용이 남지 않게 비운다.
+    if (payload.requested_report && !payload.report) { dailyReportFacts = []; dailyReportInsight = null; }
     // 수집된 최신 데이터 날짜로 "데이터 기준"을 갱신한다.
     updateAsOf(payload);
     renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
@@ -1295,6 +1324,15 @@ async function initialize(){
     });
   });
   document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
+  // 고른 날짜 리포트를 새 탭으로 연다. 여러 날짜를 나란히 놓고 비교할 수 있다.
+  document.querySelector('#report-open-button')?.addEventListener('click', () => {
+    const date = document.querySelector('#report-date-picker')?.value;
+    if (!date) { window.alert('열 수 있는 리포트 날짜가 없습니다.'); return; }
+    window.open(`${window.location.pathname}?report=${encodeURIComponent(date)}`, '_blank', 'noopener');
+  });
+  // ?report=로 들어온 경우 그날 리포트만 보는 화면으로 전환한다.
+  const singleReport = reportDateFromUrl();
+  if (singleReport) enterSingleReportView(singleReport);
   // toISOString은 UTC 날짜를 준다. 한국은 UTC+9라 오전에는 하루 뒤처진 날짜가 잡혀
   // 오늘 기사가 기간에서 빠진다. 현지 날짜 구성요소로 직접 만든다.
   const localDate = (offsetDays) => {
