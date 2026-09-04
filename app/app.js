@@ -596,11 +596,10 @@ function renderCompanyPicker(){
     `<button class="segment ${key === currentChain ? 'is-selected' : ''}" type="button" data-chain="${key}">${label}<span class="segment-count">${companiesInValueChain(key).length}</span></button>`).join('');
   chips.innerHTML = companiesInValueChain(currentChain).map(company => {
     const mark = (company.name_zh || company.name_en || '?').slice(0, 1);
-    // 목록을 표처럼 읽는다. 중국어명과 종목코드를 함께 보여 어느 법인인지 바로 확인되게 한다.
-    const meta = [company.name_zh, company.ticker || '비상장', company.group ? `계열사 ${company.group.members_ko.length}` : ''].filter(Boolean).join(' · ');
-    const rank = company.priority ? `SNE ${company.priority}위` : '순위 미확인';
+    // 칸이 좁으므로 종목코드와 순위만 한 줄로 담고, 중국어·영어 법인명은 툴팁으로 넘긴다.
+    const meta = [company.ticker || '비상장', company.priority ? `SNE ${company.priority}위` : '순위 미확인'].join(' · ');
     const full = [company.name_zh, company.name_en].filter(Boolean).join(' · ');
-    return `<button class="company-chip ${company.value_chain} ${company.id === currentCompany ? 'is-selected' : ''}" type="button" data-company="${escapeHtml(company.id)}" title="${escapeHtml(full)}"><span class="chip-mark">${escapeHtml(mark)}</span><span class="chip-body"><span class="chip-name">${escapeHtml(company.name_ko)}</span><span class="chip-meta">${escapeHtml(meta)}</span></span><span class="chip-rank">${escapeHtml(rank)}</span></button>`;
+    return `<button class="company-chip ${company.value_chain} ${company.id === currentCompany ? 'is-selected' : ''}" type="button" data-company="${escapeHtml(company.id)}" title="${escapeHtml(full)}"><span class="chip-mark">${escapeHtml(mark)}</span><span class="chip-body"><span class="chip-name">${escapeHtml(company.name_ko)}</span><span class="chip-meta">${escapeHtml(meta)}</span></span></button>`;
   }).join('');
   tabs.querySelectorAll('[data-chain]').forEach(button => button.addEventListener('click', () => {
     currentChain = button.dataset.chain;
@@ -909,7 +908,8 @@ function renderLayerMatrix(timeline){
   };
   const head = MATRIX_GROUPS.map(group => `<th class="matrix-head ${group.track}">${group.label}</th>`);
   const body = periods.map(period => {
-    const cells = MATRIX_GROUPS.map(group => `<td class="matrix-cell">${cell(group, period)}</td>`);
+    // 셀에도 축 클래스를 달아 시장·기술 절반이 배경색으로 갈리게 한다.
+    const cells = MATRIX_GROUPS.map(group => `<td class="matrix-cell ${group.track}">${cell(group, period)}</td>`);
     return `<tr>${cells[0]}${cells[1]}<th class="matrix-period">${period}</th>${cells[2]}${cells[3]}</tr>`;
   }).join('');
   target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 자세한 사실과 원래 레이어는 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
@@ -1240,7 +1240,8 @@ async function renderComparison(){
       return `<div class="cmp-item${supporting}" data-tip="${escapeHtml(eventTip(event))}">${both}<span class="cmp-title">${escapeHtml(stripCompanySubject(event.title, companyId))}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('') + (rest > 0 ? `<div class="cmp-more">+${rest}건 (Excel 내보내기에서 전체 확인)</div>` : '');
   };
-  const eventCell = (events, date, track, side, companyId) => { const html = eventsAt(events, date, track, companyId); return `<div class="cmp-cell ${track}" style="min-height:54px;padding:8px 10px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:12px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
+  // 배경·테두리는 CSS가 축(track)과 내용 유무(has-items)로 정한다. 여기서는 정렬만 정한다.
+  const eventCell = (events, date, track, side, companyId) => { const html = eventsAt(events, date, track, companyId); return `<div class="cmp-cell ${track}${html ? ' has-items' : ''}" style="text-align:${side}">${html || `<span class="cmp-empty" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };
   // 두 회사의 근거 두께가 다르면 얇은 쪽이 조용해 보일 뿐 실제로 조용한 게 아니다. 머리에 적어 둔다.
   const coverageOf = events => {
     const reports = new Set(events.filter(e => e.kind === 'annual_report' || e.kind === 'periodic_report' || e.kind === 'disclosure').map(e => e.sourceUrl || e.sourceName));

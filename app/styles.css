@@ -44,7 +44,11 @@ h3{font-size:16px;font-weight:700;letter-spacing:-.2px}
 .nav-link.is-active{color:var(--ink);font-weight:700;border-color:var(--blue)}
 /* 패널 — 테두리 없는 흰 바탕, 아래 구분선. 카드가 아니라 지면처럼 보이게 한다 */
 .daily-summary,.news-section,.snapshot-section,.dual-track-section,.company-picker-panel,.compare-card{
-  background:var(--card);border:0;border-bottom:1px solid var(--line);border-radius:0;padding:32px 0}
+  background:var(--card);border:1px solid var(--line);border-radius:8px;padding:26px;margin-bottom:20px}
+/* 흰 지면이 끝없이 이어지면 어디서 섹션이 갈리는지 알 수 없다. 성격에 따라 표면을 달리한다. */
+.news-section{background:#F8F9FB}
+.company-picker-panel{background:var(--band)}
+.section-heading{border-bottom:1px solid var(--line);padding-bottom:14px}
 .ask-panel{background:var(--pale);border:0;border-left:2px solid var(--blue);border-radius:8px;padding:24px 26px}
 .daily-insight{background:var(--pale);border:0;border-left:2px solid var(--blue);border-radius:8px}
 .insight-head .eyebrow,.summary-cat.insight,.insight-seg{color:var(--blue)}
@@ -77,10 +81,24 @@ h3{font-size:16px;font-weight:700;letter-spacing:-.2px}
 /* 표 — 가로선만 남긴다 */
 .matrix-table th,.matrix-table td{border-bottom:1px solid var(--line)}
 .matrix-head{border-bottom:1px solid var(--ink)!important;color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
-.matrix-track{border-radius:0;background:transparent;font-size:11px;letter-spacing:.05em}
-.matrix-track.market{color:var(--blue)}
-.matrix-track.tech{color:var(--tech)}
-.matrix-period{background:var(--band);color:var(--ink)}
+/* 시장·기술 축은 양쪽 모두 색을 갖는다. 한쪽만 칠하면 좌우가 비대칭으로 읽힌다. */
+.matrix-track{border-radius:6px 6px 0 0;font-size:11px;letter-spacing:.05em;font-weight:700}
+.matrix-track.market{background:#E7F0FE;color:var(--blue)}
+.matrix-track.tech{background:#FBF0DB;color:var(--tech)}
+.matrix-head.market{color:var(--blue);border-bottom:2px solid var(--blue)!important}
+.matrix-head.tech{color:var(--tech);border-bottom:2px solid var(--tech)!important}
+.matrix-cell.market{background:#FAFCFF}
+.matrix-cell.tech{background:#FEFCF7}
+.matrix-period,.matrix-period-head{background:var(--band);color:var(--ink)}
+/* 비교 화면도 같은 축 색을 쓴다 */
+.cmp-tracklabel{display:inline-block;padding:3px 10px;border-radius:100px}
+.cmp-tracklabel.market{background:#E7F0FE;color:var(--blue)}
+.cmp-tracklabel.tech{background:#FBF0DB;color:var(--tech)}
+.cmp-cell{min-height:54px;padding:8px 10px;border-radius:6px;font-size:12px;border:1px solid transparent}
+.cmp-cell.has-items{border-color:var(--line)}
+.cmp-cell.market.has-items{background:#FAFCFF}
+.cmp-cell.tech.has-items{background:#FEFCF7}
+.cmp-empty{color:var(--faint)}
 .matrix-src,.news-footer a,.ask-sources a{color:var(--blue)}
 /* 뉴스 항목 — 카드 테두리를 빼고 구분선으로 */
 .news-card{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:20px 0}
@@ -93,16 +111,15 @@ h3{font-size:16px;font-weight:700;letter-spacing:-.2px}
 .digest-col.tech h4{color:var(--tech)}
 .digest-col+.digest-col{border-left:1px solid var(--line)}
 .digest-year>summary{border-bottom:1px solid var(--line)}
-/* 회사 목록 — 칩 그리드에서 표에 가까운 목록으로 */
-.company-chips{grid-template-columns:1fr;gap:0}
-.company-chip{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:12px 10px 12px 13px;background:#fff;box-shadow:none}
-.company-chip:hover{background:var(--band)}
-.company-chip.is-selected{background:#fff;border-left:3px solid var(--blue);padding-left:10px}
-.chip-mark{display:none}
-.chip-name{font-size:15px}
-.chip-meta{font-size:12px;color:var(--muted)}
-.chip-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--faint)}
-.chip-rank{margin-left:auto;font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+/* 회사 목록 — 세로로 늘어지지 않게 격자를 유지한다. 마크는 중문 법인명 첫 글자다. */
+.company-chips{grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:8px}
+.company-chip{border:1px solid var(--line);border-radius:4px;padding:10px 12px;background:#fff;gap:10px}
+.company-chip:hover{background:var(--band);border-color:var(--ink)}
+.company-chip.is-selected{background:#fff;border-color:var(--blue)}
+.chip-mark{flex:0 0 30px;width:30px;height:30px;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink);font-size:13px;font-weight:700}
+.company-chip.is-selected .chip-mark{background:var(--blue);border-color:var(--blue);color:#fff}
+.chip-name{font-size:14px}
+.chip-meta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 /* 입력 */
 select,input[type=date],input[type=text],.ask-form input{border:1px solid var(--line);border-radius:4px}
 select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue)}
