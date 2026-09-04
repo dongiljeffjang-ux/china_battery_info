@@ -1116,7 +1116,9 @@ async function renderComparison(){
     return shown.map(event => {
       const metrics = keyMetrics(event);
       const both = event.both ? '<span class="cmp-both">시장·기술</span>' : '';
-      return `<div class="cmp-item" data-tip="${escapeHtml(eventTip(event))}">${both}<span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+      // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다. 레이어 시간축과 같은 규칙이다.
+      const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
+      return `<div class="cmp-item${supporting}" data-tip="${escapeHtml(eventTip(event))}">${both}<span class="cmp-title">${escapeHtml(event.title)}</span>${metrics ? `<span class="cmp-metric">${escapeHtml(metrics)}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('') + (rest > 0 ? `<div class="cmp-more">+${rest}건 (Excel 내보내기에서 전체 확인)</div>` : '');
   };
   const eventCell = (events, date, track, side) => { const html = eventsAt(events, date, track); return `<div class="cmp-cell ${track}" style="min-height:54px;padding:8px 10px;background:${html ? '#ffffff' : 'transparent'};border:${html ? '1px solid #dbe3ec' : '0'};border-radius:8px;text-align:${side};font-size:12px">${html || `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`}</div>`; };

@@ -16,6 +16,8 @@ const TOP10_LIMIT = 10;
 const PROCESS_CONCURRENCY = 3;
 // 한 함수는 60초 안에 끝나야 한다. 본문 처리는 이 시간까지만 새 기사를 집고 나머지는 다음 호출로 넘긴다.
 const STAGE_BUDGET_MS = 42000;
+// 다음 단계 호출을 넘기고 기다리는 최대 시간. 요청이 나갔는지만 확인하면 되므로 짧게 둔다.
+const CHAIN_HANDOFF_MS = 1500;
 // 본문 처리 호출을 최대 몇 번 이어 붙일지. 하루치 헤드라인 10건이면 두어 번이면 끝난다.
 const MAX_PROCESS_HOPS = 4;
 // 유지 단계(보고서 읽기·시점 재확인·임베딩) 호출을 한 번의 실행에서 최대 몇 번 이어 붙일지.
@@ -155,14 +157,25 @@ async function chainStage(request, stage, hop = 1, { curate = wantsCurate(reques
     return;
   }
   const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}`;
-  // 다음 단계는 202를 곧바로 돌려주고 자기 waitUntil에서 일하므로 여기서 기다리는 비용은 수십 ms다.
-  // waitUntil로 넘기면 크론처럼 응답을 기다리는 쪽이 없는 실행에서 fetch가 나가기 전에 함수가 끝날 수 있어
-  // 응답 전에 호출이 나간 것을 확실히 한다.
+  // 호출이 "나갔다"는 것만 보장하고 응답은 기다리지 않는다.
+  //   - waitUntil로만 넘기면 크론처럼 응답을 기다리는 쪽이 없는 실행에서 fetch가 나가기도 전에 함수가 끝난다.
+  //   - 그렇다고 응답을 끝까지 await하면 앞 단계가 뒷 단계 작업을 기다리며 직렬로 늘어붙어
+  //     한 요청이 60초 제한을 넘겨 펜딩된다.
+  // 그래서 짧은 타임아웃을 걸고, 타임아웃(=이미 전송됨)은 성공으로 본다.
   try {
-    const upstream = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${secret}` } });
+    const upstream = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}` },
+      signal: AbortSignal.timeout(CHAIN_HANDOFF_MS),
+    });
     console.info("[STAGE_CHAINED]", JSON.stringify({ stage, hop, status: upstream.status }));
   } catch (error) {
-    console.error("[STAGE_CHAIN_FAILED]", JSON.stringify({ stage, hop, message: error.message }));
+    // TimeoutError는 요청이 이미 전송된 뒤 응답만 못 기다린 것이므로 실패가 아니다.
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      console.info("[STAGE_CHAINED]", JSON.stringify({ stage, hop, status: "handoff" }));
+    } else {
+      console.error("[STAGE_CHAIN_FAILED]", JSON.stringify({ stage, hop, message: error.message }));
+    }
   }
 }
 
