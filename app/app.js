@@ -423,6 +423,14 @@ function showLoadFailure(text){
   const sankey = document.querySelector('#headline-sankey');
   if (sankey) sankey.innerHTML = `<p class="load-failure">${escapeHtml(text)}</p>`;
 }
+// 상단바 "데이터 기준" 라벨을 최근 성공한 크롤링(=Daily 리포트) 시점으로 갱신한다.
+// 리포트가 없으면(아직 한 번도 안 돌았거나 실패) 기존 표시를 건드리지 않는다.
+function updateAsOf(report){
+  const el = document.querySelector('.as-of');
+  const stamp = report?.report_date || (report?.generated_at ? String(report.generated_at).slice(0, 10) : '');
+  if (!el || !/^\d{4}-\d{2}-\d{2}/.test(stamp)) return;
+  el.textContent = `데이터 기준 ${stamp.slice(0, 10).replace(/-/g, '.')} · 내부 검토용`;
+}
 async function loadDashboardFromApi(){
   try {
     const from = document.querySelector('#sankey-from')?.value;
@@ -449,6 +457,8 @@ async function loadDashboardFromApi(){
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }
     dailyReportInsight = payload.report?.insight_ko ? payload.report.insight_ko.split(/\n+/).filter(Boolean) : null;
+    // 크롤링이 문제없이 끝나 Daily 리포트가 생성됐을 때만 "데이터 기준" 날짜를 그 시점으로 갱신한다.
+    updateAsOf(payload.report);
     renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
   } catch {
     // 환경변수 미설정·DB 초기화 전에는 시드 화면을 유지한다.

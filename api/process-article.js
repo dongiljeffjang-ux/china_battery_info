@@ -6,12 +6,19 @@ import { COMPANIES } from "../lib/china-sources.js";
 import { groupSummary, matchGroupEntities } from "../lib/company-groups.js";
 import { embedVerifiedArticle, embedEvents } from "../lib/vector-ingestion.js";
 import { LAYER_ENUM, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
+import { sameFact } from "../lib/curation.js";
 
 const MAX_BODY_CHARS = 30000;
 
 function isAuthorized(request) {
   const secret = process.env.CRON_SECRET;
   return Boolean(secret && request.headers.authorization === `Bearer ${secret}`);
+}
+
+function addDays(dateStr, days) {
+  const date = new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function htmlToText(html) {
@@ -167,6 +174,14 @@ export async function processPendingArticle(articleId, companyId) {
     const entityNames = matchGroupEntities(companyId, [
       article.title_original, result.event_title_ko, result.event_fact_ko, factCheck.original_excerpt
     ].filter(Boolean).join(" "));
+    const candidate = { occurred_at: result.occurred_at, title_ko: result.event_title_ko, fact_ko: result.event_fact_ko };
+    // 여러 매체가 같은 사건을 보도하면 거의 같은 이벤트가 겹쳐 쌓인다. 같은 회사에서 인접 시점의
+    // 기존 이벤트와 같은 사실이면 새로 넣지 않는다(매체만 다른 중복 방지).
+    const nearby = await supabaseRest(`event?select=occurred_at,title_ko,fact_ko&company_id=eq.${encodeURIComponent(companyId)}&occurred_at=gte.${addDays(result.occurred_at, -3)}&occurred_at=lte.${addDays(result.occurred_at, 3)}`);
+    if ((nearby || []).some((prev) => sameFact(prev, candidate))) {
+      console.info("[EVENT_DUP_SKIPPED]", JSON.stringify({ articleId, companyId, title: result.event_title_ko }));
+      return { status: "pending_review", analysis: result, fact_check: factCheck, embedding, duplicate: true, primary_provider: primaryProvider, verifier_provider: verifierProvider };
+    }
     // 이벤트는 만들어지는 즉시 벡터 검색 대상이 돼야 한다. 크론이나 버튼을 기다리게 하지 않는다.
     // 임베딩 실패는 이벤트 적재를 되돌리지 않는다. 남은 것은 임베딩 크론이 채운다.
     const storedEvents = await supabaseRest("event", { method: "POST", prefer: "return=representation", body: {
