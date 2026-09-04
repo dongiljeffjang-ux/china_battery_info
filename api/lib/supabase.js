@@ -26,8 +26,12 @@ export async function supabaseRest(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   if (!result.ok) {
-    const error = new Error(`Supabase request failed: ${result.status}`);
+    // PostgREST는 실패 이유를 본문에 담아 준다(스키마 캐시에 테이블 없음, 제약 위반 등).
+    // 상태 코드만 남기면 "failed: 404"만 보여 어디가 막혔는지 찾을 수 없다.
+    const detail = await result.text().catch(() => "");
+    const error = new Error(`Supabase request failed: ${result.status}${detail ? ` ${detail.slice(0, 300)}` : ""}`);
     error.code = "DB_REQUEST_FAILED";
+    error.status = result.status;
     throw error;
   }
   const contentType = result.headers.get("content-type") || "";
