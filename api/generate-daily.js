@@ -106,12 +106,20 @@ export async function generateDailyReport(articleIds = []) {
   // 다만 이번 회차에 막 처리한 기사는 발행일과 무관하게 합쳐, 방금 읽은 것이 빠지지 않게 한다.
   const reportDate = koreaDate();
   const { start, end } = koreaDayBounds(reportDate);
-  const recent = await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&published_at=gte.${start}&published_at=lt.${end}&order=published_at.desc&limit=80`);
+  const fetchWindow = (from) => supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&published_at=gte.${from}&published_at=lt.${end}&order=published_at.desc&limit=80`);
+  let recent = await fetchWindow(start);
+  // 그날 기사가 하나도 없으면 리포트가 통째로 빠진다. 그때만 전날까지 넓혀 한 건이라도 싣는다.
+  let windowDays = 1;
+  if (!recent.length) {
+    recent = await fetchWindow(new Date(new Date(start).getTime() - 86400000).toISOString());
+    windowDays = 2;
+  }
   const justProcessed = articleIds.length
     ? await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&id=in.(${articleIds.join(",")})`)
     : [];
   const candidates = [...new Map([...justProcessed, ...recent].map((article) => [article.id, article])).values()];
   if (!candidates.length) return { status: "no_reviewed_articles" };
+  if (windowDays > 1) console.info("[DAILY_WINDOW_WIDENED]", JSON.stringify({ reportDate, candidates: candidates.length }));
   let preferenceExamples = [];
   try {
     const feedbackRows = await supabaseRest("article_feedback?select=vote,article(title_ko,summary_ko,keywords_ko)&order=updated_at.desc&limit=100");
@@ -154,7 +162,7 @@ export async function generateDailyReport(articleIds = []) {
   } catch (error) {
     console.error("[DAILY_EMBEDDING_FAILED]", JSON.stringify({ reportDate, message: error.message }));
   }
-  return { status: "published", report_date: reportDate, top10_count: selected.length, insight: Boolean(insightKo), embedded, selection: selected };
+  return { status: "published", report_date: reportDate, window_days: windowDays, top10_count: selected.length, insight: Boolean(insightKo), embedded, selection: selected };
 }
 
 export default async function handler(request, response) {
