@@ -7,7 +7,7 @@ import { waitUntil } from "@vercel/functions";
 import { runCurationHop } from "../lib/curation.js";
 import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats } from "../lib/china-sources.js";
 import { logPipeline } from "../lib/pipeline-log.js";
-import { llmConfig } from "../lib/llm-provider.js";
+import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
 
@@ -347,6 +347,25 @@ async function handleRequest(request, response) {
   if (request.method !== "GET" && request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
   if (!isCronRequest(request) && !requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
+  // Explicit, authenticated diagnostic. GET never starts a paid request.
+  if (request.query?.deepseek_sample === '1') {
+    if (request.method === 'GET') {
+      response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      response.setHeader('Cache-Control', 'no-store');
+      return response.status(200).send('<!doctype html><html lang="ko"><meta charset="utf-8"><title>DeepSeek 샘플</title><h1>CATL 검색 샘플 1회</h1><p>최근 30일, 최대 2건. 전체 수집·기사 저장·Daily 생성은 실행하지 않습니다. API 비용이 발생하며 검색 도구 호출 수는 공급자가 결정합니다.</p><form method="post"><button onclick="this.disabled=true;this.form.submit()">샘플 검색 1회 실행</button></form></html>');
+    }
+    try {
+      const result = await createJsonResponse({
+        provider: 'deepseek', webSearch: true, name: 'deepseek_catl_sample',
+        instructions: '웹 검색으로 CATL(宁德时代, 한국어 닝더스다이)의 최근 30일 주요 사업 뉴스를 찾아라. 검색은 한 번만 하고 즉시 종료하라. 최대 2건이며 없으면 빈 배열. 출처 URL을 반드시 포함하고 없는 사실은 만들지 마라.',
+        input: `기준일 ${new Date().toISOString().slice(0, 10)}. 회사는 CATL 하나만.`,
+        schema: { type: 'object', additionalProperties: false, required: ['articles'], properties: { articles: { type: 'array', maxItems: 2, items: { type: 'object', additionalProperties: false, required: ['title', 'url', 'summary'], properties: { title: { type: 'string' }, url: { type: 'string' }, summary: { type: 'string' } } } } } }
+      });
+      return response.status(200).json({ status: 'sample_complete', ...result });
+    } catch (error) {
+      return response.status(502).json({ status: 'sample_failed', message: error.message, note: '응답을 수신했다면 pipeline_log의 search_response_raw 기록을 확인하세요. 자동 재시도 없음.' });
+    }
+  }
   // 정기보고서 원문을 읽어 시계열을 채운다. kind는 annual(과거)·semiannual·quarterly(현행).
   const digestCompanyId = String(request.query?.digest || request.body?.digest || "").trim();
   if (digestCompanyId) {
