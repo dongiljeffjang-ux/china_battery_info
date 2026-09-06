@@ -1,5 +1,5 @@
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
-import { requireAccess } from "./lib/access.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
+import { requireAccess } from "../lib/access.js";
 import { sankeyFlowsFromArticles } from "../lib/sankey-normalization.js";
 
 // 조회 하나가 실패해도 나머지는 보여주되, 무엇이 왜 실패했는지는 응답에 실어 화면이 알게 한다.

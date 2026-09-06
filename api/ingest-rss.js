@@ -1,6 +1,6 @@
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { flushTraces } from "../lib/tracing.js";
-import { requireAccess } from "./lib/access.js";
+import { requireAccess } from "../lib/access.js";
 import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { waitUntil } from "@vercel/functions";

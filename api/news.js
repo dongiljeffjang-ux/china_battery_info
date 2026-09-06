@@ -1,6 +1,6 @@
-import { requireAccess } from "./lib/access.js";
+import { requireAccess } from "../lib/access.js";
 import { companiesFor, discoverChinaSources } from "../lib/china-sources.js";
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 
 export default async function handler(request, response) {
   if (!requireAccess(request, response)) return;

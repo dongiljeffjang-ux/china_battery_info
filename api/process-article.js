@@ -1,6 +1,6 @@
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { flushTraces } from "../lib/tracing.js";
-import { resolveGoogleNewsUrl } from "./lib/google-news.js";
+import { resolveGoogleNewsUrl } from "../lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { COMPANIES } from "../lib/china-sources.js";
 import { groupSummary, matchGroupEntities } from "../lib/company-groups.js";

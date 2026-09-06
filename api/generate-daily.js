@@ -1,4 +1,4 @@
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { flushTraces } from "../lib/tracing.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { embedDailyReport } from "../lib/vector-ingestion.js";

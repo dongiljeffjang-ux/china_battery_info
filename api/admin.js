@@ -3,8 +3,8 @@
 // 화면에 보이지 않는 중간 산출물을 그대로 보여 준다: 어느 검색 경로가 무엇을 찾았는지,
 // 본문 처리가 왜 실패했는지, 기사 하나가 몇 개 청크로 어떻게 잘렸는지, 임베딩이 붙었는지,
 // 벡터 검색이 어떤 질문에 무엇을 돌려주는지. 읽기 전용이며 입장 세션으로만 연다.
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
-import { requireAccess } from "./lib/access.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
+import { requireAccess } from "../lib/access.js";
 import { searchKnowledge } from "../lib/knowledge-search.js";
 import { chunkArticleBody } from "../lib/vector-ingestion.js";
 

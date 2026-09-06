@@ -1,6 +1,6 @@
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { flushTraces } from "../lib/tracing.js";
-import { requireAccess } from "./lib/access.js";
+import { requireAccess } from "../lib/access.js";
 import { COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
 import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";

@@ -1,5 +1,5 @@
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
-import { requireAccess } from "./lib/access.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
+import { requireAccess } from "../lib/access.js";
 
 export default async function handler(request, response) {
   if (request.method !== "GET") return response.status(405).json({ status: "method_not_allowed" });

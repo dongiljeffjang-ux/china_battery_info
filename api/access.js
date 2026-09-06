@@ -1,4 +1,4 @@
-import { isAccessAllowed, issueAccessCookie, validateAccessKey } from "./lib/access.js";
+import { isAccessAllowed, issueAccessCookie, validateAccessKey } from "../lib/access.js";
 
 export default async function handler(request, response) {
   if (request.method === "GET") return response.status(isAccessAllowed(request) ? 200 : 401).json({ status: isAccessAllowed(request) ? "authorized" : "access_required" });

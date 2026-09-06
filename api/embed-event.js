@@ -1,5 +1,5 @@
-import { hasDatabaseConfig, supabaseRest } from "./lib/supabase.js";
-import { requireAccess } from "./lib/access.js";
+import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
+import { requireAccess } from "../lib/access.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
 
 // 한 번에 임베딩할 이벤트 수. 60초 함수 안에서 조회·임베딩·적재가 끝나야 한다.
