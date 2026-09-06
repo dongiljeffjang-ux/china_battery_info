@@ -175,7 +175,9 @@ export async function processPendingArticle(articleId, companyId) {
   try {
     embedding = await embedVerifiedArticle({
       article, companyId, bodyText, titleKo: factCheck.title_ko, summaryKo: factCheck.summary_ko,
-      sourceUrl: resolvedUrl, sourceName: article.source_name, publishedAt: article.published_at
+      sourceUrl: resolvedUrl, sourceName: article.source_name, publishedAt: article.published_at,
+      // 거래소 공시는 공개 자료라 원문을 남기고, 언론 기사는 한국어 요약만 남긴다.
+      keepOriginal: isDisclosure,
     });
   } catch (error) {
     console.error("[ARTICLE_EMBEDDING_FAILED]", JSON.stringify({ articleId, message: error.message }));
