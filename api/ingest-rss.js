@@ -426,6 +426,7 @@ async function handleRequest(request, response) {
     await logPipeline("collect", {
       trigger: isCronRequest(request) ? "cron" : "manual",
       raw: discovery.raw || {}, failed: discovery.failed || [], unique: candidates.length, by_via: discovery.by_via || {},
+      web_search: discovery.web_search || [],
       matched: matchedCandidates.length, unmatched: candidates.length - matchedCandidates.length,
       new_articles: storedArticles.length, existing: existingUrls.length,
       new_by_via: storedArticles.reduce((acc, row) => ({ ...acc, [row.discovered_via || "other"]: (acc[row.discovered_via || "other"] || 0) + 1 }), {}),
