@@ -301,28 +301,43 @@ function renderCandidateQueue(){
 }
 function renderHeadlineSankey(){
   const counts = new Map();
+  // 검증 기사와 미검증 헤드라인을 따로 센다. 툴팁이 둘을 나눠 보여야 얼마나 믿을지 읽는 사람이 정할 수 있다.
+  const grades = new Map();
   // 왜 그 방향인지는 서버가 신호마다 판단해 내려준다. 화면은 그 근거를 모아 툴팁으로 보여준다.
   const reasons = new Map();
-  rangeFlows.forEach(({company_id, keyword, direction, reason, title}) => {
-    const normalizedKeyword = normalizeSankeyKeyword(keyword);
-    if (!normalizedKeyword || !['positive', 'negative'].includes(direction)) return;
-    const key = `${company_id}\u0000${direction}\u0000${normalizedKeyword}`;
+  const includeHeadlines = document.querySelector('#sankey-include-headlines')?.checked !== false;
+  let headlineArticles = 0;
+  // 오른쪽 노드 라벨(keyword)은 서버가 테마 10개로 접어 내려준다. 화면에서 다시 다듬지 않는다.
+  rangeFlows.forEach(({company_id, keyword, direction, reason, title, grade, matched}) => {
+    if (!keyword || !['positive', 'negative'].includes(direction)) return;
+    const isHeadline = grade === 'headline';
+    if (isHeadline && !includeHeadlines) return;
+    if (isHeadline) headlineArticles += 1;
+    const key = `${company_id}\u0000${direction}\u0000${keyword}`;
     counts.set(key, (counts.get(key) || 0) + 1);
+    const gradeCount = grades.get(key) || { verified: 0, headline: 0 };
+    gradeCount[isHeadline ? 'headline' : 'verified'] += 1;
+    grades.set(key, gradeCount);
     if (reason || title) {
       // 제목과 근거 문장을 줄을 나눠 담는다. 도착지 라벨만 되풀이하면 툴팁이 쓸모없다.
+      // 헤드라인은 근거가 제목뿐이라 그렇게 표시하고, 어떤 표현이 신호로 잡혔는지만 덧붙인다.
       const bucket = reasons.get(key) || [];
-      const line = [title ? `· ${title}` : '', reason ? `  ${reason}` : ''].filter(Boolean).join('\n');
+      const line = isHeadline
+        ? [`· [헤드라인] ${title}`, matched ? `  잡힌 표현: ${matched}` : ''].filter(Boolean).join('\n')
+        : [title ? `· ${title}` : '', reason ? `  ${reason}` : ''].filter(Boolean).join('\n');
       if (bucket.length < 3 && !bucket.includes(line)) bucket.push(line);
       reasons.set(key, bucket);
     }
   });
   const flows = [...counts.entries()].map(([key, count]) => {
     const [company, direction, keyword] = key.split('\u0000');
-    return { company, direction, keyword, count, reasons: reasons.get(key) || [] };
+    return { company, direction, keyword, count, grades: grades.get(key) || { verified: count, headline: 0 }, reasons: reasons.get(key) || [] };
   });
   const target = document.querySelector('#headline-sankey');
   if (!flows.length) {
-    target.innerHTML = '<p>선택 기간에 확대·축소 헤드라인 신호로 분류된 비-Top 10 기사가 없습니다.</p>';
+    target.innerHTML = includeHeadlines
+      ? '<p>선택 기간에 확대·축소 신호로 분류된 비-Top 10 기사가 없습니다.</p>'
+      : '<p>선택 기간에 본문 검증을 통과한 비-Top 10 기사 중 확대·축소 신호가 없습니다. "미검증 헤드라인 포함"을 켜면 표본이 넓어집니다.</p>';
     return;
   }
   const totals = new Map();
@@ -354,7 +369,8 @@ function renderHeadlineSankey(){
     const node = selectedNodes.find(item => item.direction === flow.direction && item.keyword === flow.keyword);
     const ky = nodeY(node) + 12;
     const color = flow.direction === 'positive' ? '#398261' : '#bc5b5b';
-    const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${flow.reasons.length ? `\n\n${flow.reasons.join('\n\n')}` : ''}`;
+    const breakdown = flow.grades.headline ? ` (검증 ${flow.grades.verified} · 헤드라인 ${flow.grades.headline})` : '';
+    const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${breakdown}${flow.reasons.length ? `\n\n${flow.reasons.join('\n\n')}` : ''}`;
     return `<path d="${curve(268, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58" data-tip="${escapeHtml(tip)}"/>`;
   }).join('');
   // 밸류체인 구분과 회사명을 아예 다른 상자로 나눈다. 구분은 좁은 색 상자, 회사명은 그 옆 상자다.
@@ -370,33 +386,22 @@ function renderHeadlineSankey(){
       + `</g>`;
   }).join('');
   const nodeReasons = node => {
-    const lines = visible.filter(flow => flow.direction === node.direction && flow.keyword === node.keyword).flatMap(flow => flow.reasons);
+    const nodeFlows = visible.filter(flow => flow.direction === node.direction && flow.keyword === node.keyword);
+    const lines = nodeFlows.flatMap(flow => flow.reasons);
     const unique = [...new Set(lines)].slice(0, 4);
-    const head = `${node.keyword} · ${node.direction === 'positive' ? '확대' : '축소'} 신호 ${node.count}건`;
+    const headlineCount = nodeFlows.reduce((sum, flow) => sum + flow.grades.headline, 0);
+    const breakdown = headlineCount ? ` (검증 ${node.count - headlineCount} · 헤드라인 ${headlineCount})` : '';
+    const head = `${node.keyword} · ${node.direction === 'positive' ? '확대' : '축소'} 신호 ${node.count}건${breakdown}`;
     return unique.length
       ? `${head}\n\n${unique.join('\n\n')}`
       : `${head}\n\n근거로 쓸 기사 요약이 없습니다. 수집·분석을 다시 실행하면 채워집니다.`;
   };
   const signalNodes = selectedNodes.map(node => `<g data-tip="${escapeHtml(nodeReasons(node))}"><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${escapeHtml(node.keyword)} · ${node.count}건</text></g>`).join('');
-  const notice = hiddenCount
-    ? `<p class="sankey-notice">신호가 잡힌 ${allCompanies.length}개사 중 <strong>출하 순위 상위 ${sourceNames.length}개사</strong>만 표시합니다. 나머지 ${hiddenCount}개사는 기간을 좁히면 보입니다.</p>`
-    : '';
+  const noticeParts = [];
+  if (hiddenCount) noticeParts.push(`신호가 잡힌 ${allCompanies.length}개사 중 <strong>출하 순위 상위 ${sourceNames.length}개사</strong>만 표시합니다. 나머지 ${hiddenCount}개사는 기간을 좁히면 보입니다.`);
+  if (headlineArticles) noticeParts.push(`미검증 헤드라인 신호 <strong>${headlineArticles}건</strong>이 포함돼 있습니다. 제목만으로 분류한 것이라 툴팁에서 검증 건수와 나눠 표시합니다.`);
+  const notice = noticeParts.length ? `<p class="sankey-notice">${noticeParts.join('<br>')}</p>` : '';
   target.innerHTML = `${notice}<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${companyNodes}${signalNodes}</svg>`;
-}
-function normalizeSankeyKeyword(value){
-  const keyword = String(value || '').replace(/[·•]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!keyword) return null;
-  const companyOnly = /^(?:catl|byd|lg\s*energy\s*solution|lges|gotion|high-tech|calb|eve|(?:닝더)?시대|비야디|국헌|중촹신항|억웨이|고션)(?:[·,、\s/-]+(?:catl|byd|lg\s*energy\s*solution|lges|gotion|high-tech|calb|eve|(?:닝더)?시대|비야디|국헌|중촹신항|억웨이|고션))*$/i;
-  if (companyOnly.test(keyword)) return null;
-  const compact = keyword.replace(/[\s·,，·-]/g, '').toLowerCase();
-  if (/구이저우|贵州/.test(keyword) && /프로젝트|项目|일체화|통합/.test(keyword)) return '구이저우 소재 프로젝트';
-  if (/홍콩|hk|h주/.test(keyword) && /상장|listing|ipo/.test(keyword)) return '홍콩 상장';
-  if (/가동률|产能利用率|생산능력이용률/.test(keyword)) return '가동률';
-  if (/(인산철|lfp|磷酸铁).*(양극|正极).*(판매|출하|销量|出货)/.test(keyword)) return 'LFP 양극재 판매·출하';
-  if (/증설|扩产|产能/.test(keyword) && /양극|正极/.test(keyword)) return '양극재 증설';
-  if (/증설|扩产|产能/.test(keyword) && /음극|负极/.test(keyword)) return '음극재 증설';
-  if (/프로젝트|项目/.test(keyword) && compact.length < 7) return null;
-  return keyword;
 }
 function renderCompanyNews(){
   const valueChainTarget = document.querySelector('#company-news-value-chain');
@@ -941,13 +946,14 @@ async function askKnowledge(event){
   const question = input.value.trim();
   if (question.length < 2) return;
   const scoped = document.querySelector('#ask-scope-company').checked && currentCompany;
+  const includeUnverified = document.querySelector('#ask-include-unverified').checked;
   button.disabled = true; button.textContent = '찾는 중…';
   target.innerHTML = '<p class="ask-empty">근거를 검색하고 있습니다…</p>';
   try {
     const result = await fetch('/api/company', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, companyId: scoped ? currentCompany : null })
+      body: JSON.stringify({ question, companyId: scoped ? currentCompany : null, includeUnverified })
     });
     const payload = await result.json().catch(() => ({}));
     if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `HTTP ${result.status}`);
@@ -960,7 +966,9 @@ async function askKnowledge(event){
 }
 function renderAskResult(payload, scoped){
   const parts = [];
-  const scopeNote = scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`;
+  const unverified = payload.unverified_matched || 0;
+  const gradeNote = unverified ? ` (그중 미검증 헤드라인 ${unverified}건)` : '';
+  const scopeNote = (scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`) + gradeNote;
   if (payload.sufficient && payload.answer_ko) {
     parts.push(`<p class="ask-answer">${escapeHtml(payload.answer_ko)}</p>`);
   }
@@ -974,7 +982,9 @@ function renderAskResult(payload, scoped){
     const items = payload.sources.map(source => {
       const head = [displayName(source.company_id), source.published_at, source.source_name].filter(Boolean).join(' · ');
       const link = source.source_url ? ` <a href="${escapeHtml(source.source_url)}" target="_blank" rel="noreferrer">원문</a>` : '';
-      return `<li><span class="n">${source.n}</span>${escapeHtml(head)}${link}<br>${escapeHtml(source.excerpt)}</li>`;
+      // 본문 대조를 거치지 않은 근거는 눈에 띄게 구분한다. 사실과 헤드라인이 섞여 읽히면 안 된다.
+      const grade = source.verified === false ? ' <span class="ask-grade">미검증 헤드라인</span>' : '';
+      return `<li><span class="n">${source.n}</span>${escapeHtml(head)}${grade}${link}<br>${escapeHtml(source.excerpt)}</li>`;
     }).join('');
     parts.push(`<div class="ask-block"><p class="ask-label">근거 ${payload.sources.length}건</p><ul class="ask-sources">${items}</ul></div>`);
   }
@@ -1295,6 +1305,8 @@ document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('cl
 
 document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompanyPicker(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });
 document.querySelector('#sankey-range-apply').addEventListener('click', loadDashboardFromApi);
+// 이미 받은 흐름에서 등급만 걸러 그리므로 서버를 다시 부르지 않는다.
+document.querySelector('#sankey-include-headlines')?.addEventListener('change', renderHeadlineSankey);
 // 수집은 시작만 이 요청으로 하고, 본문 처리와 Daily 생성은 서버가 별도 호출로 이어 간다.
 // 그래서 여기서는 새 Daily가 생길 때까지 첫 화면을 주기적으로 다시 읽으며 기다린다.
 async function waitForDailyReport(sinceIso, timeoutMs = 4 * 60 * 1000){

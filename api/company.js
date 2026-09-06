@@ -51,10 +51,12 @@ async function runAsk(request, response) {
   if (question.length > 500) return response.status(400).json({ status: "invalid_request", message: "질문이 너무 깁니다." });
   const companyId = String(request.body?.companyId || request.query?.companyId || "").trim();
   if (companyId && !COMPANIES.some((item) => item.id === companyId)) return response.status(404).json({ status: "unknown_company" });
+  // 본문 대조를 거치지 않은 헤드라인까지 근거로 볼지. 화면 토글이 정하고 기본은 제외다.
+  const includeUnverified = request.body?.includeUnverified === true || String(request.query?.include_unverified || "") === "1";
   try {
-    const result = await answerFromKnowledge({ question, companyId: companyId || null });
-    console.info("[KNOWLEDGE_ASK]", JSON.stringify({ companyId: companyId || "all", matched: result.matched, sufficient: result.sufficient }));
-    return response.status(200).json({ status: "ok", question, company_id: companyId || null, ...result });
+    const result = await answerFromKnowledge({ question, companyId: companyId || null, includeUnverified });
+    console.info("[KNOWLEDGE_ASK]", JSON.stringify({ companyId: companyId || "all", matched: result.matched, unverified: result.unverified_matched || 0, include_unverified: includeUnverified, sufficient: result.sufficient }));
+    return response.status(200).json({ status: "ok", question, company_id: companyId || null, include_unverified: includeUnverified, ...result });
   } catch (error) {
     console.error("[KNOWLEDGE_ASK_FAILED]", JSON.stringify({ message: error.message }));
     return response.status(502).json({ status: "ask_failed", message: error.message });

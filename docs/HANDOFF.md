@@ -95,7 +95,7 @@
 - `layer_key`는 `lib/timeline-layers.js`의 8개 값으로 제한된다. 모델은 `unclassified`를 고를 수 있고, 그 경우와 규격 밖 값은 모두 `null`로 저장돼 화면에서 트랙별 `미분류` 행에 표시된다. 미분류가 쌓이면 레이어 정의를 손봐야 한다는 신호다.
 - 계열사에서 일어난 사실은 이벤트 카드·매트릭스 셀·비교 화면·Excel에 발생 법인이 병기된다.
 - 기업 프로필에는 그룹 계열사 목록과 근거 연차보고서 링크가 표시된다.
-- Sankey는 비-Top 10 기사에서 헤드라인 확대/축소 신호를 분류하고 방향별 상위 4개만 표시한다.
+- Sankey는 비-Top 10 기사(검증 기사 + 번역된 미검증 헤드라인)의 확대/축소 신호를 `lib/sankey-normalization.js`의 고정 테마 10개로 접어 방향별 상위 4개를 표시한다. 미검증 헤드라인은 화면 토글로 뺄 수 있고 툴팁에 건수가 나뉘어 보인다. 헤드라인 번역은 큐레이션 훅의 `embedPendingHeadlines()`가 만든다(`supabase/headline-knowledge.sql` 선행 필요).
 - 프런트 변경 후 브라우저 캐시 문제가 있었으므로 `app/index.html`의 `app.js?v=...`를 변경한다.
 - `app/app.js`의 `renderCandidateQueue()`는 호출되지 않는 죽은 코드다. 후보 큐 화면을 되살릴지 결정이 필요하다.
 

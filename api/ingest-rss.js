@@ -5,7 +5,8 @@ import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { waitUntil } from "@vercel/functions";
 import { runCurationHop } from "../lib/curation.js";
-import { COMPANIES, companiesFor, discoverChinaSources } from "../lib/china-sources.js";
+import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats } from "../lib/china-sources.js";
+import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
@@ -55,14 +56,61 @@ function safePublishedAt(value) {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
-function headlineScore(article) {
+// 좋아요/싫어요를 다음 선별에 쓰기 위해 회사·매체 선호로 일반화한다.
+//
+// 투표는 기사 단위라 그 기사에만 붙는다. 아직 오지 않은 기사에 적용하려면 후보 단계에서 이미
+// 알고 있는 속성으로 옮겨야 한다. 선별 시점에 가진 것은 원문 제목(중국어)·매체·회사·시각뿐이고,
+// 제목은 언어가 달라 한국어 피드백과 맞출 수 없다. 그래서 회사와 매체 두 축만 쓴다.
+const FEEDBACK_SAMPLE = 200;
+// 피드백이 신호 단어 하나(+20)보다 세지 않게 상한을 둔다. 취향이 산업 신호를 덮으면 안 된다.
+const FEEDBACK_VOTE_WEIGHT = 4;
+const FEEDBACK_COMPANY_CAP = 12;
+const FEEDBACK_SOURCE_CAP = 8;
+
+const EMPTY_PREFERENCE = { company: new Map(), source: new Map() };
+
+async function feedbackPreference() {
+  try {
+    const rows = await supabaseRest(`article_feedback?select=vote,article(source_name,article_company(company_id))&order=updated_at.desc&limit=${FEEDBACK_SAMPLE}`);
+    const company = new Map();
+    const source = new Map();
+    for (const row of rows || []) {
+      const vote = Number(row.vote) || 0;
+      if (!vote || !row.article) continue;
+      const sourceName = row.article.source_name;
+      if (sourceName) source.set(sourceName, (source.get(sourceName) || 0) + vote);
+      for (const link of row.article.article_company || []) {
+        company.set(link.company_id, (company.get(link.company_id) || 0) + vote);
+      }
+    }
+    return { company, source };
+  } catch (error) {
+    // 피드백을 못 읽어도 선별 자체는 돌아야 한다. 보조 신호가 없는 상태로 진행한다.
+    console.error("[FEEDBACK_PREFERENCE_FAILED]", JSON.stringify({ message: error.message }));
+    return EMPTY_PREFERENCE;
+  }
+}
+
+function clamp(value, limit) {
+  return Math.max(-limit, Math.min(limit, value));
+}
+
+function feedbackBonus(article, preference) {
+  const companyVotes = (article.article_company || []).reduce((sum, link) => sum + (preference.company.get(link.company_id) || 0), 0);
+  const sourceVotes = preference.source.get(article.source_name) || 0;
+  return clamp(companyVotes * FEEDBACK_VOTE_WEIGHT, FEEDBACK_COMPANY_CAP)
+    + clamp(sourceVotes * FEEDBACK_VOTE_WEIGHT, FEEDBACK_SOURCE_CAP);
+}
+
+function headlineScore(article, preference = EMPTY_PREFERENCE) {
   const title = (article.title_original || "").toLowerCase();
   const highSignals = HIGH_SIGNAL_TERMS.filter((term) => title.includes(term)).length;
   const lowSignals = LOW_SIGNAL_TERMS.filter((term) => title.includes(term)).length;
   const ageDays = Math.max(0, (Date.now() - new Date(article.published_at || Date.now()).getTime()) / 86400000);
   // 공시는 회사가 직접 낸 1차 출처라 제목에 신호 단어가 없어도 언론 기사보다 우선해 읽는다.
   const disclosureBonus = article.source_tier === "official_disclosure" ? 25 : 0;
-  return (highSignals * 20) - (lowSignals * 45) + disclosureBonus + (article.article_company?.length ? 3 : 0) - Math.min(ageDays, 30) / 10;
+  return (highSignals * 20) - (lowSignals * 45) + disclosureBonus + (article.article_company?.length ? 3 : 0)
+    + feedbackBonus(article, preference) - Math.min(ageDays, 30) / 10;
 }
 
 async function selectHeadlineTop10() {
@@ -74,7 +122,10 @@ async function selectHeadlineTop10() {
   // 신호 단어가 많은 옛 기사가 오늘 기사를 계속 밀어내고 재고만 쌓였다. Daily는 오늘 것을
   // 읽는 게 목적이므로, 그 창을 벗어난 기사는 다시 집지 않고 흘려보낸다.
   const since = new Date(Date.now() - PROCESS_WINDOW_DAYS * 86400000).toISOString();
-  const rows = await supabaseRest(`article?select=id,title_original,source_name,source_tier,published_at,article_company(company_id)&verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)&published_at=gte.${since}&order=published_at.desc&limit=500`);
+  const [rows, preference] = await Promise.all([
+    supabaseRest(`article?select=id,title_original,source_name,source_tier,published_at,article_company(company_id)&verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)&published_at=gte.${since}&order=published_at.desc&limit=500`),
+    feedbackPreference(),
+  ]);
   const unique = new Map();
   for (const article of rows) {
     const key = normalizeHeadline(article.title_original);
@@ -83,7 +134,7 @@ async function selectHeadlineTop10() {
   return [...unique.values()]
     // 웹 검색 기사·CATL 뉴스룸에 더해 거래소 공시(1차 출처)도 본문 분석 대상에 넣는다.
     .filter((article) => article.source_tier.startsWith("web_search_") || article.source_tier === "official_disclosure" || article.source_name === "CATL Newsroom")
-    .map((article) => ({ ...article, headline_score: headlineScore(article) }))
+    .map((article) => ({ ...article, headline_score: headlineScore(article, preference) }))
     .sort((a, b) => b.headline_score - a.headline_score || new Date(b.published_at) - new Date(a.published_at))
     .slice(0, TOP10_LIMIT);
 }
@@ -211,6 +262,11 @@ async function runProcessStage(request, hop) {
   const more = leftover > 0 || batchWasFull;
   const hopCap = wantsDeep(request) ? MAX_PROCESS_HOPS : MANUAL_PROCESS_HOPS;
   console.info("[PROCESS_STAGE]", JSON.stringify({ hop, hopCap, selected: selected.length, processed: results.length, leftover, more, counts, ms: Date.now() - started }));
+  await logPipeline("process", {
+    hopCap, selected: selected.map((a) => ({ id: a.id, title: String(a.title_original || "").slice(0, 120), source: a.source_name, tier: a.source_tier, score: Math.round(a.headline_score) })),
+    outcomes: results.map((r) => ({ articleId: r.articleId, status: r.status, reason: String(r.reason || r.message || "").slice(0, 300), chunks: r.embedding?.chunks ?? null, duplicate: r.duplicate || false, primary: r.primary_provider, verifier: r.verifier_provider })),
+    counts, leftover, more,
+  }, { hop, durationMs: Date.now() - started });
   if (more && hop < hopCap) await chainStage(request, "process", hop + 1);
   else await chainStage(request, "daily");
   await flushTraces();
@@ -221,8 +277,10 @@ async function runDailyStage(request) {
   try {
     const report = await generateDailyReport();
     console.info("[DAILY_STAGE]", JSON.stringify({ status: report.status, top10: report.top10_count || 0, ms: Date.now() - started }));
+    await logPipeline("daily", { status: report.status, top10: report.top10_count || 0, report_date: report.report_date || null }, { durationMs: Date.now() - started });
   } catch (error) {
     console.error("[DAILY_STAGE_FAILED]", JSON.stringify({ message: error.message }));
+    await logPipeline("daily", { message: error.message }, { status: "failed", durationMs: Date.now() - started });
   }
   // Daily가 끝나면 시계열 유지 작업으로 넘어간다. 단, 크론이 시작한 실행일 때만. 수동 수집은 여기서 끝난다.
   if (wantsCurate(request)) await chainStage(request, "curate", 1);
@@ -238,8 +296,10 @@ async function runCurateStage(request, hop) {
     const result = await runCurationHop({ deadline: started + STAGE_BUDGET_MS });
     more = result.more;
     console.info("[CURATE_STAGE]", JSON.stringify({ hop, ...result.log, more, ms: Date.now() - started }));
+    await logPipeline("curate", { ...result.log, more }, { hop, durationMs: Date.now() - started });
   } catch (error) {
     console.error("[CURATE_STAGE_FAILED]", JSON.stringify({ hop, message: error.message }));
+    await logPipeline("curate", { message: error.message }, { hop, status: "failed", durationMs: Date.now() - started });
   }
   if (more && hop < MAX_CURATE_HOPS) await chainStage(request, "curate", hop + 1);
   await flushTraces();
@@ -316,6 +376,7 @@ async function handleRequest(request, response) {
   const backfillCompanyId = String(request.query?.backfill || request.body?.backfill || "").trim();
   if (backfillCompanyId) return runBackfill(response, backfillCompanyId, request.query?.since || request.body?.since, "web");
   let stage = "company_seed";
+  const collectStarted = Date.now();
   try {
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ id, name_ko, name_zh, name_en, type_tags }) => ({ id, name_ko, name_zh, name_en, type_tags })) });
     stage = "source_collection";
@@ -327,13 +388,26 @@ async function handleRequest(request, response) {
     const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
         source_language: "zh", published_at: safePublishedAt(candidate.publishedAt),
-        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? `web_search_${candidate.searchProvider || "discovered"}` : "needs_review"
+        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? `web_search_${candidate.searchProvider || "discovered"}` : "needs_review",
+        discovered_via: discoveredVia(candidate),
     }));
     stage = "article_storage";
-    const storedArticles = articleRows.length
-      ? await supabaseRest("article?on_conflict=canonical_url", { method: "POST", prefer: "resolution=merge-duplicates,return=representation", body: articleRows })
+    // 같은 URL이 다시 발견되면 기존 행을 건드리지 않는다.
+    // 전에는 merge-duplicates로 덮어써서, 검증을 통과한 기사가 다음 날 밤 재발견되면
+    // verification_status가 pending으로, source_tier가 web_search_*로 되돌아가 화면에서 사라졌다
+    // (CNINFO는 14일 창을 매일 다시 훑으므로 공시는 거의 항상 재발견된다).
+    // 새로 들어간 행만 응답에 오므로, 기존 행의 id는 URL로 따로 찾아 회사 연결에 쓴다.
+    const insertedArticles = articleRows.length
+      ? await supabaseRest("article?on_conflict=canonical_url", { method: "POST", prefer: "resolution=ignore-duplicates,return=representation", body: articleRows })
       : [];
-    const idByUrl = new Map(storedArticles.map((article) => [article.canonical_url, article.id]));
+    const idByUrl = new Map((insertedArticles || []).map((article) => [article.canonical_url, article.id]));
+    const existingUrls = articleRows.map((row) => row.canonical_url).filter((url) => !idByUrl.has(url));
+    for (let i = 0; i < existingUrls.length; i += 40) {
+      const batch = existingUrls.slice(i, i + 40).map((url) => `"${url.replace(/"/g, '\\"')}"`).join(",");
+      const rows = await supabaseRest(`article?select=id,canonical_url&canonical_url=in.(${encodeURIComponent(batch)})`);
+      for (const row of rows || []) idByUrl.set(row.canonical_url, row.id);
+    }
+    const storedArticles = insertedArticles || [];
     const companyLinks = matchedCandidates.flatMap(({ candidate, companies }) =>
       companies.map((company) => ({ article_id: idByUrl.get(candidate.url), company_id: company.id }))
     ).filter((link) => link.article_id);
@@ -348,6 +422,17 @@ async function handleRequest(request, response) {
     // 본문 처리와 Daily 생성은 이 호출에서 하지 않는다. 60초 안에 다 못 끝나 Daily가 빠지던 원인이다.
     // 다음 단계를 새 호출로 넘기고 여기서는 수집 결과만 돌려준다.
     // 크론이 시작한 실행만 깊게 돈다(훅 6회). 화면 버튼은 한 훅만 돌아 1분 안팎에 끝난다.
+    const discovery = discoveryStats() || {};
+    await logPipeline("collect", {
+      trigger: isCronRequest(request) ? "cron" : "manual",
+      raw: discovery.raw || {}, failed: discovery.failed || [], unique: candidates.length, by_via: discovery.by_via || {},
+      matched: matchedCandidates.length, unmatched: candidates.length - matchedCandidates.length,
+      new_articles: storedArticles.length, existing: existingUrls.length,
+      new_by_via: storedArticles.reduce((acc, row) => ({ ...acc, [row.discovered_via || "other"]: (acc[row.discovered_via || "other"] || 0) + 1 }), {}),
+      new_titles: storedArticles.slice(0, 80).map((row) => ({ id: row.id, via: row.discovered_via, source: row.source_name, title: String(row.title_original || "").slice(0, 120) })),
+      unmatched_sample: candidates.filter((c) => !companiesFor(c).length).slice(0, 30).map((c) => ({ via: discoveredVia(c), source: c.source, title: String(c.title || "").slice(0, 120) })),
+      process_started: Boolean(shouldProcess && llmReady),
+    }, { durationMs: Date.now() - collectStarted });
     if (shouldProcess && llmReady) await chainStage(request, "process", 1, { curate: isCronRequest(request), deep: isCronRequest(request) });
     return response.status(200).json({
       status: shouldProcess && llmReady ? "started" : "ok",
@@ -358,6 +443,7 @@ async function handleRequest(request, response) {
     });
   } catch (error) {
     console.error("[INGESTION_FAILED]", JSON.stringify({ stage, message: error.message }));
+    await logPipeline("collect", { stage, message: error.message }, { status: "failed", durationMs: Date.now() - collectStarted });
     return response.status(502).json({ status: "ingestion_failed", stage, message: error.message });
   }
 }

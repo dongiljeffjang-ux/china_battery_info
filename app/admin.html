@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>China Battery Lens · 관리자</title>
+    <link rel="icon" type="image/svg+xml" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./access.css?v=20260901b" />
+    <style>
+      .admin-nav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 22px}
+      .admin-nav button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 14px;color:var(--muted);cursor:pointer;font-weight:600;font-size:13px}
+      .admin-nav button.is-active{background:var(--navy);border-color:var(--navy);color:#fff}
+      .panel{display:none}.panel.is-visible{display:block}
+      .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:0 0 22px}
+      .stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+      .stat .label{font-size:12px;color:var(--muted);margin:0 0 4px}
+      .stat .value{font-size:26px;font-weight:800;color:var(--navy);letter-spacing:-.5px}
+      .stat .sub{font-size:12px;color:var(--muted);margin-top:4px}
+      .stat.warn .value{color:#a04a00}
+      .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
+      .filters input,.filters select{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
+      .filters input[type=text],.filters input[type=search]{min-width:220px}
+      .filters label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+      .tbl-wrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:10px}
+      table.admin{width:100%;border-collapse:collapse;font-size:12.5px}
+      table.admin th{position:sticky;top:0;background:#f8fafc;text-align:left;padding:9px 10px;border-bottom:2px solid var(--line);font-size:11.5px;color:var(--muted);white-space:nowrap}
+      table.admin td{padding:8px 10px;border-bottom:1px solid #eef2f6;vertical-align:top}
+      table.admin tr:hover td{background:#fbfdff}
+      table.admin td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+      .tag{display:inline-block;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;white-space:nowrap;background:#eef2f6;color:var(--ink)}
+      .tag.openai{background:#e7f0ff;color:#1a4d9c}.tag.deepseek{background:#eae6ff;color:#4b2fa6}.tag.both{background:#e2f6f4;color:#0b6b62}
+      .tag.cninfo{background:#fff3d9;color:#8b5a10}.tag.catl_newsroom{background:#e3f5ed;color:#0c6b4e}
+      .tag.ok,.tag.pending_review,.tag.approved,.tag.embedded{background:var(--good-bg);color:var(--good)}
+      .tag.failed,.tag.rejected,.tag.fact_check_rejected,.tag.body_unavailable,.tag.processing_failed,.tag.body_too_short{background:#fde8e8;color:#9b1c1c}
+      .tag.pending,.tag.none{background:#eef2f6;color:var(--muted)}
+      .muted{color:var(--muted)}.small{font-size:12px}
+      .link{color:var(--blue);text-decoration:none;cursor:pointer}.link:hover{text-decoration:underline}
+      .clip{max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      pre.json{background:#0f1a2b;color:#d9e4f2;padding:12px 14px;border-radius:8px;font-size:11.5px;overflow:auto;max-height:420px;margin:0}
+      .run{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 10px}
+      .run summary{cursor:pointer;display:flex;gap:12px;align-items:center;font-weight:650}
+      .run summary .muted{font-weight:400}
+      .run-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:10px 0}
+      .kv{background:#f8fafc;border-radius:6px;padding:6px 9px;font-size:12px}.kv b{display:block;font-size:15px;color:var(--navy)}
+      .drawer{position:fixed;top:0;right:0;width:min(860px,96vw);height:100vh;background:#fff;border-left:1px solid var(--line);box-shadow:-12px 0 32px rgba(20,38,61,.12);overflow:auto;padding:24px 28px 60px;z-index:30}
+      .drawer[hidden]{display:none}
+      .drawer h2{margin:0 0 6px}.drawer .close{float:right}
+      .chunk{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 10px;background:#fff}
+      .chunk header{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:6px}
+      .chunk pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 "Segoe UI","Noto Sans KR",monospace;margin:0;background:#f8fafc;padding:8px;border-radius:6px;max-height:260px;overflow:auto}
+      .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+      @media (max-width:760px){.two{grid-template-columns:1fr}}
+      .notice{background:#fff8e6;border:1px solid #f1d992;border-radius:8px;padding:10px 12px;font-size:13px;margin:0 0 16px}
+      .error{background:#fde8e8;border:1px solid #f3b5b5;border-radius:8px;padding:10px 12px;font-size:13px;margin:0 0 16px}
+      .sim{display:inline-block;min-width:44px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+      h3.sub{margin:22px 0 8px;font-size:15px}
+    </style>
+  </head>
+  <body>
+    <section id="access-gate" class="access-gate" hidden aria-labelledby="access-title">
+      <form id="access-form" class="access-card">
+        <span class="brand-mark"><img src="/app/assets/china-battery-lens-icon.svg?v=20260904c" alt="" /></span>
+        <p class="eyebrow">PRIVATE ACCESS</p>
+        <h1 id="access-title">China Battery Lens</h1>
+        <p>접근 키를 입력해 관리자 페이지를 엽니다.</p>
+        <label>접근 키<input id="access-key" type="password" autocomplete="current-password" required /></label>
+        <button class="secondary-button" type="submit">입장하기</button>
+        <p id="access-message" class="access-message" role="alert"></p>
+      </form>
+    </section>
+    <div id="app-shell" hidden>
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="China Battery Lens 홈">
+          <span class="brand-mark"><img src="/app/assets/china-battery-lens-icon.svg?v=20260904c" alt="" /></span>
+          <span>China Battery Lens</span>
+        </a>
+        <nav aria-label="주요 메뉴">
+          <a href="/#daily" class="nav-link">Daily</a>
+          <a href="/#companies" class="nav-link">기업 분석</a>
+          <a href="/#compare" class="nav-link">비교</a>
+          <a href="/admin" class="nav-link is-active">관리자</a>
+        </nav>
+        <div class="as-of" id="admin-asof">파이프라인 품질 점검 · 읽기 전용</div>
+      </header>
+      <main>
+        <div class="page-heading compact">
+          <div>
+            <p class="eyebrow">ADMIN · DATA QUALITY</p>
+            <h1>파이프라인 점검</h1>
+            <p>검색 결과 → 본문 처리 → 이벤트 → 청킹·임베딩 → 벡터 검색까지 중간 산출물을 그대로 봅니다.</p>
+          </div>
+          <button id="admin-refresh" class="secondary-button" type="button">새로 고침</button>
+        </div>
+        <div id="admin-error" class="error" hidden></div>
+        <nav class="admin-nav" aria-label="관리자 화면">
+          <button data-panel="overview" class="is-active">개요</button>
+          <button data-panel="runs">실행 이력</button>
+          <button data-panel="articles">수집 기사 · 검색 결과</button>
+          <button data-panel="events">이벤트</button>
+          <button data-panel="chunks">청크 · 임베딩</button>
+          <button data-panel="search">벡터 검색 시험</button>
+        </nav>
+
+        <section id="panel-overview" class="panel is-visible">
+          <div id="overview-cards" class="cards"></div>
+          <div class="two">
+            <div>
+              <h3 class="sub">기사 상태 × 발견 경로</h3>
+              <div class="tbl-wrap"><table class="admin" id="overview-status"></table></div>
+            </div>
+            <div>
+              <h3 class="sub">최근 30일 · 날짜별 발견 경로</h3>
+              <div class="tbl-wrap"><table class="admin" id="overview-days"></table></div>
+            </div>
+          </div>
+          <h3 class="sub">벡터 청크 구성</h3>
+          <div class="tbl-wrap"><table class="admin" id="overview-chunks"></table></div>
+          <h3 class="sub">최근 실행</h3>
+          <div class="tbl-wrap"><table class="admin" id="overview-runs"></table></div>
+        </section>
+
+        <section id="panel-runs" class="panel">
+          <div class="filters">
+            <label>단계<select id="runs-stage"><option value="">전체</option><option value="collect">collect · 수집</option><option value="process">process · 본문 처리</option><option value="daily">daily · Daily</option><option value="curate">curate · 유지</option></select></label>
+            <button id="runs-load" class="secondary-button" type="button">조회</button>
+            <span class="muted small">파이프라인이 단계마다 남긴 기록입니다. 이 기록은 admin-observability.sql 적용 이후 실행부터 쌓입니다.</span>
+          </div>
+          <div id="runs-list"></div>
+        </section>
+
+        <section id="panel-articles" class="panel">
+          <div class="filters">
+            <label>발견 경로<select id="art-via"><option value="">전체</option><option value="web_search_openai">OpenAI 검색</option><option value="web_search_deepseek">DeepSeek 검색</option><option value="cninfo">CNINFO 공시</option><option value="catl_newsroom">CATL 뉴스룸</option><option value="google_news_rss">Google News RSS(구)</option></select></label>
+            <label>검증 상태<select id="art-verification"><option value="">전체</option><option value="pending">pending · 미처리</option><option value="pending_review">pending_review · 검증 통과</option><option value="rejected">rejected</option></select></label>
+            <label>처리 결과<select id="art-processing"><option value="">전체</option><option value="none">시도 안 함</option><option value="ok">ok</option><option value="body_unavailable">body_unavailable</option><option value="body_too_short">body_too_short</option><option value="fact_check_rejected">fact_check_rejected</option><option value="processing_failed">processing_failed</option></select></label>
+            <label>임베딩<select id="art-embedding"><option value="">전체</option><option value="embedded">embedded</option><option value="pending">pending</option><option value="failed">failed</option></select></label>
+            <label>회사<select id="art-company"><option value="">전체</option></select></label>
+            <label>기준일<select id="art-datefield"><option value="created">수집일</option><option value="published">발행일</option></select></label>
+            <label>시작<input id="art-from" type="date" /></label>
+            <label>끝<input id="art-to" type="date" /></label>
+            <label>검색<input id="art-q" type="search" placeholder="제목·매체" /></label>
+            <button id="art-load" class="secondary-button" type="button">조회</button>
+            <span id="art-count" class="muted small"></span>
+          </div>
+          <div class="tbl-wrap"><table class="admin" id="art-table"></table></div>
+        </section>
+
+        <section id="panel-events" class="panel">
+          <div class="filters">
+            <label>회사<select id="ev-company"><option value="">전체</option></select></label>
+            <label>근거 종류<select id="ev-evidence"><option value="">전체</option><option value="article">article</option><option value="disclosure">disclosure</option><option value="annual_report">annual_report</option><option value="semiannual_report">semiannual_report</option><option value="quarterly_report">quarterly_report</option><option value="web_backfill">web_backfill</option></select></label>
+            <label>품질 신호<select id="ev-missing"><option value="">전체</option><option value="layer">레이어 미분류</option><option value="basis">시점 근거 없음</option><option value="vector">벡터 없음</option></select></label>
+            <label>시작<input id="ev-from" type="date" /></label>
+            <label>끝<input id="ev-to" type="date" /></label>
+            <label>검색<input id="ev-q" type="search" placeholder="제목·사실" /></label>
+            <button id="ev-load" class="secondary-button" type="button">조회</button>
+            <span id="ev-count" class="muted small"></span>
+          </div>
+          <div class="tbl-wrap"><table class="admin" id="ev-table"></table></div>
+        </section>
+
+        <section id="panel-chunks" class="panel">
+          <div class="filters">
+            <label>종류<select id="ch-type"><option value="">전체</option><option value="article_chunk">article_chunk · 기사 본문</option><option value="event_fact">event_fact · 이벤트</option><option value="headline">headline · 미검증 헤드라인</option><option value="daily_report">daily_report</option></select></label>
+            <label>회사<select id="ch-company"><option value="">전체</option></select></label>
+            <button id="ch-load" class="secondary-button" type="button">조회</button>
+            <span class="muted small">청크의 content_ko가 실제 임베딩에 들어간 텍스트입니다. 기사 청크는 한국어 요약 헤더 + 원문 조각입니다.</span>
+          </div>
+          <div id="ch-list"></div>
+        </section>
+
+        <section id="panel-search" class="panel">
+          <div class="filters">
+            <label>질문<input id="se-q" type="text" placeholder="예: 룽바이 LFP 증설 계획" /></label>
+            <label>회사<select id="se-company"><option value="">전체</option></select></label>
+            <label>미검증 헤드라인<select id="se-unverified"><option value="0">제외(기본)</option><option value="1">포함</option></select></label>
+            <button id="se-load" class="secondary-button" type="button">검색</button>
+            <span id="se-meta" class="muted small"></span>
+          </div>
+          <p class="muted small">비교·질의응답이 근거로 쓰는 벡터 검색을 답변 생성 없이 그대로 봅니다. 유사도는 코사인 기준이며 1에 가까울수록 가깝습니다.</p>
+          <div id="se-list"></div>
+        </section>
+      </main>
+      <aside id="drawer" class="drawer" hidden aria-label="기사 상세"></aside>
+    </div>
+    <script src="./access-gate.js?v=20260901a"></script>
+    <script src="./admin.js?v=20260906a"></script>
+  </body>
+</html>

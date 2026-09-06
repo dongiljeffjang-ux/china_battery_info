@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">China Battery Lens</title>
+  <g fill="#145FC2">
+    <path fill-rule="evenodd" d="M218 48a170 170 0 1 0 100.6 307l94.8 94.8a26 26 0 0 0 36.8-36.8l-94.8-94.8A170 170 0 0 0 218 48Zm0 44a126 126 0 1 0 0 252 126 126 0 0 0 0-252Z"/>
+    <rect x="171" y="154" width="94" height="132" rx="20"/>
+    <rect x="199" y="137" width="38" height="24" rx="8"/>
+  </g>
+</svg>

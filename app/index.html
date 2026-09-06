@@ -76,7 +76,7 @@
               <p class="eyebrow">HEADLINE KEYWORDS</p>
               <h2 id="sankey-title">회사별 헤드라인 키워드</h2>
             </div>
-            <div style="display:flex;gap:8px;align-items:center"><label>From <input id="sankey-from" type="date" /></label><label>To <input id="sankey-to" type="date" /></label><button id="sankey-range-apply" class="secondary-button" type="button">기간 적용</button></div>
+            <div style="display:flex;gap:8px;align-items:center"><label>From <input id="sankey-from" type="date" /></label><label>To <input id="sankey-to" type="date" /></label><button id="sankey-range-apply" class="secondary-button" type="button">기간 적용</button><label class="supporting-toggle"><input type="checkbox" id="sankey-include-headlines" checked> 미검증 헤드라인 포함<span class="help-icon" tabindex="0" role="img" aria-label="미검증 헤드라인 포함 설명" data-tip="본문을 읽고 교차검증을 통과한 기사는 하루 50건 안팎이라 산업 전반의 흐름을 보기엔 표본이 얇습니다. 이 옵션을 켜면 수집만 되고 본문을 읽지 않은 기사의 제목(한국어 번역)에서 규칙으로 뽑은 확대/축소 신호도 함께 셉니다. 제목 한 줄이 근거이므로 사실 확인은 되지 않았습니다. 툴팁에 검증·헤드라인 건수가 나뉘어 표시됩니다.">?</span></label></div>
           </div>
           <p>선택 기간 안의 Top 10 제외 기사에서 확대·축소 신호를 나누고, 같은 의미의 키워드를 묶어 빈도 상위 항목만 표시합니다. 방향은 본문을 읽은 뒤 신호마다 판단하며, <strong>노드나 선에 마우스를 올리면 그렇게 분류한 근거</strong>가 한국어로 표시됩니다.</p>
           <div id="headline-sankey" aria-live="polite"></div>
@@ -127,6 +127,7 @@
               <h2 id="ask-title">수집된 근거에 물어보기</h2>
             </div>
             <label class="ask-scope"><input type="checkbox" id="ask-scope-company"> 선택한 기업으로 한정</label>
+          <label class="ask-scope"><input type="checkbox" id="ask-include-unverified"> 미검증 헤드라인 포함<span class="help-icon" tabindex="0" role="img" aria-label="미검증 헤드라인 포함 설명" data-tip="기본 검색은 본문을 읽고 교차검증을 통과한 근거만 씁니다. 이 옵션을 켜면 수집만 되고 본문을 읽지 않은 기사의 제목(한국어 번역)까지 근거 후보에 넣습니다. 폭이 넓어지는 대신 제목 한 줄이 근거이므로 사실 확인이 되지 않은 정보입니다. 답변과 근거 목록에 미검증 표시가 붙습니다.">?</span></label>
           </div>
           <p class="ask-note">지금까지 수집·정리된 공시 근거에서만 답합니다. 근거가 없으면 답을 만들지 않고 무엇을 확인해야 하는지 안내합니다.</p>
           <form id="ask-form" class="ask-form">
@@ -175,8 +176,8 @@
           </div>
         </div>
         <div class="compare-controls">
-          <div class="compare-pick"><span class="compare-pick-label">기업 A</span><div class="segmented-control" id="compare-chain-a" role="group" aria-label="기업 A 밸류체인"></div><select id="compare-a" aria-label="기업 A 선택"></select></div>
-          <div class="compare-pick"><span class="compare-pick-label">기업 B</span><div class="segmented-control" id="compare-chain-b" role="group" aria-label="기업 B 밸류체인"></div><select id="compare-b" aria-label="기업 B 선택"></select></div>
+          <div class="compare-pick is-a"><span class="compare-pick-label"><span class="compare-badge">A</span>기업 A</span><div class="segmented-control" id="compare-chain-a" role="group" aria-label="기업 A 밸류체인"></div><select id="compare-a" aria-label="기업 A 선택"></select></div>
+          <div class="compare-pick is-b"><span class="compare-pick-label"><span class="compare-badge">B</span>기업 B</span><div class="segmented-control" id="compare-chain-b" role="group" aria-label="기업 B 밸류체인"></div><select id="compare-b" aria-label="기업 B 선택"></select></div>
           <button id="compare-report" class="secondary-button" type="button">비교 리포트 생성</button>
           <label class="supporting-toggle"><input type="checkbox" id="include-supporting-compare"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 거래소 공시·본문 검증을 통과한 핵심(core) 사실만 표시합니다. 이 옵션을 켜면 아직 공시로 확정되지 않은 참고(reference) 등급 데이터도 함께 보입니다: 언론 기사, 그리고 상장사 올해분·비상장사의 뉴스 웹 백필. 기업 시계열 화면과 이 비교 화면에 함께 적용됩니다. 최신 소식을 폭넓게 보되 확정도는 낮으니 참고용으로 보세요.">?</span></label>
         </div>
@@ -204,7 +205,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260904-backfill-button"></script>
+    <script src="./app.js?v=20260904-sankey-themes"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>
