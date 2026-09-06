@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { reportCategory, normalizeStoredReport } from '../lib/report-classification.js';
+assert.equal(reportCategory('음극재','CATL 동박 40만 톤 공동 구축'),'정책·공급망');
+assert.equal(reportCategory('음극재','흑연 음극재 출하 확대'),'음극재');
+assert.equal(reportCategory('음극재','동박과 흑연 증설'),'음극재');
+assert.equal(reportCategory('양극재','인산철 생산 확대'),'양극재');
+const text='## 음극재\n- CATL — 동박 40만 톤\n## 정책·공급망\n- 관세';
+assert.equal(normalizeStoredReport(text),'## 정책·공급망\n- CATL — 동박 40만 톤\n- 관세');
+assert.equal(normalizeStoredReport('old report'),'old report');
+console.log('Report category normalization passed');

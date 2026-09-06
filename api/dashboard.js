@@ -1,6 +1,7 @@
 import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { requireAccess } from "../lib/access.js";
 import { sankeyFlowsFromArticles } from "../lib/sankey-normalization.js";
+import { normalizeStoredReport } from '../lib/report-classification.js';
 
 // 조회 하나가 실패해도 나머지는 보여주되, 무엇이 왜 실패했는지는 응답에 실어 화면이 알게 한다.
 // 조용히 빈 배열을 돌려주면 화면은 "기사 없음"으로 보이고 원인을 추적할 수 없다.
@@ -33,7 +34,7 @@ export default async function handler(request, response) {
       .format(new Date(Date.now() + offsetDays * 86400000));
     const today = koreaDay();
     // 수집이 밤 23시에 돌아 이른 시간에는 오늘 기사가 아직 없다. 기본을 어제부터로 잡는다.
-    const newsFrom = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.newsFrom || "") ? request.query.newsFrom : koreaDay(-1);
+    const newsFrom = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.newsFrom || "") ? request.query.newsFrom : koreaDay(-3);
     const newsToInput = /^\d{4}-\d{2}-\d{2}$/.test(request.query?.newsTo || "") ? request.query.newsTo : today;
     const newsToBound = new Date(`${newsToInput}T00:00:00Z`);
     newsToBound.setUTCDate(newsToBound.getUTCDate() + 1);
@@ -61,7 +62,7 @@ export default async function handler(request, response) {
     const flows = sankeyFlowsFromArticles(flowEvents, flowHeadlines);
     return response.status(200).json({
       status: "ok", errors, range: { from, to }, news_range: { from: newsFrom, to: newsToInput },
-      report: reports[0] || null,
+      report: reports[0] ? {...reports[0], summary_ko: normalizeStoredReport(reports[0].summary_ko)} : null,
       report_dates: (reportDates || []).map((row) => row.report_date),
       requested_report: reportDate,
       top10, companyNews, pendingNews, flows,

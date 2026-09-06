@@ -2,6 +2,7 @@ import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { flushTraces } from "../lib/tracing.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
 import { embedDailyReport } from "../lib/vector-ingestion.js";
+import { normalizeReportSections } from '../lib/report-classification.js';
 
 
 function koreaDate() {
@@ -20,7 +21,7 @@ const SUMMARY_CATEGORIES = ["산업 총평", "셀", "양극재", "음극재", "�
 // daily_report.summary_ko는 text 컬럼이라 "## 카테고리 / - 항목" 형식으로 직렬화한다.
 // 화면이 이 형식을 파싱하고, 형식이 없는 예전 리포트도 그대로 표시된다.
 function serializeSections(sections = []) {
-  return sections
+  return normalizeReportSections(sections)
     .filter((section) => section.points?.length)
     .sort((a, b) => SUMMARY_CATEGORIES.indexOf(a.category) - SUMMARY_CATEGORIES.indexOf(b.category))
     .map((section) => [`## ${section.category}`, ...section.points.map((point) => `- ${point.subject_ko} — ${point.fact_ko}`)].join("\n"))

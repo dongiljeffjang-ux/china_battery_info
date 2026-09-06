@@ -256,7 +256,7 @@ function renderTopNews(){
     const sector = node.querySelector('.sector-tag'); sector.textContent = `TOP ${index + 1}`; sector.classList.toggle('anode', false);
     const confidenceTag = node.querySelector('.confidence-tag'); confidenceTag.textContent = item.confidence; confidenceTag.title = item.confidenceTitle || '';
     node.querySelector('time').textContent = item.date;
-    node.querySelector('h3').textContent = `${displayName(item.company)} · ${item.title}`;
+    node.querySelector('h3').textContent = item.title;
     node.querySelector('.news-fact').innerHTML = renderFactHtml(item.fact);
     node.querySelector('.impact-reason').textContent = item.why;
     node.querySelector('a').href = item.url;
@@ -292,7 +292,7 @@ function renderCandidateQueue(){
     const sector = node.querySelector('.sector-tag'); sector.textContent = `${item.classification.type} · ${item.classification.event}`;
     node.querySelector('.confidence-tag').textContent = '수집 후보';
     node.querySelector('time').textContent = item.date;
-    node.querySelector('h3').textContent = `${displayName(item.company)} · ${item.title}`;
+    node.querySelector('h3').textContent = item.title;
     node.querySelector('.news-fact').textContent = `분류 근거: 회사 별칭 매칭 / 제목 키워드 ‘${item.classification.event}’. 원문 본문과 출처 신뢰도는 아직 검증하지 않았습니다.`;
     node.querySelector('.impact-reason').textContent = `출처: ${item.sourceName || 'RSS'}`;
     node.querySelector('a').href = item.url;
@@ -1454,13 +1454,12 @@ async function initialize(){
   // toISOString은 UTC 날짜를 준다. 한국은 UTC+9라 오전에는 하루 뒤처진 날짜가 잡혀
   // 오늘 기사가 기간에서 빠진다. 현지 날짜 구성요소로 직접 만든다.
   const localDate = (offsetDays) => {
-    const day = new Date(); day.setDate(day.getDate() + offsetDays);
-    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(Date.now()+offsetDays*86400000));
   };
-  document.querySelector('#sankey-from').value = localDate(-1);
+  document.querySelector('#sankey-from').value = localDate(-3);
   document.querySelector('#sankey-to').value = localDate(0);
   // 회사별 뉴스 기본은 어제~오늘이다. 수집이 밤 23시에 돌아 오늘 것만 보면 이른 시간에 비어 보인다.
-  document.querySelector('#news-from').value = localDate(-1);
+  document.querySelector('#news-from').value = localDate(-3);
   document.querySelector('#news-to').value = localDate(0);
   document.querySelector('#news-range-apply').addEventListener('click', loadDashboardFromApi);
   renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
