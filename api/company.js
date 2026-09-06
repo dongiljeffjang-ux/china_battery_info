@@ -92,7 +92,7 @@ async function runCompareReport(request, response) {
   const includeSupporting = request.body?.includeSupporting === true;
   if (!eventsA.length && !eventsB.length) return response.status(400).json({ status: "no_evidence", message: "비교 화면에 근거로 쓸 이벤트가 없습니다." });
   try {
-    const result = await buildCompareReport({ nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB });
+    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB });
     // 웹 검증이 확인한 것은 리포트에만 두지 않고 DB에 되돌린다. 실패해도 리포트는 그대로 낸다.
     let dbUpdates = null;
     try {
