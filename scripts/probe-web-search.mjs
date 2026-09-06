@@ -3,10 +3,26 @@
 // 운영 DB에 DeepSeek 검색으로 발견된 기사가 누적 0건이라, 수집 파이프라인과 같은 프롬프트·스키마·
 // 도구 설정으로 검색 한 번을 직접 호출해 결과 또는 실패 사유를 그대로 찍는다.
 //
-// 사용:  DEEPSEEK_API_KEY=... node scripts/probe-web-search.mjs deepseek
-//        OPENAI_API_KEY=... OPENAI_MODEL=... node scripts/probe-web-search.mjs openai
-//        --raw 를 붙이면 Responses API 응답 본문(output 항목 종류)까지 보여 준다.
+// 사용(PowerShell):  $env:DEEPSEEK_API_KEY="..."; node scripts/probe-web-search.mjs deepseek --raw
+// 사용(bash):        DEEPSEEK_API_KEY=... node scripts/probe-web-search.mjs deepseek --raw
+//
+// 키를 매번 넣기 번거로우면 `vercel env pull .env.local`로 받아 두면 아래에서 자동으로 읽는다.
+// .env* 는 .gitignore에 있어 커밋되지 않는다.
+// --raw 를 붙이면 Responses API 응답 본문(output 항목 종류)까지 보여 준다.
+import { readFileSync, existsSync } from "node:fs";
 import { llmConfig, responseOutputText } from "../lib/llm-provider.js";
+
+// PowerShell에는 `VAR=값 명령` 문법이 없어 키가 조용히 비는 일이 잦다. 로컬 .env 파일도 후보로 본다.
+for (const file of [".env.local", ".env.production.local", ".env"]) {
+  if (!existsSync(file)) continue;
+  for (const line of readFileSync(file, "utf8").split(/\r?\n/)) {
+    const match = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (!match) continue;
+    const value = match[2].trim().replace(/^["']|["']$/g, "");
+    if (value && !process.env[match[1]]) process.env[match[1]] = value;
+  }
+  console.log(`[env] ${file}에서 값을 읽었다.`);
+}
 
 const provider = process.argv[2] === "openai" ? "openai" : "deepseek";
 const raw = process.argv.includes("--raw");
