@@ -10,6 +10,7 @@ import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
+import { acquireRun, releaseRun, claimStage, withSearchBudget, SEARCH_LIMITS } from '../lib/ingestion-guard.js';
 
 export const maxDuration = 60;
 
@@ -225,7 +226,7 @@ async function chainStage(request, stage, hop = 1, { curate = wantsCurate(reques
     console.error("[STAGE_CHAIN_SKIPPED]", JSON.stringify({ stage, reason: !secret ? "no_cron_secret" : "no_host" }));
     return;
   }
-  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}${deep ? "&deep=1" : ""}`;
+  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}${deep ? "&deep=1" : ""}&run_id=${encodeURIComponent(request.runId || request.query?.run_id || '')}`;
   // 호출이 "나갔다"는 것만 보장하고 응답은 기다리지 않는다.
   //   - waitUntil로만 넘기면 크론처럼 응답을 기다리는 쪽이 없는 실행에서 fetch가 나가기도 전에 함수가 끝난다.
   //   - 그렇다고 응답을 끝까지 await하면 앞 단계가 뒷 단계 작업을 기다리며 직렬로 늘어붙어
@@ -386,8 +387,11 @@ async function handleRequest(request, response) {
   if (stageName) {
     if (!isCronRequest(request)) return response.status(403).json({ status: "stage_requires_cron_secret" });
     const hop = Math.max(1, Number(request.query?.hop) || 1);
+    if (['process','daily'].includes(stageName)) {
+      if (!await claimStage(request.query?.run_id, stageName, hop)) return response.status(409).json({status:'duplicate_or_expired_stage'});
+    }
     if (stageName === "process") waitUntil(runProcessStage(request, hop));
-    else if (stageName === "daily") waitUntil(runDailyStage(request));
+    else if (stageName === "daily") waitUntil(runDailyStage(request).finally(() => releaseRun(request.query.run_id)));
     else if (stageName === "curate") waitUntil(runCurateStage(request, hop));
     else return response.status(400).json({ status: "unknown_stage", stage: stageName });
     return response.status(202).json({ status: "accepted", stage: stageName, hop });
@@ -396,10 +400,14 @@ async function handleRequest(request, response) {
   if (backfillCompanyId) return runBackfill(response, backfillCompanyId, request.query?.since || request.body?.since, "web");
   let stage = "company_seed";
   const collectStarted = Date.now();
+  let runId;
   try {
+    runId = await acquireRun();
+    if (!runId) return response.status(409).json({status:'collection_in_progress',message:'다른 수집·본문 처리·Daily 생성이 진행 중입니다. 추가 실행은 차단했습니다. 중단된 실행의 잠금은 마지막 단계 시작 후 최대 10분 뒤 만료됩니다.'});
+    request.runId = runId;
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ id, name_ko, name_zh, name_en, type_tags }) => ({ id, name_ko, name_zh, name_en, type_tags })) });
     stage = "source_collection";
-    const candidates = await discoverChinaSources();
+    const candidates = await withSearchBudget(() => discoverChinaSources());
     stage = "company_matching";
     const matchedCandidates = candidates
       .map((candidate) => ({ candidate, companies: companiesFor(candidate) }))
@@ -443,6 +451,7 @@ async function handleRequest(request, response) {
     // 크론이 시작한 실행만 깊게 돈다(훅 6회). 화면 버튼은 한 훅만 돌아 1분 안팎에 끝난다.
     const discovery = discoveryStats() || {};
     await logPipeline("collect", {
+      run_id: runId, request_limits: SEARCH_LIMITS,
       trigger: isCronRequest(request) ? "cron" : "manual",
       raw: discovery.raw || {}, failed: discovery.failed || [], unique: candidates.length, by_via: discovery.by_via || {},
       web_search: discovery.web_search || [],
@@ -454,14 +463,17 @@ async function handleRequest(request, response) {
       process_started: Boolean(shouldProcess && llmReady),
     }, { durationMs: Date.now() - collectStarted });
     if (shouldProcess && llmReady) await chainStage(request, "process", 1, { curate: isCronRequest(request), deep: isCronRequest(request) });
+    else await releaseRun(runId);
     return response.status(200).json({
       status: shouldProcess && llmReady ? "started" : "ok",
+      run_id: runId, request_limits: SEARCH_LIMITS,
       search_runs: (llmConfig("openai") ? 3 : 0) + (llmConfig("deepseek") ? 3 : 0), discovered: candidates.length, stored: storedArticles.length,
       next_step: shouldProcess && llmReady
         ? "본문 처리와 Daily 생성이 별도 호출로 이어집니다. 몇 분 뒤 첫 화면에 반영됩니다."
         : "process=1 또는 크론이 본문 분석을 시작합니다."
     });
   } catch (error) {
+    if (runId) await releaseRun(runId).catch(() => {});
     console.error("[INGESTION_FAILED]", JSON.stringify({ stage, message: error.message }));
     await logPipeline("collect", { stage, message: error.message }, { status: "failed", durationMs: Date.now() - collectStarted });
     return response.status(502).json({ status: "ingestion_failed", stage, message: error.message });
