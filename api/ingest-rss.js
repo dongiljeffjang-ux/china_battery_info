@@ -114,7 +114,7 @@ function headlineScore(article, preference = EMPTY_PREFERENCE) {
     + feedbackBonus(article, preference) - Math.min(ageDays, 30) / 10;
 }
 
-async function selectHeadlineTop10() {
+async function selectHeadlineTop10(pilot = false) {
   // 본문을 못 가져온 기사는 다시 집어도 같은 결과다. 한 회차 본문 분석 예산이 열 건뿐이라
   // 죽은 URL이 그 자리를 계속 차지하면 새 기사가 밀린다. body_unavailable과 body_too_short는
   // URL 자체가 쓸모없다는 뜻이므로 제외하고, processing_failed는 일시적 오류일 수 있어 다시 시도한다.
@@ -129,6 +129,7 @@ async function selectHeadlineTop10() {
   ]);
   const unique = new Map();
   for (const article of rows) {
+    if (pilot && !article.article_company?.some(link => ['catl','hunan-yuneng','btr'].includes(link.company_id))) continue;
     const key = normalizeHeadline(article.title_original);
     if (key && !unique.has(key)) unique.set(key, article);
   }
@@ -226,7 +227,7 @@ async function chainStage(request, stage, hop = 1, { curate = wantsCurate(reques
     console.error("[STAGE_CHAIN_SKIPPED]", JSON.stringify({ stage, reason: !secret ? "no_cron_secret" : "no_host" }));
     return;
   }
-  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}${deep ? "&deep=1" : ""}&run_id=${encodeURIComponent(request.runId || request.query?.run_id || '')}`;
+  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}${deep ? "&deep=1" : ""}&run_id=${encodeURIComponent(request.runId || request.query?.run_id || '')}${request.query?.pilot === '1' ? '&pilot=1' : ''}`;
   // 호출이 "나갔다"는 것만 보장하고 응답은 기다리지 않는다.
   //   - waitUntil로만 넘기면 크론처럼 응답을 기다리는 쪽이 없는 실행에서 fetch가 나가기도 전에 함수가 끝난다.
   //   - 그렇다고 응답을 끝까지 await하면 앞 단계가 뒷 단계 작업을 기다리며 직렬로 늘어붙어
@@ -252,7 +253,7 @@ async function chainStage(request, stage, hop = 1, { curate = wantsCurate(reques
 // 본문 처리 단계. 헤드라인을 골라 예산 안에서 처리하고, 남으면 자신을 다시 부르고, 끝나면 Daily를 부른다.
 async function runProcessStage(request, hop) {
   const started = Date.now();
-  const selected = await selectHeadlineTop10();
+  const selected = await selectHeadlineTop10(request.query?.pilot === '1');
   const results = selected.length ? await processSelectedBatch(selected, started + STAGE_BUDGET_MS) : [];
   const counts = results.reduce((acc, result) => ({ ...acc, [result.status]: (acc[result.status] || 0) + 1 }), {});
   const attempted = new Set(results.map((result) => result.articleId));
@@ -264,6 +265,7 @@ async function runProcessStage(request, hop) {
   const hopCap = wantsDeep(request) ? MAX_PROCESS_HOPS : MANUAL_PROCESS_HOPS;
   console.info("[PROCESS_STAGE]", JSON.stringify({ hop, hopCap, selected: selected.length, processed: results.length, leftover, more, counts, ms: Date.now() - started }));
   await logPipeline("process", {
+    run_id: request.query?.run_id, pilot: request.query?.pilot === '1',
     hopCap, selected: selected.map((a) => ({ id: a.id, title: String(a.title_original || "").slice(0, 120), source: a.source_name, tier: a.source_tier, score: Math.round(a.headline_score) })),
     outcomes: results.map((r) => ({ articleId: r.articleId, status: r.status, reason: String(r.reason || r.message || "").slice(0, 300), chunks: r.embedding?.chunks ?? null, duplicate: r.duplicate || false, primary: r.primary_provider, verifier: r.verifier_provider })),
     counts, leftover, more,
@@ -348,6 +350,10 @@ async function handleRequest(request, response) {
   if (request.method !== "GET" && request.method !== "POST") return response.status(405).json({ status: "method_not_allowed" });
   if (!isCronRequest(request) && !requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
+  if (request.query?.pilot === '1' && !request.query?.stage && request.method === 'GET') {
+    response.setHeader('Content-Type','text/html; charset=utf-8');
+    return response.status(200).send('<!doctype html><meta charset="utf-8"><h1>3개 회사 실서비스 검증</h1><p>CATL·후난위넝·BTR. 검색 요청 최대 6회, 요청당 기사 최대 2건. 본문 처리 후 오늘 Daily를 재생성합니다.</p><form method="post" action="?pilot=1&process=1"><button onclick="this.disabled=true;this.form.submit()">3개 회사 테스트 1회 실행</button></form>');
+  }
   // Explicit, authenticated diagnostic. GET never starts a paid request.
   if (request.query?.deepseek_sample === '1') {
     if (request.method === 'GET') {
@@ -407,7 +413,7 @@ async function handleRequest(request, response) {
     request.runId = runId;
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ id, name_ko, name_zh, name_en, type_tags }) => ({ id, name_ko, name_zh, name_en, type_tags })) });
     stage = "source_collection";
-    const candidates = await withSearchBudget(() => discoverChinaSources());
+    const candidates = await withSearchBudget(() => discoverChinaSources({pilot: request.query?.pilot === '1'}));
     stage = "company_matching";
     const matchedCandidates = candidates
       .map((candidate) => ({ candidate, companies: companiesFor(candidate) }))
@@ -452,6 +458,7 @@ async function handleRequest(request, response) {
     const discovery = discoveryStats() || {};
     await logPipeline("collect", {
       run_id: runId, request_limits: SEARCH_LIMITS,
+      pilot: request.query?.pilot === '1',
       trigger: isCronRequest(request) ? "cron" : "manual",
       raw: discovery.raw || {}, failed: discovery.failed || [], unique: candidates.length, by_via: discovery.by_via || {},
       web_search: discovery.web_search || [],
