@@ -254,3 +254,10 @@ git diff --check
 - **확인된 품질 신호(운영 DB 2026-09-06 기준)**: DeepSeek 검색 발견 기사가 누적 0건이다. 검색 실패(`[WEB_SEARCH_FAILED]`)인지 결과가 전부 OpenAI와 겹치는지 다음 수집의 `pipeline_log.collect.raw`와 `failed`로 판별한다. `headline-knowledge.sql`이 운영에 적용되지 않아 유지 단계의 헤드라인 임베딩이 매일 실패하고 있다(`embed_headline.error`).
 - 검증: `node --check`, `npm run check`(api 10개 모듈 로드) 통과. 화면은 목 API로 여섯 패널·서랍 렌더링 확인. 운영 API는 SQL 적용 후 배포해서 확인해야 한다.
 - 함수 수: `api/*.js` 10개(Hobby 한도 12).
+
+### 2026-09-06 (2): 배포가 나흘째 멈춰 있던 원인과 PDF 읽기 복구
+- **배포가 네 번 연속 실패했다.** Vercel은 `api/` 아래 모든 `.js`를 함수로 센다. `api/lib/`의 supabase·access·google-news 3개를 더하면 Hobby 한도 12개에 정확히 걸려 있었고, `api/admin.js`가 더해지며 13개가 됐다. 빌드는 통과하고 "Deploying outputs"에서 실패해 원인이 화면에 드러나지 않았다. 세 파일을 루트 `lib/`로 옮겨 함수를 10개로 되돌렸다(`CLAUDE.md`의 "공유 코드는 루트 lib/에 둔다"와도 맞는다).
+- **파급**: 그날 푸시한 커밋이 모두 배포되지 않았고, 운영은 9월 4일 빌드로 돌고 있었다. 그래서 같은 날 만든 DOMMatrix 폴리필(`1eb11a3`)도 적용되지 않아, 야간 curate가 정기보고서를 읽을 때마다 `DOMMatrix is not defined`로 전부 실패했다. 장부에 실패로 기록된 보고서가 9건, PDF 추출 실패 기사가 39건이다. 마지막으로 성공한 보고서 읽기는 9월 3일이다.
+- 배포가 복구됐으므로 폴리필이 적용됐다. 오늘 밤 curate가 실패로 남긴 장부를 다시 집는지 확인할 것. `report_digest.report_url`이 `missing:` 또는 오류 문자열로 시작하는 행은 14일 뒤 재시도 대상이라, 필요하면 그 행을 지워 즉시 다시 읽게 할 수 있다.
+- **Vercel 로그는 로컬 CLI로 본다**: `npx vercel logs china-battery-lens.vercel.app --scope dongiljeffjang-uxs-projects --json`, 배포 목록은 `npx vercel ls`, 실패 원인은 `npx vercel inspect --logs <배포 URL>`. CLI는 이 PC에 로그인돼 있다.
+- **DeepSeek 검색 진단**: `DEEPSEEK_API_KEY`는 9월 2일부터 Production에 있다. 키 부재가 아니다. 같은 기간 OpenAI 검색 기사는 쌓였는데 DeepSeek 발견 기사는 0건이므로, 검색 호출이 매번 빈 출력이거나 오류로 끝난다는 뜻이다. `scripts/probe-web-search.mjs`로 키를 주고 한 번 호출하면 HTTP 상태·output 항목 종류·빈 출력 여부가 그대로 찍힌다. 배포된 새 코드는 수집 때마다 `pipeline_log`에 경로별 원시 발견 수와 실패 사유를 남기므로, 화면 "수집·분석 1회 실행"을 누른 뒤 관리자 페이지 실행 이력에서도 확인할 수 있다.
