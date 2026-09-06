@@ -244,3 +244,13 @@ git diff --check
 - 바꾼 것: MD&A 6만 자 + 重要事项 절의 募集资金·重大合同 부분 2만 자를 덧붙임(`sliceMajorMatters`). 프롬프트는 "수치가 붙은 사실은 빠짐없이". 청크당 14건. 룽바이 2024로 검증: 절 4.9만 자(MD&A 4만 + 중요사항 0.9만).
 - **보강 패스**: `report_digest.enriched_at`(실행됨)이 null인 보고서를 사실 적은 순으로 훅마다 3건씩 다시 읽고 새 사실만 더한다(`pickThinReport`/`enrichReport`). 중복은 제목 정규화 일치·포함 또는 같은 날짜에 숫자 집합 70% 겹침으로 판단(`sameFact`). 새로 읽는 보고서는 `enriched_at`을 바로 채운다.
 - 현재 읽은 보고서 ~100건이므로 이틀 밤 정도면 보강이 끝난다. 끝난 뒤 회사별 이벤트 수를 다시 세어 기록할 것.
+
+### 2026-09-06: 관리자 페이지(파이프라인 품질 점검)
+- `/admin`(`app/admin.html`, `app/admin.js`, `api/admin.js`)을 추가했다. 입장 세션으로만 열리는 읽기 전용 화면이다. 개요 / 실행 이력 / 수집 기사·검색 결과 / 이벤트 / 청크·임베딩 / 벡터 검색 시험 여섯 패널과 기사 상세 서랍(본문 길이·요약·이벤트·청크별 임베딩 입력 텍스트와 원문 조각·벡터 유무·현행 규칙 재청킹 결과)이 있다.
+- **선행 SQL: `supabase/admin-observability.sql`** — `article.discovered_via`(발견 경로, 검증 뒤에도 유지), `pipeline_log`(단계별 결과), `admin_overview()` 집계 함수. 되돌려진 검증 기사 33건도 복구한다. 이 SQL 없이는 개요·실행 이력이 502를 낸다. `headline_embedded_at` 열 추가도 들어 있어 `headline-knowledge.sql`이 아직 안 돌았어도 안전하다.
+- 수집·본문 처리·Daily·유지 단계가 끝날 때 `lib/pipeline-log.js`로 `pipeline_log`에 결과를 남긴다. 수집 기록에는 경로별 원시 발견 수(OpenAI/DeepSeek/CATL/CNINFO), 검색 실패 사유, 중복 제거 후·회사 매칭·신규 저장 수, 신규 제목, 매칭 안 된 후보 표본이 들어간다. 본문 처리 기록에는 선별 기사·점수·결과·탈락 사유·청크 수가 들어간다.
+- **수정한 버그**: 야간 수집 upsert가 `merge-duplicates`라서 이미 검증 통과한 기사가 다음 날 재발견되면 `verification_status=pending`, `source_tier=web_search_*`로 되돌아가 화면에서 사라졌다(CNINFO는 14일 창을 매일 다시 훑어 거의 항상 재발견). `ignore-duplicates`로 바꾸고 기존 행 id는 URL로 따로 찾아 회사 연결에 쓴다. 운영 DB에 33건이 그 상태였고 SQL이 복구한다.
+- 같은 URL을 두 검색 제공자가 모두 찾으면 `discovered_via='web_search_deepseek+openai'`로 남긴다. 기존 dedup은 한 제공자만 남겼다.
+- **확인된 품질 신호(운영 DB 2026-09-06 기준)**: DeepSeek 검색 발견 기사가 누적 0건이다. 검색 실패(`[WEB_SEARCH_FAILED]`)인지 결과가 전부 OpenAI와 겹치는지 다음 수집의 `pipeline_log.collect.raw`와 `failed`로 판별한다. `headline-knowledge.sql`이 운영에 적용되지 않아 유지 단계의 헤드라인 임베딩이 매일 실패하고 있다(`embed_headline.error`).
+- 검증: `node --check`, `npm run check`(api 10개 모듈 로드) 통과. 화면은 목 API로 여섯 패널·서랍 렌더링 확인. 운영 API는 SQL 적용 후 배포해서 확인해야 한다.
+- 함수 수: `api/*.js` 10개(Hobby 한도 12).

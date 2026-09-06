@@ -9,6 +9,10 @@
 --   3) 야간 수집 upsert가 이미 검증된 기사를 pending으로 되돌리는 문제가 있었다(코드는 고쳤다).
 --      되돌려진 행을 복구한다.
 
+-- 0) headline-knowledge.sql이 아직 운영에 적용되지 않았어도 집계 함수가 만들어지도록 열을 먼저 보장한다.
+--    (headline-knowledge.sql의 같은 문장과 동일하며 재실행해도 안전하다.)
+alter table public.article add column if not exists headline_embedded_at timestamptz;
+
 -- 1) 발견 경로
 alter table public.article add column if not exists discovered_via text;
 comment on column public.article.discovered_via is
@@ -59,8 +63,8 @@ as $$
       select coalesce(jsonb_agg(jsonb_build_object('verification_status', verification_status, 'processing_status', processing_status, 'discovered_via', discovered_via, 'count', c) order by c desc), '[]'::jsonb)
       from (select verification_status, processing_status, discovered_via, count(*) c from public.article group by 1,2,3) s),
     'articles_by_day', (
-      select coalesce(jsonb_agg(jsonb_build_object('day', day, 'discovered_via', discovered_via, 'count', c) order by day desc), '[]'::jsonb)
-      from (select (created_at at time zone 'Asia/Seoul')::date day, discovered_via, count(*) c
+      select coalesce(jsonb_agg(jsonb_build_object('day', d, 'discovered_via', discovered_via, 'count', c) order by d desc), '[]'::jsonb)
+      from (select (created_at at time zone 'Asia/Seoul')::date d, discovered_via, count(*) c
               from public.article where created_at > now() - interval '30 days' group by 1,2) s),
     'article_embedding', (
       select coalesce(jsonb_agg(jsonb_build_object('embedding_status', embedding_status, 'count', c)), '[]'::jsonb)
