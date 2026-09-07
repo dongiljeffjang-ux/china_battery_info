@@ -83,6 +83,10 @@
   `source_sha256` 네 컬럼, `report_digest_renewal_status_check` 제약, `report_digest_renewal_queue_idx`
   인덱스까지 모두 확인. 갱신 큐 대상은 107건이다(장부 125건 중).
 
+**다음 실행 필요**: `supabase/report-synthesis.sql`. 비교 리포트 히스토리 표에 `kind`·`source_history_ids`·
+`title_ko`를 더하고 회사 컬럼의 NOT NULL을 푼다. 적용 전에는 "선택한 리포트 함의 찾기"가 503
+(`schema_missing`)을 돌려주고, 히스토리 목록은 예전 모양으로 계속 보인다.
+
 운영 DB에 SQL을 실행한 뒤 `Success. No rows returned`를 확인한다. 이후 스키마 변경도 재실행 가능한 SQL로 남긴다.
 
 ## 6. API 지도
@@ -186,6 +190,10 @@ node scripts/check-llm-search.mjs
 node scripts/check-pipeline-status.mjs
 node scripts/check-report-classification.mjs
 node scripts/check-response-json.mjs
+node scripts/check-chain-depth.mjs
+node scripts/check-headline-hop-budget.mjs
+node scripts/check-report-renewal.mjs
+node scripts/check-report-synthesis.mjs
 ```
 
 회귀 스크립트는 모두 네트워크를 가짜로 물려 돌리므로 API 과금이 없다.
@@ -745,3 +753,71 @@ pdfjs의 텍스트 레이어만으로는 이미지로 삽입된 표·그래프 �
 `digestReport`가 세 필드를 그대로 넘기도록 고쳤고, `scripts/check-report-renewal.mjs`가
 반환 객체에 세 필드가 있는지 확인한다. 이미 `renewed_text_only`로 기록된 행은 해시가 없으므로,
 필요하면 `renewed_at`을 비워 큐에 되돌린다.
+
+## 2026-09-07 저녁: "60초 한도"는 없었다 — 체인이 끊긴 진짜 원인과 유지 훅 재설계
+
+### 확인한 사실 (운영 로그 `pipeline_log` + Vercel 문서)
+
+1. **함수 한도는 60초가 아니라 300초다.** 이 프로젝트는 2026-09-01 생성이라 Fluid compute가 기본이고,
+   Fluid의 Hobby 한도는 기본·최대 300초다. 게다가 `api/*.js` Node 함수는
+   `export const config = { maxDuration }` 형식만 읽는다. 그동안 써 온 `export const maxDuration = 60`은
+   **무시돼** 왔다. 78·95·102·110초짜리 유지 훅이 죽지 않고 로그까지 남길 수 있었던 이유다.
+2. **체인이 4훅에서 끊긴 원인은 508 Loop Detected다.** 서버가 자기 자신을 이어 부르는 체인은 훅 소요가
+   3초든 110초든 예외 없이 4훅(내부 호출 4번)에서 멈췄다(09-06 10:15, 09-07 02:18·02:36·03:23·03:36·
+   04:08·04:46·04:54 실행 전부). codex가 찾은 대로 5번째 내부 호출을 Vercel이 거부한다.
+3. **야간 크론의 유지 단계는 한 번도 돌지 않았다.** 09-06 14:19 크론 체인은 수집 → 본문 훅 1·2·3 →
+   Daily로 내부 호출 4번을 다 썼고, 그 다음 `curate` 훅 1은 5번째 호출이라 나가지 못했다.
+   `pipeline_log`에 그날 밤 `curate` 행이 없다.
+4. 그러므로 09-07에 한 "훅 예산 50→45초", "헤드라인 30→10건", "호출 상한 30초" 같은 조정은 잘못된
+   전제 위의 대응이었고, 오히려 정상 완료될 보고서 읽기(45초 기본 timeout)·웹 백필(35초)을 중단해
+   `The operation was aborted due to timeout` 실패를 만들고 있었다(룽바이 2024 반기 보강, CATL 2026 웹 백필).
+
+### 바꾼 것
+
+- `api/ingest-rss.js`·`api/company.js`: `export const config = { maxDuration: 300 }`로 올바른 형식 명시.
+- **훅을 한 호출 안에서 이어 돌린다.** `runProcessStage`·`runCurateStage`가 `INVOCATION_BUDGET_MS`(170초)
+  동안 훅을 반복하고, 예산이 다하면 그때만 자신을 한 번 더 부른다. 내부 호출 깊이는 `chain=` 쿼리로
+  세어 `MAX_CHAIN_DEPTH`(4)를 넘기지 않는다(넘기면 `[STAGE_CHAIN_DEPTH_CAP]` 로그와 `skipped` 기록).
+  크론 한 번에 유지 훅이 이제 약 10~12회 돈다(호출 2번 × 5~6훅).
+- 훅 예산 `CURATE_BUDGET_MS` 45→90초, 본문 훅 `STAGE_BUDGET_MS` 42→60초.
+- 보고서 읽기 LLM 호출에 `REPORT_LLM_TIMEOUT_MS`(85초), 웹 백필 검색에 `WEB_LLM_TIMEOUT_MS`(60초)를 명시.
+  `digestReport`·`backfillCompanyEvents`가 `timeoutMs`를 받는다.
+- **시간 초과는 실패로 못 박지 않는다.** 보강(`enriched_at`)·갱신(`renewal_status=failed`)은 timeout이
+  아닌 오류에만 기록하고, timeout이면 다음 순환에서 다시 집는다(`isTimeoutError`). 정기보고서는 한 번만
+  제대로 들어오면 되므로, 느린 호출 한 번 때문에 영영 건너뛰는 일을 막는다.
+- 헤드라인 번역 `TITLES_PER_CALL` 10→30 복원.
+- 검사: `scripts/check-chain-depth.mjs`(깊이 상한·호출 내 반복·훅 단위 재귀 금지),
+  `scripts/check-headline-hop-budget.mjs`(호출 예산 + 마지막 훅 + 여유 ≤ 300초, `config` 형식).
+- 수동 백필(화면 버튼)은 그대로 브라우저가 홉 단위로 부른다. 홉당 최대 90초.
+
+### 다음 밤 확인할 것
+
+- `pipeline_log` `stage='curate'`가 크론 실행(`trigger` 없음, `chain_depth` 3~4)에서 10건 안팎 생기는지.
+- `duration_ms`가 300,000을 넘는 행이 없는지. 넘으면 `INVOCATION_BUDGET_MS`를 내린다.
+- `enrich`·`web`의 `error`에 timeout이 사라졌는지.
+
+## 2026-09-07 저녁: 비교 리포트 함의 종합
+
+기업 비교 화면의 "지난 리포트" 목록에서 비교 리포트를 2~6건 골라 **리포트들을 가로지르는 함의**를
+OpenAI가 종합한다. 결과는 같은 목록에 `함의 종합` 배지로 저장돼 다시 열 수 있다.
+
+- 목록은 30건씩 읽고 **더보기**로 이어 붙인다(`/api/company?compare_history=1&offset=N`, `has_more`).
+- `POST /api/company` `mode=synthesize_reports`, `historyIds: [...]`. 재료는 `kind='compare'` 행만이다.
+  종합을 다시 종합에 넣지 않는다 — 해석 위에 해석을 쌓으면 근거에서 여러 단계 건너뛴 결론이 된다.
+- `lib/compare-report.js` `buildReportSynthesis()`: 웹 검색 없이 저장된 리포트만 근거로 쓴다.
+  출력은 `threads`(두 건 이상에서 되풀이되는 흐름)·`contrasts`(갈리는 지점)·`korea_implications`
+  (한국 셀·양극재·음극재 관점)·`limits_ko`(이 종합의 한계). 모든 항목에 `basis_ko`(회사명·수치 한 문장)와
+  `report_refs`(재료 리포트 번호)가 붙는다. 프롬프트 `REPORT_SYNTHESIS_PROMPT`는 관리자 파이프라인 화면
+  6번 단계에 노출된다.
+- 화면: 목록 항목의 체크박스로 고르면 선택 순서가 `R1`·`R2`… 배지가 되고, 그 번호가 문서의 근거 표기와
+  같다. 문서 머리에 "해석"임을 적고, 인쇄(PDF)는 비교 리포트와 같은 패널·같은 CSS를 쓴다.
+- 저장: `compare_report_history`에 `kind='synthesis'`, `source_history_ids`, `title_ko`로 남긴다.
+  **`supabase/report-synthesis.sql` 적용이 먼저다**(5절).
+- 검사: `scripts/check-report-synthesis.mjs`.
+
+## 2026-09-07 저녁: 벡터 데이터 1단계 검증 결과
+
+`docs/VECTOR-VERIFICATION-PLAN.md`의 1단계(오프라인 자동 검사)를 운영 DB에 SQL로 돌렸다. 결과와 판정은
+그 문서의 "1단계 실행 결과" 절에 있다. 요약: 청크·이벤트 정합성은 깨끗하고, 수치 오류는 표본 28개 중
+1건(万元→억 환산 10배 오류, 수정함)이며, 구조적 약점은 **발췌 300자 상한** 때문에 사실 한 건에 담긴
+수치 여러 개 중 40%가량이 저장된 근거만으로는 확인되지 않는다는 점이다.

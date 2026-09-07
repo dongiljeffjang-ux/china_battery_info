@@ -1141,17 +1141,13 @@ function scopeReportCss(css, scope){
     }).join('');
   }).join('\n');
 }
-let lastReportPayload = null;
+// 지금 패널에 떠 있는 리포트의 인쇄용 문서. 비교 리포트와 함의 종합이 같은 패널·같은 인쇄 버튼을 쓴다.
+let lastReportHtml = '';
 // 리포트는 비교 화면 아래 접이식 상자에 그린다. 새 창을 바로 띄우면 화면을 떠나게 되고 팝업 차단에도 걸린다.
-function renderCompareReportPanel(payload){
-  lastReportPayload = payload;
+function mountReportPanel({ title, styles, body }, { unsaved = '', printHtml }){
+  lastReportHtml = printHtml;
   const panel = document.querySelector('#compare-report-panel');
-  const { title, styles, body } = compareReportParts(payload);
   panel.hidden = false;
-  // 방금 만든 리포트인데 history_id가 없으면 히스토리에 남지 않았다는 뜻이다. 화면을 닫으면 사라진다.
-  const unsaved = payload.history_error || (payload.history_id === null && payload.db_updates)
-    ? `<p class="load-failure">이 리포트는 히스토리에 저장되지 않았습니다${payload.history_error ? ` (${escapeHtml(payload.history_error)})` : ''}. 창을 닫으면 다시 열 수 없으니 필요하면 PDF로 저장해 주세요.</p>`
-    : '';
   panel.innerHTML = `<details class="report-panel" open><summary><span class="report-title">${title}</span><span class="report-actions"><button type="button" class="secondary-button" id="report-save-pdf">PDF로 저장</button><button type="button" class="secondary-button" id="report-close">닫기</button></span></summary><style>${scopeReportCss(styles, '.report-doc')}</style>${unsaved}<div class="report-doc">${body}</div></details>`;
   panel.querySelector('#report-close').addEventListener('click', event => { event.preventDefault(); panel.hidden = true; });
   panel.querySelector('#report-save-pdf').addEventListener('click', event => {
@@ -1159,7 +1155,7 @@ function renderCompareReportPanel(payload){
     const printWindow = window.open('', '_blank');
     if (!printWindow) { window.alert('팝업이 차단됐습니다. 이 사이트의 팝업을 허용한 뒤 다시 시도해 주세요.'); return; }
     printWindow.document.open();
-    printWindow.document.write(compareReportHtml(lastReportPayload));
+    printWindow.document.write(lastReportHtml);
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => printWindow.print(), 400);
@@ -1168,18 +1164,63 @@ function renderCompareReportPanel(payload){
   panel.querySelector('.report-actions').addEventListener('click', event => event.stopPropagation());
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+// 방금 만든 리포트인데 history_id가 없으면 히스토리에 남지 않았다는 뜻이다. 화면을 닫으면 사라진다.
+function unsavedNote(payload, justMade){
+  return payload.history_error || (payload.history_id === null && justMade)
+    ? `<p class="load-failure">이 리포트는 히스토리에 저장되지 않았습니다${payload.history_error ? ` (${escapeHtml(payload.history_error)})` : ''}. 창을 닫으면 다시 열 수 없으니 필요하면 PDF로 저장해 주세요.</p>`
+    : '';
+}
+function renderCompareReportPanel(payload){
+  mountReportPanel(compareReportParts(payload), { unsaved: unsavedNote(payload, Boolean(payload.db_updates)), printHtml: compareReportHtml(payload) });
+}
+
+// ── 리포트 함의 종합 ──────────────────────────────────────────────────
+// 지난 비교 리포트 여러 건에서 뽑은 공통 흐름·갈리는 지점·한국 기업 관점. 전부 해석이므로 문서 전체를
+// 해석 영역으로 표시하고, 항목마다 재료가 된 리포트 번호를 붙여 근거를 되짚을 수 있게 한다.
+function synthesisReportParts(payload){
+  const s = payload.synthesis || {};
+  const sources = payload.sources || [];
+  const stamp = payload.generated_at ? new Intl.DateTimeFormat('ko', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(payload.generated_at)) : '';
+  // 인쇄용 CSS는 비교 리포트와 같은 것을 쓴다. 활자·여백·색이 한 벌로 보이게 하기 위해서다.
+  const { styles } = compareReportParts({ report: {}, company_a: '', company_b: '' });
+  const refs = list => (list || []).map(n => `<span class="seg">R${n}</span>`).join('');
+  const item = entry => `<div class="point"><p class="lead">${refs(entry.report_refs)}${escapeHtml(entry.theme_ko || '')}</p><p class="txt">${escapeHtml(entry.finding_ko || '')}</p><p class="basis">근거 · ${escapeHtml(entry.basis_ko || '')}</p></div>`;
+  const threads = (s.threads || []).map(item).join('');
+  const contrasts = (s.contrasts || []).map(item).join('');
+  const implications = (s.korea_implications || []).map(entry => `<div class="point"><p class="lead"><span class="seg">${escapeHtml(entry.segment || '')}</span>${refs(entry.report_refs)}${escapeHtml(entry.implication_ko || '')}</p><p class="txt">${escapeHtml(entry.point_ko || '')}</p><p class="basis">근거 · ${escapeHtml(entry.basis_ko || '')}</p></div>`).join('');
+  const sourceList = sources.map((src, index) => `<li><span class="tag">R${index + 1}</span>${escapeHtml(src.label)} · ${escapeHtml(compareHistoryDateLabel(src.created_at))} <span class="basis" style="display:inline">[${src.include_supporting ? '보조 포함' : '공시만'}]</span></li>`).join('');
+  const title = `${escapeHtml(s.title_ko || '리포트 함의 종합')}`;
+  const body = `<header><p class="eyebrow">CHINA BATTERY LENS · 비교 리포트 함의 종합 — 해석</p>
+<h1>${title}</h1>
+<p class="meta">재료 리포트 ${sources.length}건 · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')} · 웹 검색 없이 저장된 리포트만 근거</p></header>
+${s.headline_ko ? `<p class="headline">${escapeHtml(s.headline_ko)}</p>` : ''}
+<h2>재료가 된 리포트</h2><ul>${sourceList || '<li class="none">없음</li>'}</ul>
+<h2 class="insight">1. 리포트를 가로지르는 공통 흐름</h2>${threads || '<p class="none">두 건 이상에서 되풀이되는 흐름을 찾지 못했습니다.</p>'}
+${contrasts ? `<h2 class="insight">2. 갈리는 지점</h2>${contrasts}` : ''}
+<h2 class="insight">${contrasts ? '3' : '2'}. 한국 배터리사·소재사 관점</h2>${implications || '<p class="none">해석을 생성하지 못했습니다.</p>'}
+${s.limits_ko ? `<h2 class="check">이 종합의 한계</h2><p class="txt">${escapeHtml(s.limits_ko)}</p>` : ''}
+<footer>이 문서 전체는 저장된 비교 리포트를 재료로 한 해석입니다. 사실은 각 리포트의 1~2장을 보세요. 투자 판단 자료가 아닙니다.</footer>`;
+  return { title: `${s.title_ko || '리포트 함의 종합'} — 함의 종합`, styles, body };
+}
+function synthesisReportHtml(payload){
+  const { title, styles, body } = synthesisReportParts(payload);
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${title}</title><style>${styles}</style></head><body>${body}</body></html>`;
+}
+function renderSynthesisPanel(payload, justMade = false){
+  mountReportPanel(synthesisReportParts(payload), { unsaved: unsavedNote(payload, justMade), printHtml: synthesisReportHtml(payload) });
+}
 
 function compareHistoryDateLabel(iso){
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : new Intl.DateTimeFormat('ko', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 async function openCompareHistoryItem(id){
-  const container = document.querySelector('#compare-report-history');
   try {
     const response = await fetch(`/api/company?compare_history_id=${encodeURIComponent(id)}`);
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
-    renderCompareReportPanel(payload);
+    if (payload.kind === 'synthesis') renderSynthesisPanel(payload);
+    else renderCompareReportPanel(payload);
   } catch (error) {
     window.alert(`지난 리포트를 불러오지 못했습니다: ${error.message}`);
   }
@@ -1189,25 +1230,85 @@ async function openCompareHistoryItem(id){
 function showCompareHistoryFailure(container, reason){
   container.innerHTML = `<p class="load-failure">지난 비교 리포트 목록을 불러오지 못했습니다. ${escapeHtml(reason)} — 저장된 리포트가 없다는 뜻은 아닙니다. 새로고침 후에도 계속되면 접근 세션을 확인해 주세요.</p>`;
 }
-async function loadCompareReportHistory(){
+// 목록은 30건씩 읽고 "더보기"로 이어 붙인다. 함의 종합에 넣을 리포트 선택은 페이지를 넘겨도 유지된다.
+const SYNTHESIS_MAX_PICKS = 6;
+const compareHistory = { items: [], nextOffset: 0, hasMore: false, picked: new Set() };
+function historyItemLabel(item){
+  if (item.kind === 'synthesis') return `<span class="hist-kind">함의 종합</span>${escapeHtml(item.title_ko || '리포트 함의 종합')}${item.source_history_ids?.length ? ` <span class="hist-scope">[리포트 ${item.source_history_ids.length}건]</span>` : ''}`;
+  return `${escapeHtml(item.company_a_name_ko || '')} vs ${escapeHtml(item.company_b_name_ko || '')} <span class="hist-scope">[${item.include_supporting ? '보조 포함' : '공시만'}]</span>${item.headline_ko ? ` — ${escapeHtml(item.headline_ko)}` : ''}`;
+}
+function renderCompareHistoryList(){
   const container = document.querySelector('#compare-report-history');
   if (!container) return;
+  if (!compareHistory.items.length) {
+    container.innerHTML = '<p class="compare-history-empty">아직 저장된 비교 리포트가 없습니다. "비교 리포트 생성"을 누르면 여기에 히스토리로 쌓입니다.</p>';
+    return;
+  }
+  // 선택 순서가 [R1], [R2]… 번호가 된다. 배지로 번호를 보여 준다.
+  const pickedOrder = [...compareHistory.picked];
+  const rows = compareHistory.items.map(item => {
+    const pickable = item.kind !== 'synthesis';
+    const order = pickedOrder.indexOf(item.id);
+    const box = pickable
+      ? `<input type="checkbox" data-pick-id="${item.id}" aria-label="함의 종합에 포함" ${order >= 0 ? 'checked' : ''} ${order < 0 && compareHistory.picked.size >= SYNTHESIS_MAX_PICKS ? 'disabled' : ''}>`
+      : '<span style="width:13px;flex:0 0 auto"></span>';
+    return `<li>${box}<button type="button" class="link-button" data-history-id="${item.id}">${order >= 0 ? `<span class="hist-ref">R${order + 1}</span>` : ''}${compareHistoryDateLabel(item.created_at)} · ${historyItemLabel(item)}</button></li>`;
+  }).join('');
+  const count = compareHistory.picked.size;
+  container.innerHTML = `<details class="compare-history-list" open><summary>지난 리포트 (${compareHistory.items.length}건${compareHistory.hasMore ? '+' : ''})</summary>
+<div class="compare-history-toolbar"><button type="button" class="secondary-button" id="synthesize-reports" ${count < 2 ? 'disabled' : ''}>선택한 리포트 함의 찾기 (${count})</button><span class="compare-history-note">비교 리포트를 2~${SYNTHESIS_MAX_PICKS}건 고르면 공통 흐름·갈리는 지점·한국 기업 관점을 종합합니다. 결과는 해석이며 이 목록에 함께 저장됩니다.</span></div>
+<ul>${rows}</ul>${compareHistory.hasMore ? '<button type="button" class="secondary-button hist-more" id="history-more">더보기</button>' : ''}</details>`;
+  container.querySelectorAll('[data-history-id]').forEach(button => button.addEventListener('click', () => openCompareHistoryItem(button.dataset.historyId)));
+  container.querySelectorAll('[data-pick-id]').forEach(box => box.addEventListener('change', () => {
+    if (box.checked) compareHistory.picked.add(box.dataset.pickId); else compareHistory.picked.delete(box.dataset.pickId);
+    renderCompareHistoryList();
+  }));
+  container.querySelector('#synthesize-reports')?.addEventListener('click', synthesizeReports);
+  container.querySelector('#history-more')?.addEventListener('click', () => loadCompareReportHistory({ append: true }));
+}
+async function loadCompareReportHistory({ append = false } = {}){
+  const container = document.querySelector('#compare-report-history');
+  if (!container) return;
+  const offset = append ? compareHistory.nextOffset : 0;
   try {
-    const response = await fetch('/api/company?compare_history=1');
+    const response = await fetch(`/api/company?compare_history=1&offset=${offset}`);
     const payload = await response.json();
     if (payload.status !== 'ok') { showCompareHistoryFailure(container, payload.message || payload.status || `HTTP ${response.status}`); return; }
-    if (!payload.history.length) {
-      container.innerHTML = '<p class="compare-history-empty">아직 저장된 비교 리포트가 없습니다. "비교 리포트 생성"을 누르면 여기에 히스토리로 쌓입니다.</p>';
-      return;
-    }
-    container.innerHTML = `<details class="compare-history-list" open><summary>지난 비교 리포트 (${payload.history.length}건)</summary><ul>${payload.history.map(item =>
-      `<li><button type="button" class="link-button" data-history-id="${item.id}">${compareHistoryDateLabel(item.created_at)} · ${item.company_a_name_ko} vs ${item.company_b_name_ko} <span class="hist-scope">[${item.include_supporting ? '보조 포함' : '공시만'}]</span>${item.headline_ko ? ` — ${item.headline_ko}` : ''}</button></li>`
-    ).join('')}</ul></details>`;
-    container.querySelectorAll('[data-history-id]').forEach(button => button.addEventListener('click', () => openCompareHistoryItem(button.dataset.historyId)));
+    const known = new Set(append ? compareHistory.items.map(item => item.id) : []);
+    const fresh = payload.history.filter(item => !known.has(item.id));
+    compareHistory.items = append ? [...compareHistory.items, ...fresh] : payload.history;
+    compareHistory.nextOffset = Number(payload.next_offset) || (offset + payload.history.length);
+    compareHistory.hasMore = Boolean(payload.has_more);
+    // 목록에서 사라진(삭제된) 리포트는 선택에서도 뺀다. 새로 고침 뒤 선택이 유령으로 남지 않게.
+    if (!append) { const ids = new Set(compareHistory.items.map(item => item.id)); for (const id of [...compareHistory.picked]) if (!ids.has(id)) compareHistory.picked.delete(id); }
+    renderCompareHistoryList();
   } catch (error) {
     // 파싱 실패 원문("Unexpected token '<'…")은 화면에 쓸모가 없다. 상세는 콘솔로 넘긴다.
     console.error('비교 리포트 히스토리를 불러오지 못했습니다', error);
     showCompareHistoryFailure(container, '서버 응답을 읽지 못했습니다.');
+  }
+}
+async function synthesizeReports(){
+  const ids = [...compareHistory.picked];
+  if (ids.length < 2) { window.alert('비교 리포트를 2건 이상 골라 주세요.'); return; }
+  const button = document.querySelector('#synthesize-reports');
+  if (button) button.disabled = true;
+  showBusy('리포트 함의 종합 중', `선택한 비교 리포트 ${ids.length}건을 OpenAI가 읽고 공통 흐름·갈리는 지점·한국 기업 관점을 뽑습니다. 웹 검색은 쓰지 않습니다. 1분 안팎 걸립니다.`);
+  try {
+    const response = await fetch('/api/company', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'synthesize_reports', historyIds: ids })
+    });
+    const payload = await response.json();
+    if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
+    renderSynthesisPanel(payload, true);
+    compareHistory.picked.clear();
+    await loadCompareReportHistory();
+  } catch (error) {
+    window.alert(`함의 종합을 만들지 못했습니다: ${error.message}`);
+    renderCompareHistoryList();
+  } finally {
+    hideBusy();
   }
 }
 async function generateCompareReport(){

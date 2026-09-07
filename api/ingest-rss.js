@@ -12,7 +12,11 @@ import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/
 import { embedEvents } from "../lib/vector-ingestion.js";
 import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor } from '../lib/ingestion-guard.js';
 
-export const maxDuration = 60;
+// Vercel Fluid compute(2025-04 이후 새 프로젝트 기본)에서 Hobby 함수 한도는 기본·최대 300초다.
+// `api/*.js` Node 함수는 `export const config = { maxDuration }` 형식만 읽는다. 예전의
+// `export const maxDuration = 60`은 무시돼 실제로는 300초가 적용돼 왔고, 그래서 78~110초짜리 유지 훅이
+// 죽지 않고 로그까지 남길 수 있었다. 뜻을 분명히 하려고 올바른 형식으로 명시한다.
+export const config = { maxDuration: 300 };
 
 const TOP10_LIMIT = 10;
 // 본문 분석 후보로 볼 기간. 수집이 최근 3일치를 훑으므로 같은 창으로 맞춘다.
@@ -22,12 +26,20 @@ const PROCESS_WINDOW_DAYS = 3;
 const DISCLOSURE_WINDOW_DAYS = 45;
 const DISCLOSURE_PER_RUN = 4;
 const PROCESS_CONCURRENCY = 3;
-// 한 함수는 60초 안에 끝나야 한다. 본문 처리는 이 시간까지만 새 기사를 집고 나머지는 다음 호출로 넘긴다.
-const STAGE_BUDGET_MS = 42000;
-// 유지 훅은 무거운 단계를 하나만 맡는다(lib/curation.js). LLM 호출 하나가 25~40초라
-// 42초로는 앞 단계가 몇 초만 써도 그 하나를 못 돌린다. 다만 50초는 로그·대기열 확인·다음 홉
-// 호출까지 합쳐 60초를 넘긴 사례가 있어 45초로 제한한다.
-const CURATE_BUDGET_MS = 45000;
+// 본문 처리 훅 하나가 새 기사를 집는 시간. 진행 중인 기사는 이 시간이 지나도 마저 끝낸다.
+const STAGE_BUDGET_MS = 60000;
+// 유지 훅은 무거운 단계를 하나만 맡는다(lib/curation.js). 보고서 읽기의 LLM 호출 상한이 85초라
+// 훅 예산은 그보다 조금 크게 둔다. 예전 45초는 "함수 한도 60초"를 전제로 한 값이었는데 그 전제가
+// 틀렸고, 정상적으로 끝날 보고서 읽기·웹 백필을 35~45초에 중단해 timeout 실패를 만들고 있었다.
+const CURATE_BUDGET_MS = 90000;
+// 한 호출 안에서 훅을 몇 초까지 이어 돌릴지. 이 시간이 지나면 새 훅을 시작하지 않고 다음 호출로
+// 넘긴다. 마지막 훅(최대 90초)과 로그·잔량 확인을 더해도 300초 한도 안에 든다.
+const INVOCATION_BUDGET_MS = 170000;
+// Vercel은 배포가 자기 자신을 이어 부르는 체인을 5번째 내부 호출에서 508 Loop Detected로 끊는다.
+// 2026-09-06~07 운영 로그에서 서버 재귀 체인은 훅 소요와 무관하게 예외 없이 4훅에서 멈췄고,
+// 크론 체인은 수집→본문×3→Daily로 깊이를 다 써 유지 단계가 한 번도 돌지 못했다.
+// 그래서 훅은 한 호출 안에서 이어 돌리고, 호출을 넘길 때만 깊이를 하나 쓴다.
+const MAX_CHAIN_DEPTH = 4;
 // 다음 단계 호출을 넘기고 기다리는 최대 시간. 요청이 나갔는지만 확인하면 되므로 짧게 둔다.
 const CHAIN_HANDOFF_MS = 1500;
 // 본문 처리 호출을 최대 몇 번 이어 붙일지. 하루치 헤드라인 10건이면 두어 번이면 끝난다.
@@ -39,7 +51,7 @@ const MANUAL_PROCESS_HOPS = 1;
 // 유지 단계(보고서 읽기·시점 재확인·임베딩) 호출을 한 번의 실행에서 최대 몇 번 이어 붙일지.
 // 회사 23곳 × 최근 3년 보고서 6건이면 백여 건이라, 처음 며칠은 한 실행에 수십 번 이어야 한다.
 const MAX_CURATE_HOPS = 40;
-// 60초 함수 안에서 검색 1회 + 추출이 끝나야 하므로 회사당 건수를 낮춘다.
+// 한 훅 안에서 검색 1회 + 추출이 끝나야 하므로 회사당 건수를 낮춘다.
 const BACKFILL_MAX_EVENTS = 12;
 const BACKFILL_SINCE = "2023-01-01";
 const DIGEST_MAX_EVENTS = 10;
@@ -239,6 +251,11 @@ function chainBaseUrl(request) {
     || request.headers["x-forwarded-host"] || request.headers.host;
   return host ? `https://${host}` : null;
 }
+// 이 호출이 내부 체인의 몇 번째인지. 바깥(크론·화면)에서 온 첫 호출은 0이다.
+function chainDepth(request) {
+  return Math.max(0, Number(request.query?.chain) || 0);
+}
+
 async function chainStage(request, stage, hop = 1, { curate = wantsCurate(request), deep = wantsDeep(request) } = {}) {
   const secret = process.env.CRON_SECRET;
   const base = chainBaseUrl(request);
@@ -246,7 +263,14 @@ async function chainStage(request, stage, hop = 1, { curate = wantsCurate(reques
     console.error("[STAGE_CHAIN_SKIPPED]", JSON.stringify({ stage, reason: !secret ? "no_cron_secret" : "no_host" }));
     return;
   }
-  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}${curate ? "&curate=1" : ""}${deep ? "&deep=1" : ""}&run_id=${encodeURIComponent(request.runId || request.query?.run_id || '')}${request.query?.pilot === '1' ? '&pilot=1' : ''}`;
+  const depth = chainDepth(request) + 1;
+  if (depth > MAX_CHAIN_DEPTH) {
+    // 5번째 내부 호출은 508로 거부된다. 나가지도 않을 요청을 보내는 대신 이유를 남기고 멈춘다.
+    console.error("[STAGE_CHAIN_DEPTH_CAP]", JSON.stringify({ stage, hop, depth }));
+    await logPipeline(stage, { message: "chain depth cap", stage, hop, depth, run_id: request.query?.run_id }, { hop, status: "skipped", durationMs: 0 }).catch(() => {});
+    return;
+  }
+  const url = `${base}/api/ingest-rss?stage=${encodeURIComponent(stage)}&hop=${hop}&chain=${depth}${curate ? "&curate=1" : ""}${deep ? "&deep=1" : ""}&run_id=${encodeURIComponent(request.runId || request.query?.run_id || '')}${request.query?.pilot === '1' ? '&pilot=1' : ''}`;
   // 호출이 "나갔다"는 것만 보장하고 응답은 기다리지 않는다.
   //   - waitUntil로만 넘기면 크론처럼 응답을 기다리는 쪽이 없는 실행에서 fetch가 나가기도 전에 함수가 끝난다.
   //   - 그렇다고 응답을 끝까지 await하면 앞 단계가 뒷 단계 작업을 기다리며 직렬로 늘어붙어
@@ -269,8 +293,25 @@ async function chainStage(request, stage, hop = 1, { curate = wantsCurate(reques
   }
 }
 
-// 본문 처리 단계. 헤드라인을 골라 예산 안에서 처리하고, 남으면 자신을 다시 부르고, 끝나면 Daily를 부른다.
-async function runProcessStage(request, hop) {
+// 본문 처리 단계. 헤드라인을 골라 예산 안에서 처리한다. 훅은 한 호출 안에서 이어 돌리고(체인 깊이를
+// 아끼려고), 호출 예산이 다하면 자신을 한 번 더 부르며, 끝나면 Daily를 부른다.
+async function runProcessStage(request, startHop) {
+  const invocationStarted = Date.now();
+  const hopCap = wantsDeep(request) ? MAX_PROCESS_HOPS : MANUAL_PROCESS_HOPS;
+  let hop = startHop;
+  let more = false;
+  for (;;) {
+    more = await runProcessHop(request, hop, hopCap);
+    if (!more || hop >= hopCap || Date.now() - invocationStarted > INVOCATION_BUDGET_MS) break;
+    hop += 1;
+  }
+  if (more && hop < hopCap) await chainStage(request, "process", hop + 1);
+  else await chainStage(request, "daily");
+  await flushTraces();
+}
+
+// 본문 처리 훅 하나. 남은 일이 있으면 true.
+async function runProcessHop(request, hop, hopCap) {
   const started = Date.now();
   const selected = await selectHeadlineTop10(request.query?.pilot === '1');
   const results = selected.length ? await processSelectedBatch(selected, started + STAGE_BUDGET_MS) : [];
@@ -281,17 +322,14 @@ async function runProcessStage(request, hop) {
   // 20~30건이어도 10건만 읽고 끝났다. 배치가 가득 찼다면 아직 남았다는 뜻이므로 다음 훅으로 이어 간다.
   const batchWasFull = selected.length >= TOP10_LIMIT;
   const more = leftover > 0 || batchWasFull;
-  const hopCap = wantsDeep(request) ? MAX_PROCESS_HOPS : MANUAL_PROCESS_HOPS;
   console.info("[PROCESS_STAGE]", JSON.stringify({ hop, hopCap, selected: selected.length, processed: results.length, leftover, more, counts, ms: Date.now() - started }));
   await logPipeline("process", {
-    run_id: request.query?.run_id, pilot: request.query?.pilot === '1',
+    run_id: request.query?.run_id, pilot: request.query?.pilot === '1', chain_depth: chainDepth(request),
     hopCap, selected: selected.map((a) => ({ id: a.id, title: String(a.title_original || "").slice(0, 120), source: a.source_name, tier: a.source_tier, score: Math.round(a.headline_score) })),
     outcomes: results.map((r) => ({ articleId: r.articleId, status: r.status, reason: String(r.reason || r.message || "").slice(0, 300), chunks: r.embedding?.chunks ?? null, duplicate: r.duplicate || false, primary: r.primary_provider, verifier: r.verifier_provider })),
     counts, leftover, more,
   }, { hop, durationMs: Date.now() - started });
-  if (more && hop < hopCap) await chainStage(request, "process", hop + 1);
-  else await chainStage(request, "daily");
-  await flushTraces();
+  return more;
 }
 
 async function runDailyStage(request) {
@@ -316,21 +354,34 @@ async function runDailyStage(request) {
   await flushTraces();
 }
 
-// 유지 단계. 아직 안 읽은 정기보고서를 읽고, 시점을 다시 확인하고, 벡터를 메운다. 남으면 자신을 다시 부른다.
-async function runCurateStage(request, hop) {
-  const started = Date.now();
+// 유지 단계. 아직 안 읽은 정기보고서를 읽고, 시점을 다시 확인하고, 벡터를 메운다.
+// 훅은 한 호출 안에서 이어 돌리고, 호출 예산이 다하면(그리고 체인 깊이가 남으면) 자신을 한 번 더 부른다.
+async function runCurateStage(request, startHop) {
+  const invocationStarted = Date.now();
+  let hop = startHop;
   let more = false;
-  try {
-    const result = await runCurationHop({ deadline: started + CURATE_BUDGET_MS, hop });
-    more = result.more;
-    console.info("[CURATE_STAGE]", JSON.stringify({ hop, ...result.log, more, ms: Date.now() - started }));
-    await logPipeline("curate", { ...result.log, more }, { hop, durationMs: Date.now() - started });
-  } catch (error) {
-    console.error("[CURATE_STAGE_FAILED]", JSON.stringify({ hop, message: error.message }));
-    await logPipeline("curate", { message: error.message }, { hop, status: "failed", durationMs: Date.now() - started });
+  for (;;) {
+    more = await runCurateHop(request, hop);
+    if (!more || hop >= MAX_CURATE_HOPS || Date.now() - invocationStarted > INVOCATION_BUDGET_MS) break;
+    hop += 1;
   }
   if (more && hop < MAX_CURATE_HOPS) await chainStage(request, "curate", hop + 1);
   await flushTraces();
+}
+
+// 유지 훅 하나. 남은 일이 있으면 true. 훅 자체가 예외로 죽으면 그 밤은 거기서 멈춘다(원인을 로그에 남긴다).
+async function runCurateHop(request, hop) {
+  const started = Date.now();
+  try {
+    const result = await runCurationHop({ deadline: started + CURATE_BUDGET_MS, hop });
+    console.info("[CURATE_STAGE]", JSON.stringify({ hop, ...result.log, more: result.more, ms: Date.now() - started }));
+    await logPipeline("curate", { ...result.log, more: result.more, chain_depth: chainDepth(request) }, { hop, durationMs: Date.now() - started });
+    return result.more;
+  } catch (error) {
+    console.error("[CURATE_STAGE_FAILED]", JSON.stringify({ hop, message: error.message }));
+    await logPipeline("curate", { message: error.message, chain_depth: chainDepth(request) }, { hop, status: "failed", durationMs: Date.now() - started });
+    return false;
+  }
 }
 
 // 관리자 화면의 수동 백필은 브라우저가 한 홉씩 호출한다. 같은 Vercel 함수가 자기 자신을 5번째
@@ -433,7 +484,7 @@ async function handleRequest(request, response) {
   if (request.method === "POST" && String(request.query?.curate_run || "") === "1") {
     if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
     await chainStage(request, "curate", 1, { curate: true });
-    return response.status(202).json({ status: "started", stage: "curate", next_step: "정기보고서 읽기·보강·시점 재확인이 서버에서 최대 40회 이어집니다. 20~30분 뒤 기업 분석을 새로 고침하면 반영됩니다." });
+    return response.status(202).json({ status: "started", stage: "curate", next_step: "정기보고서 읽기·보강·시점 재확인이 서버에서 호출 4번(호출당 약 3분)까지 이어집니다. 더 많이 돌리려면 화면의 시계열 백필 버튼을 쓰세요." });
   }
   // 이어 붙은 단계 호출. 곧바로 응답하고 일은 waitUntil 안에서 마저 한다.
   const stageName = String(request.query?.stage || "").trim();

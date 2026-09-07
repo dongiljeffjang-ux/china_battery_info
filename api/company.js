@@ -4,10 +4,19 @@ import { requireAccess } from "../lib/access.js";
 import { COMPANIES, TRACKED_COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
 import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
-import { buildCompareReport, applyVerifiedFacts } from "../lib/compare-report.js";
+import { buildCompareReport, applyVerifiedFacts, buildReportSynthesis } from "../lib/compare-report.js";
 
-// 비교 리포트는 LLM 두 번(작성 + 웹 검증)을 부르므로 기본 10초로는 끝나지 않는다.
-export const maxDuration = 60;
+// 비교 리포트는 LLM 두 번(작성 + 웹 검증), 함의 종합은 긴 입력 한 번을 부른다. `api/*.js` Node 함수는
+// `export const config = { maxDuration }` 형식만 읽으므로(예전 `export const maxDuration`은 무시됐다)
+// Fluid Hobby 한도인 300초를 이 형식으로 명시한다.
+export const config = { maxDuration: 300 };
+
+// 함의 종합에 한 번에 넣을 비교 리포트 수. 여섯 건이면 입력 3만 자 안팎이라 한 호출로 끝난다.
+const MAX_SYNTHESIS_REPORTS = 6;
+const HISTORY_PAGE_SIZE = 30;
+const HISTORY_SELECT_BASE = "id,created_at,company_a_id,company_b_id,company_a_name_ko,company_b_name_ko,include_supporting,headline_ko:report->>headline_ko";
+// kind·title_ko·source_history_ids는 supabase/report-synthesis.sql이 만든다. SQL 적용 전에는 예전 컬럼만 읽는다.
+const HISTORY_SELECT_FULL = `${HISTORY_SELECT_BASE},kind,title_ko,source_history_ids`;
 
 const VALUE_CHAINS = ["cell", "cathode", "anode"];
 
@@ -138,19 +147,87 @@ async function runCompareReport(request, response) {
   }
 }
 
+function historyLabel(row) {
+  return `${row.company_a_name_ko} vs ${row.company_b_name_ko}`;
+}
+
+// 지난 비교 리포트 여러 건을 골라 함의를 종합한다. 재료는 compare 행만이다. 종합을 다시 종합에 넣으면
+// 해석 위에 해석을 쌓는 셈이라(근거에서 여러 단계 건너뛴 결론) 제품 불변조건에 어긋난다.
+async function runReportSynthesis(request, response) {
+  const ids = [...new Set((Array.isArray(request.body?.historyIds) ? request.body.historyIds : []).map((id) => String(id || "").trim()).filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+  if (ids.length < 2) return response.status(400).json({ status: "invalid_request", message: "비교 리포트를 2건 이상 골라 주세요." });
+  if (ids.length > MAX_SYNTHESIS_REPORTS) return response.status(400).json({ status: "invalid_request", message: `한 번에 ${MAX_SYNTHESIS_REPORTS}건까지 종합할 수 있습니다.` });
+  if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
+  let rows;
+  try {
+    rows = await supabaseRest(`compare_report_history?select=id,created_at,company_a_id,company_b_id,company_a_name_ko,company_b_name_ko,include_supporting,verification_status,report,kind&id=in.(${ids.join(",")})`);
+  } catch (error) {
+    if (/kind/.test(error.message || "")) return response.status(503).json({ status: "schema_missing", message: "supabase/report-synthesis.sql을 운영 DB에 먼저 적용해야 합니다." });
+    console.error("[REPORT_SYNTHESIS_LOAD_FAILED]", JSON.stringify({ ids, message: error.message }));
+    return response.status(502).json({ status: error.code || "db_error", message: error.message });
+  }
+  // 선택한 순서를 지켜 [R1], [R2]… 번호가 화면과 같게 한다.
+  const byId = new Map((rows || []).map((row) => [row.id, row]));
+  const reports = ids.map((id) => byId.get(id)).filter((row) => row && (row.kind || "compare") === "compare");
+  if (reports.length < 2) return response.status(400).json({ status: "invalid_request", message: "비교 리포트만 종합할 수 있습니다. 함의 리포트는 재료에서 빠집니다." });
+  try {
+    const { synthesis, model } = await buildReportSynthesis({ reports });
+    const generatedAt = new Date().toISOString();
+    let historyId = null;
+    let historyError = null;
+    try {
+      const [saved] = await supabaseRest("compare_report_history", {
+        method: "POST", prefer: "return=representation",
+        body: {
+          kind: "synthesis", source_history_ids: reports.map((row) => row.id), title_ko: synthesis.title_ko || null,
+          include_supporting: reports.some((row) => row.include_supporting),
+          events_a_count: 0, events_b_count: 0,
+          report: synthesis, model: model || null, verification_status: "synthesis_no_web", searched_sources: [],
+        },
+      });
+      historyId = saved?.id || null;
+      if (!historyId) historyError = "저장 요청은 성공했으나 저장된 행을 돌려받지 못했습니다.";
+    } catch (error) {
+      console.error("[REPORT_SYNTHESIS_HISTORY_SAVE_FAILED]", JSON.stringify({ message: error.message }));
+      historyError = error.message || "알 수 없는 오류";
+    }
+    console.info("[REPORT_SYNTHESIS]", JSON.stringify({ reports: reports.length, threads: synthesis.threads.length, implications: synthesis.korea_implications.length, saved: Boolean(historyId) }));
+    return response.status(200).json({
+      status: "ok", kind: "synthesis", synthesis, model: model || null, generated_at: generatedAt,
+      sources: reports.map((row) => ({ id: row.id, label: historyLabel(row), created_at: row.created_at, include_supporting: row.include_supporting })),
+      history_id: historyId, history_error: historyError,
+    });
+  } catch (error) {
+    console.error("[REPORT_SYNTHESIS_FAILED]", JSON.stringify({ ids, message: error.message }));
+    return response.status(502).json({ status: "synthesis_failed", message: error.message });
+  }
+}
+
 async function handleRequest(request, response) {
   if (!requireAccess(request, response)) return;
   if (request.method === "POST") {
     if (String(request.body?.mode || "") === "compare_report") return runCompareReport(request, response);
+    if (String(request.body?.mode || "") === "synthesize_reports") return runReportSynthesis(request, response);
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
     return runAsk(request, response);
   }
   // 비교 리포트 히스토리 목록. report 본문은 크므로 목록에는 안 담고 헤드라인만 뽑아 낸다.
+  // offset으로 페이지를 넘긴다("더보기"). 한 페이지 더 있는지는 한 건을 더 읽어 판단한다.
   if (String(request.query.compare_history || "") === "1") {
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", history: [] });
+    const offset = Math.max(0, Number(request.query.offset) || 0);
+    const limit = Math.min(50, Math.max(1, Number(request.query.limit) || HISTORY_PAGE_SIZE));
+    const page = (select) => supabaseRest(`compare_report_history?select=${select}&order=created_at.desc&limit=${limit + 1}&offset=${offset}`);
     try {
-      const rows = await supabaseRest("compare_report_history?select=id,created_at,company_a_id,company_b_id,company_a_name_ko,company_b_name_ko,include_supporting,headline_ko:report->>headline_ko&order=created_at.desc&limit=30");
-      return response.status(200).json({ status: "ok", history: rows });
+      let rows;
+      try { rows = await page(HISTORY_SELECT_FULL); }
+      catch (error) {
+        // 종합 컬럼이 아직 없는 DB. 목록은 예전 모양으로라도 나와야 한다.
+        if (!/kind|title_ko|source_history_ids/.test(error.message || "")) throw error;
+        rows = (await page(HISTORY_SELECT_BASE)).map((row) => ({ ...row, kind: "compare", title_ko: null, source_history_ids: null }));
+      }
+      const hasMore = rows.length > limit;
+      return response.status(200).json({ status: "ok", history: rows.slice(0, limit), offset, has_more: hasMore, next_offset: offset + limit });
     } catch (error) {
       console.error("[COMPARE_HISTORY_QUERY_FAILED]", JSON.stringify({ message: error.message }));
       return response.status(502).json({ status: error.code || "db_error", history: [] });
@@ -163,8 +240,20 @@ async function handleRequest(request, response) {
       const rows = await supabaseRest(`compare_report_history?select=*&id=eq.${encodeURIComponent(compareHistoryId)}&limit=1`);
       if (!rows.length) return response.status(404).json({ status: "not_found" });
       const row = rows[0];
+      if (row.kind === "synthesis") {
+        // 재료 리포트의 이름표를 함께 내려 화면이 [R1]·[R2]를 회사명으로 풀어 보이게 한다.
+        const sourceIds = Array.isArray(row.source_history_ids) ? row.source_history_ids : [];
+        const sourceRows = sourceIds.length
+          ? await supabaseRest(`compare_report_history?select=id,created_at,company_a_name_ko,company_b_name_ko,include_supporting&id=in.(${sourceIds.join(",")})`).catch(() => [])
+          : [];
+        const bySource = new Map((sourceRows || []).map((item) => [item.id, item]));
+        return response.status(200).json({
+          status: "ok", kind: "synthesis", synthesis: row.report, model: row.model, generated_at: row.created_at, history_id: row.id,
+          sources: sourceIds.map((id) => bySource.get(id)).filter(Boolean).map((item) => ({ id: item.id, label: historyLabel(item), created_at: item.created_at, include_supporting: item.include_supporting })),
+        });
+      }
       return response.status(200).json({
-        status: "ok", company_a: row.company_a_name_ko, company_b: row.company_b_name_ko,
+        status: "ok", kind: "compare", company_a: row.company_a_name_ko, company_b: row.company_b_name_ko,
         events_a: row.events_a_count, events_b: row.events_b_count, include_supporting: row.include_supporting,
         generated_at: row.created_at, history_id: row.id, report: row.report,
         model: row.model, verification_status: row.verification_status, searched_sources: row.searched_sources || []
