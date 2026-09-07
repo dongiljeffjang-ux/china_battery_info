@@ -624,3 +624,19 @@ Vercel 번들에 그 파일이 없으면 죽는다. 로컬에는 있어서 재�
   대상은 PDF를 읽는 `api/ingest-rss.js`, `api/process-article.js`, `api/company.js`다.
 
 이 둘이 그동안 공시 원문 임베딩과 보고서 보강이 한 번도 성공하지 못한 이유다.
+
+## 2026-09-08: 보고서 읽기도 독립 유지 훅으로 분리
+
+운영 백필 재실행에서 훅 1(`facts`)이 78.2초, 훅 2(`embed_report`)가 110.7초 걸리고 체인이
+중단됐다. payload를 확인하니 훅 1은 XTC 반기보고서 21건, 훅 2는 Zhenhua New Material
+반기보고서 25건을 각각 추가로 읽었다. 순환 작업을 하나만 고른 뒤에도 `digestCompany()`가
+예산이 남았다는 이유로 같은 훅에서 실행돼, 실제로는 무거운 작업이 둘이었다.
+
+- `digest`, `web`, `enrich`를 `HEAVY_TASKS`에 편입했다. 이제 사실 추출·보고서 임베딩 등과
+  같은 순환에서 각자 독립 훅을 받는다.
+- `pendingWork()`가 보고서 커버리지·웹 백필·얇은 보고서 보강 잔량도 확인해, 이 작업들이
+  자기 차례 전에 체인이 끝나지 않게 했다.
+- `scripts/check-curation-single-heavy.mjs`를 추가해 순환 작업 뒤 두 번째 보고서 작업이 다시
+  붙는 회귀를 막았다.
+- `scripts/check-llm-search.mjs`는 앞 단계에서 의도적으로 남긴 실패 캡처까지 성공 검색 캡처로
+  잘못 세던 검사를, 성공 호출 전후 캡처 수 비교로 고쳤다.
