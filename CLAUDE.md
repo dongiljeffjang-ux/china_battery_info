@@ -4,7 +4,7 @@
 
 ## 작업 시작
 
-1. `docs/HANDOFF.md`에서 운영 상태·배포·미완료 항목을 읽는다.
+1. `docs/HANDOFF-CODEX.md`에서 최근 변경과 다음 할 일을 읽고, `docs/HANDOFF.md`에서 운영 상태·배포·미완료 항목을 읽는다.
 2. 제품 요구를 바꿀 때 `prd.md`, 데이터 구조를 바꿀 때 `data-model.md`, 파이프라인을 바꿀 때 `architecture.md`를 확인한다.
 3. 수정 전 `git status --short`를 확인하고 사용자 변경을 보존한다.
 4. JavaScript 수정 후 `node --check <파일>`, `npm run check`, `git diff --check`를 실행한다.
@@ -50,7 +50,8 @@
 
 ## 핵심 문서
 
-- 현재 인수인계: `docs/HANDOFF.md`
+- 최근 세션 인수인계(먼저 읽는다): `docs/HANDOFF-CODEX.md`
+- 누적 인수인계: `docs/HANDOFF.md`
 - 제품 요구: `prd.md`
 - 데이터 모델: `data-model.md`
 - 시스템 설계: `architecture.md`
