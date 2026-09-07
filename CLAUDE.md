@@ -8,7 +8,7 @@
 2. 제품 요구를 바꿀 때 `prd.md`, 데이터 구조를 바꿀 때 `data-model.md`, 파이프라인을 바꿀 때 `architecture.md`를 확인한다.
 3. 수정 전 `git status --short`를 확인하고 사용자 변경을 보존한다.
 4. JavaScript 수정 후 `node --check <파일>`, `npm run check`, `git diff --check`를 실행한다.
-5. `lib/`나 `api/` 수정 후 `scripts/check-*.mjs` 회귀 검사를 돌린다. 네트워크를 가짜로 물려 돌리므로 API 과금이 없다.
+5. `lib/`나 `api/` 수정 후 `scripts/check-*.mjs` 회귀 검사를 전부 돌린다. 네트워크를 가짜로 물려 돌리므로 API 과금이 없다.
 
 ## 제품 불변조건
 
