@@ -13,6 +13,10 @@ assert.ok(digest.includes("같은 표의 같은 행에서 나온 수치만 담�
 assert.ok(digest.includes("별개 건으로 낸다"), "떨어져 있는 수치는 별개 건으로 나누라고 지시해야 한다");
 assert.ok(/fact_ko에 쓴 수치는 하나도 빠짐없이 이 발췌 안에/.test(digest), "발췌가 그 건의 모든 수치를 담도록 지시해야 한다");
 
+// 표의 금액 단위(万元/千元)를 잘못 읽으면 10배 오류가 난다. 원문 표기를 괄호로 남기게 해 검산 가능하게 한다.
+assert.ok(digest.includes("단위 표기(单位：元 / 千元 / 万元 / 百万元)를 표 머리에서 반드시 확인"), "표 금액은 표 머리의 단위를 확인하라고 지시해야 한다");
+assert.ok(digest.includes("원문 표기를 괄호로 함께 적는다"), "환산한 금액 옆에 원문 표기를 남기게 해야 한다");
+
 const web = backfill.slice(backfill.indexOf("const INSTRUCTIONS"), backfill.indexOf("const DIGEST_INSTRUCTIONS"));
 assert.ok(web.includes("같은 문단에서 나온 수치만 담는다"), "웹 백필도 같은 단위 규칙을 써야 한다");
 
