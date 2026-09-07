@@ -83,9 +83,8 @@
   `source_sha256` 네 컬럼, `report_digest_renewal_status_check` 제약, `report_digest_renewal_queue_idx`
   인덱스까지 모두 확인. 갱신 큐 대상은 107건이다(장부 125건 중).
 
-**다음 실행 필요**: `supabase/report-synthesis.sql`. 비교 리포트 히스토리 표에 `kind`·`source_history_ids`·
-`title_ko`를 더하고 회사 컬럼의 NOT NULL을 푼다. 적용 전에는 "선택한 리포트 함의 찾기"가 503
-(`schema_missing`)을 돌려주고, 히스토리 목록은 예전 모양으로 계속 보인다.
+- `supabase/report-synthesis.sql`: 비교 리포트 히스토리 표에 `kind`·`source_history_ids`·`title_ko`를 더하고
+  회사 컬럼의 NOT NULL을 푼다. 2026-09-07 저녁 실행됨(컬럼·체크 제약·인덱스 확인, 기존 6건은 `compare`).
 
 운영 DB에 SQL을 실행한 뒤 `Success. No rows returned`를 확인한다. 이후 스키마 변경도 재실행 가능한 SQL로 남긴다.
 
