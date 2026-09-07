@@ -61,6 +61,12 @@ const BACKFILL_MAX_EVENTS = 12;
 const BACKFILL_SINCE = "2023-01-01";
 // 운영·디버그용 ?digest= 경로. 추출 단위를 쪼갠 뒤 건수가 늘어 유지 훅과 같은 상한을 쓴다.
 const DIGEST_MAX_EVENTS = 30;
+// 운영·디버그용 ?backfill=/?digest= 경로의 LLM 호출 상한. 유지 훅(lib/curation.js)은 이미
+// WEB_LLM_TIMEOUT_MS(60초)·REPORT_LLM_TIMEOUT_MS(85초)로 고쳤지만, 이 관리자 수동 경로는
+// timeoutMs를 넘기지 않아 기본값(웹 검색 35초, 그 밖 45초)에 걸려 있었다. 2026-09-07 밤
+// Reshine·Kaijin 수동 백필이 이 기본값에 막혀 "aborted due to timeout"으로 실패했다.
+// 함수 한도가 300초(export const config)이므로 넉넉히 준다.
+const MANUAL_LLM_TIMEOUT_MS = 200000;
 const HIGH_SIGNAL_TERMS = [
   "扩产", "增产", "产能", "投产", "开工", "项目", "签约", "订单", "定点", "认证", "量产", "出货", "交付",
   "营收", "收入", "净利润", "财报", "业绩", "海外", "建厂", "投资", "收购", "合作", "固态", "硅碳", "lmfp",
@@ -228,8 +234,8 @@ async function runBackfill(response, companyId, sinceParam, mode) {
   try {
     const digest = mode === "annual" || mode === "semiannual" || mode === "quarterly";
     const { rows, dropped, returned, provider, report } = digest
-      ? await digestReport({ company, kind: mode, maxEvents: DIGEST_MAX_EVENTS })
-      : await backfillCompanyEvents({ company, since, until, maxEvents: BACKFILL_MAX_EVENTS });
+      ? await digestReport({ company, kind: mode, maxEvents: DIGEST_MAX_EVENTS, timeoutMs: MANUAL_LLM_TIMEOUT_MS })
+      : await backfillCompanyEvents({ company, since, until, maxEvents: BACKFILL_MAX_EVENTS, timeoutMs: MANUAL_LLM_TIMEOUT_MS });
     const existing = await supabaseRest(`event?select=occurred_at,title_ko&company_id=eq.${encodeURIComponent(companyId)}`);
     const eventKey = (row) => JSON.stringify([row.occurred_at, row.title_ko]);
     const seen = new Set(existing.map(eventKey));
