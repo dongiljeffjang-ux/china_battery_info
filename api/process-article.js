@@ -164,7 +164,10 @@ export async function processPendingArticle(articleId, companyId) {
   const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider, companyContext);
   console.info("[ARTICLE_CROSS_CHECK]", JSON.stringify({ articleId, primaryProvider, verifierProvider, verdict: factCheck.verdict }));
   if (factCheck.verdict !== "pass") {
-    await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, { method: "PATCH", body: { verification_status: "rejected", source_tier: "fact_check_rejected", processing_status: "fact_check_rejected", processing_note: String(factCheck.reason_ko || "").slice(0, 500) || null, processed_at: new Date().toISOString(), updated_at: new Date().toISOString() } });
+    // 기각은 종착점이다. 언론 기사 원문을 여기서 지우지 않으면 영구히 남는다.
+    // 2026-09-07에 기각된 기사 7건의 중국어 전문이 그대로 남아 있는 것을 확인했다.
+    // 공시는 공개 자료라 보관 정책이 다르므로 그대로 둔다.
+    await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, { method: "PATCH", body: { verification_status: "rejected", source_tier: "fact_check_rejected", processing_status: "fact_check_rejected", processing_note: String(factCheck.reason_ko || "").slice(0, 500) || null, processed_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...(isDisclosure ? {} : { body_original: null }) } });
     return { status: "fact_check_rejected", reason: factCheck.reason_ko };
   }
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
