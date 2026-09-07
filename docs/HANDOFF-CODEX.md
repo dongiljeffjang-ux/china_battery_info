@@ -155,217 +155,133 @@
 
 # Claude → codex 인수인계
 
-마지막 갱신: 2026-09-07 저녁 (커밋 `509fb25`까지)
+마지막 갱신: 2026-09-07 밤 (커밋 `d4861b5`까지 + 대화 중 SQL 작업·수동 백필 2회, 커밋 없음)
 
-이 문서는 **가장 최근 세션의 변경과 다음에 할 일**만 모은다. 세부 경위는 `docs/HANDOFF.md`의 같은 날짜
-절에, 각 항목의 근거는 커밋 메시지에 있다. 지침은 `CLAUDE.md` 하나이며 `AGENTS.md`는 그 포인터다.
-이 문서는 `docs/HANDOFF-2026-09-08-CLAUDE.md`(그 앞 세션의 인수인계)를 대체하지 않고 이어받는다.
+이 문서는 **가장 최근 세션의 변경과 다음에 할 일**만 모은다. 이전 세션(509fb25까지)의 상세 구조 설명은
+git 히스토리와 `docs/HANDOFF.md`에 남아 있다. 지침은 `CLAUDE.md` 하나이며 `AGENTS.md`는 그 포인터다.
 
 ## 0. 지금 상태 한 줄
 
-`main`이 `509fb25`까지 푸시·배포됐고, 운영 DB SQL은 모두 적용돼 있다.
-**아직 아무도 확인하지 못한 것: 09-07 23:00 KST 크론이 처음으로 유지 훅을 끝까지 도는지.**
-그 결과 점검은 09-08 08:00에 뜨는 예약 작업(`china-battery-lens-nightly-check`)이 맡는다.
+이번 세션 주제는 이 파일 위쪽 "Codex → Claude Code" 절의 **Reshine 수집 공백**이었다. 두 갈래로 메웠다.
+(1) 뉴스 수집 자체를 365일 단독 검색으로 넓히는 **bootstrap 경로**(배포됐지만 실전 미검증),
+(2) 3년치 시계열 `event`를 웹 백필로 즉시 채우는 **수동 실행**(완료, Supabase에서 직접 확인함).
+`main`은 `d4861b5`까지 푸시·Vercel Production 배포 완료. 운영 DB에는 이 세션에서 새 SQL을 적용하지
+않았다(4번 참고).
 
 ## 1. 이 세션의 커밋 (오래된 순)
 
 | 커밋 | 내용 |
 |---|---|
-| `9874cb9` | `digestReport`가 `parse_quality`·`visual_pages`·`source_sha256`을 호출자에게 넘기도록 수정. 안 넘겨서 이미지 도표 완전성 표시가 모든 보고서 경로에서 무력화돼 있었다 |
-| `46f7746` | 유지 훅 체인 재설계(508 회피), 함수 한도 300초 명시, 비교 리포트 함의 종합 기능, 벡터 1단계 검증 |
-| `db2f6fb` | `report-synthesis.sql` 적용 기록 |
-| `9907b20` | "발췌 300자 상한이 원인"이라는 앞선 진단을 데이터로 반증하고 정정 |
-| `35a6f3b` | 비교 화면 A·B 선택창 좌우 확장, A/B 색을 아래 비교표와 맞춤, 기본 선택 변경 |
-| `01068bb` | 사실 추출 단위를 "같은 문장에서 나온 수치"로 쪼갬. `DIGEST_MAX_EVENTS` 14→30 |
-| `531da63` | `core` 등급은 거래소 공시에만. 모델이 아니라 서버가 등급을 정한다 |
-| `509fb25` | 표 후처리(붙은 셀 분리·단위 주석·행 문장화), 갱신을 바꿔 넣기로 |
+| `1b1459b` | bootstrap 뉴스 수집: 검증 기사 0건 회사만 일반 3일 그룹에서 빼 회사당 단독 365일 검색 |
+| `3eb40af` | 문서 갱신 |
+| `952c336` | 관리자 수동 `?backfill=`/`?digest=` 경로가 LLM `timeoutMs`를 안 넘겨 기본값(35초)에 걸리던 버그 수정. 200초로 |
+| `ac83ef3` | 웹 백필 결과 한국어 강제. 서버가 `title_ko`/`fact_ko`에 한글이 없으면 저장 전 버린다(`dropped.notKorean`) |
+| `d4861b5` | 문서 갱신 |
+
+**커밋 없이 대화 중 실행한 것** (재현 가능, 코드 변경 아님):
+- Reshine `event` 중 중국어로 저장된 12건을 SELECT로 확인 후 DELETE(`knowledge_chunk` cascade 12건,
+  `event_fact` 0건). 대상 12건이 DB 전체의 중국어 이벤트 전부와 일치함을 먼저 확인했다.
+- `952c336`+`ac83ef3` 배포 뒤 `POST /api/ingest-rss?backfill=reshine&since=2023-01-01`,
+  `?backfill=kaijin-new-energy&since=2023-01-01` 재실행(관리자 로그인 브라우저에서 GET으로 실행 가능).
+- Kaijin은 `since=2023-01-01` 호출이 `BACKFILL_MAX_EVENTS=12` 상한에 정확히 닿아 2026년 몫이 0건이라,
+  `?backfill=kaijin-new-energy&since=2026-01-01`을 한 번 더 실행해 2026년 6건을 추가로 채웠다.
 
 ## 2. 구조적으로 바뀐 것
 
-### 2.1 유지 훅 체인과 함수 한도 — 전제가 틀렸었다
+### 2.1 뉴스 수집 bootstrap — 배포됐지만 실전 미검증
 
-세 가지를 운영 로그와 Vercel 문서로 확인했다.
+목표: Reshine·Kaijin처럼 **검증 기사가 0건인 비상장 핵심사**만 뉴스 수집 자체를 365일까지 넓혀 처음
+한 번 과거 기사를 찾고, 연결되는 순간 평소의 3일 수집으로 자동 복귀시킨다.
 
-1. **함수 한도는 60초가 아니라 300초다.** 이 프로젝트는 Fluid compute가 기본이고, `api/*.js` Node 함수는
-   `export const config = { maxDuration }` 형식만 읽는다. 그동안 쓰던 `export const maxDuration = 60`은
-   **무시돼** 왔다. 78~110초짜리 훅이 죽지 않고 로그까지 남긴 이유다.
-2. **체인이 4훅에서 끊긴 원인은 508 Loop Detected다.** 배포가 자기 자신을 이어 부르는 체인은 훅 소요와
-   무관하게 예외 없이 4훅에서 멈췄다(09-06~07 실행 전부).
-3. **야간 크론의 유지 단계는 한 번도 돌지 않았다.** 크론 체인이 수집 → 본문×3 → Daily로 내부 호출 4번을
-   다 써서 `curate` 훅 1이 5번째 호출이라 나가지 못했다.
+- `api/ingest-rss.js`의 `bootstrapCompanyIds()`가 매 수집 실행마다 `article_company` 연결 0건인
+  후보(`reshine`, `kaijin-new-energy`)만 읽기 전용으로 계산한다. 기사 1건만 연결돼도 다음 실행부터 빠진다.
+- `lib/china-sources.js`의 `buildSearchGroups(provider, pilot, bootstrapCompanyIds)`가 bootstrap 대상을
+  일반 셀/양극재/음극재 그룹에서 빼고 회사당 **단독 그룹**(`windowDays: 365`)으로 낸다. 일반 회사의
+  3일 창·그룹 크기는 그대로다. 파일럿(3사 검증)·`api/news.js`(공개 조회)는 bootstrap을 켜지 않는다.
+- bootstrap 후보는 `source_tier=web_search_bootstrap_<provider>`로 저장되고,
+  `selectHeadlineTop10()`이 이 태그가 붙은 기사를 3일 창과 별도로 최대 2건 뽑아 본문대조까지 보낸다
+  (news/bootstrap 중복은 article id로 dedupe).
+- 검사: `scripts/check-search-plan.mjs`에 4개 회귀(단독 그룹·365일 창·일반 그룹 미중복·기본 호출 불변).
 
-그래서 09-07 오전에 codex가 한 조정("훅 예산 50→45초", "헤드라인 30→10건", "호출 상한 30초")은 잘못된
-전제 위의 대응이었고, 오히려 정상 완료될 보고서 읽기(기본 45초 timeout)와 웹 백필(35초)을 중단시켜
-`aborted due to timeout` 실패를 만들고 있었다.
+**미검증 이유**: 이 경로는 "기사"를 찾아 파이프라인 전체(본문대조까지)를 태우는 것이라 야간 크론이
+한 번 돌아야 결과를 볼 수 있다. 이번 세션에서는 대신 아래 2.2의 "이벤트 직접 백필"로 3년치를
+당장 채웠으므로, bootstrap이 실제로 기사를 찾아오는지는 09-07 23:00 KST 크론 이후 확인해야 한다.
+`pipeline_log`의 `collect` 단계에서 `bootstrap_ids`를, `process` 단계에서 `web_search_bootstrap_*`
+기사가 Top 10에 실제로 들어갔는지 본다.
 
-바꾼 것:
+### 2.2 수동 백필 timeout 버그 — 유지 훅엔 있던 수정이 관리자 경로엔 없었다
 
-- `api/ingest-rss.js`·`api/company.js`에 `export const config = { maxDuration: 300 }`.
-- **훅을 한 호출 안에서 이어 돌린다.** `runProcessStage`·`runCurateStage`가 `INVOCATION_BUDGET_MS`(170초)
-  동안 훅을 반복하고, 예산이 다하면 그때만 자신을 한 번 더 부른다. 깊이는 `chain=` 쿼리로 세어
-  `MAX_CHAIN_DEPTH`(4)를 넘기지 않는다(넘기면 `[STAGE_CHAIN_DEPTH_CAP]` 로그 + `skipped` 기록).
-- 훅 예산 `CURATE_BUDGET_MS` 45→90초, 본문 훅 `STAGE_BUDGET_MS` 42→60초.
-- 보고서 읽기 LLM 호출 `REPORT_LLM_TIMEOUT_MS`(85초), 웹 백필 `WEB_LLM_TIMEOUT_MS`(60초) 명시.
-  `digestReport`·`backfillCompanyEvents`가 `timeoutMs`를 받는다.
-- **시간 초과는 실패로 못 박지 않는다.** 보강(`enriched_at`)·갱신(`renewal_status='failed'`)은 timeout이
-  아닌 오류에만 기록하고, timeout이면 다음 순환에서 다시 집는다(`isTimeoutError`).
-- 헤드라인 번역 `TITLES_PER_CALL` 10→30 복원.
-- 검사: `scripts/check-chain-depth.mjs`, `scripts/check-headline-hop-budget.mjs`.
+`lib/curation.js`의 야간 유지 훅은 이미 `WEB_LLM_TIMEOUT_MS`(60초)·`REPORT_LLM_TIMEOUT_MS`(85초)를
+`backfillCompanyEvents`/`digestReport`에 넘긴다. 그런데 관리자가 직접 치는 `?backfill=`/`?digest=`
+경로(`api/ingest-rss.js`의 `runBackfill`)는 `timeoutMs`를 아예 넘기지 않아 LLM 제공자 기본값
+(웹 검색 35초)에 걸려 있었다. Reshine 수동 백필이 이걸로 두 번 실패했다. `MANUAL_LLM_TIMEOUT_MS=200000`을
+새로 두고 두 호출 모두에 넘긴다(함수 한도 300초 안).
 
-### 2.2 표 추출 — 사용자가 지적한 오독
+**진단 메모**: 200초로 고친 첫 재시도도 실패했는데, `pipeline_log` 실패 시각과 `vercel inspect`의
+새 배포 생성 시각을 맞춰 보니 요청이 **정확히 35초 만에** 끊겼다 — 배포 별칭이 새 배포로 넘어가기
+직전 옛 배포(고치기 전 코드)로 들어간 것이었다. 배포 후 재시도는 별칭이 실제로 새 배포를 가리키는지
+(`npx vercel inspect <alias>`) 먼저 확인하고 한다.
 
-저장된 보고서 원문 5건(표 행 ~1,160개)에서 실제 빈도를 셌다.
+### 2.3 웹 백필 결과의 한국어 강제 — 프롬프트만으로는 안 지켜졌다
 
-| 형태 | 빈도 | 상태 |
-|---|---|---|
-| 행이 통째로 뭉개짐(파이프 없이 숫자 나열) | 표 행의 0~1.6%(9개) | 새 `pageToLines`가 대부분 잡음 |
-| 셀 두 개가 붙음(`全资子公司114,252.25`) | 보고서당 43~154줄 | **가장 흔함** |
-| 단위 머리(`单位：万元`)가 행에서 떨어짐 | 보고서당 137~183개 | **실제 사고 원인** |
-| 여러 줄로 감싼 셀이 y좌표 묶기에 흩어짐 | 표마다 다름 | **미해결** |
+Reshine 첫 실행(12건)이 `title_ko`·`fact_ko`·`original_excerpt_ko`를 전부 중국어 원문 그대로 돌려줬다.
+`event` 712건 전체를 세어 보니 중국어 제목은 그 12건뿐이고 기존 `web_backfill` 49건은 정상이었다 —
+상시 결함이 아니라 그 호출에서 모델이 목록 가운데 한 줄짜리 한국어 지시를 무시한 것이다. 프롬프트만
+고치면 재발할 수 있어 두 가지를 같이 했다.
 
-`lib/report-reader.js`에 세 함수를 넣고 `extractPdfText`가 쪽을 다 모은 뒤
-`renderTableRows(annotateTableUnits(text))`를 적용한다.
-
-- `splitGluedCells()`: 한자·괄호 뒤 천단위 숫자, 소수 둘째 자리 뒤 숫자·한자 사이에 `|`를 넣는다.
-  `万元·欧元·港币·股` 같은 단위 접미사 앞은 가르지 않는다. 표 행과 "천단위 숫자가 셋 이상 이어진 줄"에만
-  적용하고 산문은 손대지 않는다.
-- `annotateTableUnits()`: `单位：万元`을 만나면 다음 단위 머리나 절 제목(`第N节`)까지 표 행 끝에
-  `[单位:万元]`을 붙인다.
-- `renderTableRows()`: **표는 행 단위, 줄글은 문단 단위**로 두 갈래 처리. 헤더가 온전한 표는 행마다
-  `표이름 · 행이름: 열1 값, 열2 값 (单位:元)` 문장으로 편다. **헤더 판정은 보수적이다** — 금액·소수·날짜가
-  한 셀이라도 있으면 헤더가 아니라고 보고 그 표는 파이프 그대로 둔다. 실제 보고서는 여러 줄 헤더가
-  흩어져 첫 파이프 행이 데이터 행인 경우가 흔해, 이 보호가 없으면 뒤 행이 전부 엉뚱한 문장이 된다.
-
-검사: `scripts/check-report-tables.mjs` 8~11번 항목.
-
-### 2.3 갱신은 덧붙이기가 아니라 바꿔 넣기 (사용자 결정)
-
-`renewReport()`가 새로 읽은 결과가 충분하면(`RENEW_REPLACE_MIN_EVENTS` 3건 이상이고 옛 건수의 50% 이상)
-**그 보고서의 옛 이벤트를 지우고** 새 것으로 채운다. `knowledge_chunk`·`event_fact`·`concept_edge`는
-`on delete cascade`. 얇은 읽기(timeout)면 옛 것을 지키고 덧붙이기만 한다.
-
-덧붙이기만으로는 못 고치는 이유: `storeEvents`의 `sameFact`가 같은 제목의 옛 오류 건과 새 정답 건을
-같은 사실로 보아 **정답을 버린다.** 삭제 범위는 `company_id` + `source_url`로 좁히고 지우기 전에 조회한다.
-`scripts/check-report-renewal.mjs`가 이 세 조건(삭제 한 곳·범위 한정·`canReplace` 가드)을 고정한다.
-
-**event 총수가 줄어들 수 있다. 그것 자체는 정상이다.**
-
-### 2.4 사실 추출 단위
-
-한 건이 보고서 여기저기의 수치를 모으는데 발췌는 출발점 한 문단만 인용해, 저장된 근거로 확인되지 않는
-수치가 쌓이고 있었다(수치 1개면 확인 불가 22.7%, 7개 이상이면 90.8%).
-
-- `DIGEST_INSTRUCTIONS`: "한 건에는 같은 문장·같은 표 행의 수치만. 실적·프로젝트·생산능력·재무는 각각
-  별개 건" + "fact_ko의 수치는 빠짐없이 발췌 안에 있어야 하고, 없으면 빼거나 별개 건으로 만든다".
-- 표 금액은 표 머리 단위를 확인하고, 한국어 금액 옆에 원문 표기를 괄호로 병기
-  (`15억 위안(150,000.00万元)`). 단위를 못 찾았으면 환산하지 않는다.
-- 보고서 발췌 상한 300→400자(공시는 공개 자료라 저작권 제약 없음. 언론 기사는 300자 유지).
-- `DIGEST_MAX_EVENTS` 14→30. **14는 이미 걸리고 있었다**(Farasis 반기 52/56, Zhenhua 반기 25/28).
-  쪼개면 건수가 늘어 상한을 그대로 두면 뒤쪽 사실이 잘린다.
-- 검사: `scripts/check-fact-granularity.mjs`.
-
-### 2.5 근거 등급은 서버가 정한다
-
-기본 화면은 `timeline_eligibility='core'`만 보여 주는데 그 등급을 **모델이 골랐고**, 프롬프트의 금지
-문구에도 11건이 `core`로 들어와 있었다(CATL 뉴스룸 5, 新浪财经 공고 전재 4, Gotion 자사 뉴스 1,
-Schaeffler 보도자료 1). 전부 거래소 제출 원문이 아니다.
-
-`api/process-article.js`가 `isDisclosure`면 `core`, 그 밖에는 모두 `reference`로 저장한다. 모델 값은
-`exclude`만 존중한다. 프롬프트도 "core는 고르지 않는다"로 바꿨다. 검사: `scripts/check-evidence-grade.mjs`.
-
-**화면 변화**: CATL 뉴스룸 발표는 "보조 데이터 포함"을 켜야 보인다. CATL은 자체 수집 경로가 뉴스룸
-하나뿐이라 기본 화면의 최근 이벤트가 눈에 띄게 줄어든다. 정기보고서 사실은 그대로다.
-
-### 2.6 비교 리포트 함의 종합 (신규 기능)
-
-비교 화면 "지난 리포트" 목록에서 비교 리포트 2~6건을 골라 공통 흐름·갈리는 지점·한국 기업 관점을
-종합한다. 목록은 30건씩 읽고 "더보기"로 이어 붙인다.
-
-- `POST /api/company` `mode=synthesize_reports`, `historyIds: [...]`. 재료는 `kind='compare'` 행만이다.
-  종합을 다시 종합에 넣지 않는다 — 해석 위에 해석을 쌓으면 근거를 여러 단계 건너뛴 결론이 된다.
-- `lib/compare-report.js` `buildReportSynthesis()`: **웹 검색 없이** 저장된 리포트만 근거로 쓴다.
-  모든 항목에 `basis_ko`와 `report_refs`(재료 리포트 번호)가 붙는다.
-- 결과는 같은 표에 `kind='synthesis'`로 저장돼 목록에서 다시 열린다. 문서 전체가 해석임을 머리에 표시.
-- 프롬프트 `REPORT_SYNTHESIS_PROMPT`는 관리자 파이프라인 화면 6번 단계에 노출된다.
-- 검사: `scripts/check-report-synthesis.mjs`.
-- **운영에서 이미 한 번 성공했다**: "중국 배터리 다변화"(09-07 15:03 KST).
-
-### 2.7 화면
-
-- 비교 화면: A·B 선택창이 좌우 50:50으로 꽉 차고, 실행 버튼과 옵션은 아래 줄.
-- A/B 고유색(`--pick-a` 네이비 `#10365f` / `--pick-b` 딥그린 `#0c6b4e`)을 픽커와 **아래 비교표 머리글에
-  같이** 입혀 어느 열이 A인지 색으로 이어진다. 시장(파랑)·기술(갈색) 축 색과 겹치지 않게 골랐다.
-  밸류체인 탭은 채움 알약이 아니라 **밑줄 탭**이므로 배경 대신 밑줄·글자에만 색을 준다(배경을 채웠더니
-  글자가 검정으로 남아 네이비 위에서 읽히지 않았다).
-- 기본 선택: 기업 분석·비교 A = 셀사 1위, 비교 B = 양극재 1위.
-- Daily: `sections`(사실)에서 "산업 총평"을 빼 4개 카테고리로 한정하고, 해석 영역을 사실 목록 위로 올렸다.
+- `lib/event-backfill.js`의 `INSTRUCTIONS`에 필드 이름(`title_ko`·`fact_ko`·`original_excerpt_ko`)을
+  짚어 "중국어·영어 원문을 그대로 옮기면 그 건은 버려진다"고 재차 못박았다.
+- **서버가** `hasKorean()`으로 `title_ko`/`fact_ko`에 한글이 한 글자도 없으면 저장 전에 버린다
+  (`dropped.notKorean`). `original_excerpt`(원문 발췌)는 검사하지 않는다 — 중국어가 정상이다.
+- 검사: `scripts/check-backfill-korean.mjs` 신규.
 
 ## 3. 운영 DB에 직접 한 일
 
-- `event` 11건의 `timeline_eligibility`를 `core` → `reference`(2.5절).
-- Farasis 보증 표 **6건의 금액 오류 수정**. 万元을 千元로 읽어 10배 작게 저장돼 있었다.
-  `114,252.25万元`→11억4,252만2,500, `150,000`→15억, `230,000`→23억, `53,500`→5억3,500만,
-  `60,000`→6억, `67,500`→6억7,500만. `event`(fact_ko·title_ko·original_excerpt_ko)와
-  `knowledge_chunk.content_ko`를 함께 고쳤다. 임베딩 벡터는 다시 만들지 않았다(문장 대부분이 같다).
-- Farasis 2026 반기보고서의 `renewed_at`을 **비워 갱신 큐에 되돌렸다.** 오늘 옛 추출기로 읽힌 52건이라
-  새 추출기로 다시 읽어 바꿔 넣어야 한다.
+- Reshine `event` 12건(중국어로 저장된 것 전부) 삭제. 지우기 전 대상 12건 = DB 전체 중국어 이벤트
+  전부(다른 회사 영향 없음)임을 SELECT로 확인했고, 파생 `knowledge_chunk` 12개는 `on delete cascade`로
+  같이 지워졌다(`event_fact` 0건이라 해당 없음). 먼저 있던 한국어 2건(09-03 생성)은 그대로 두었다.
+- 삭제 후 수정본 배포 상태에서 Reshine·Kaijin을 다시 실행해 한국어로 채웠다(6번 "지금 수치" 참고).
+- **이전 세션(2.5절 언급) 이후로 이번 세션에서 새로 건드린 운영 DB 변경은 위가 전부다.** Farasis 보증
+  표 금액 수정 등 그 이전 세션의 DB 작업은 이미 적용된 채로 유지되고 있다(재확인만 함, 재작업 없음).
 
-## 4. Supabase SQL 적용 상태
+## 4. Supabase SQL 적용 상태 — 변화 없음
 
-**전부 적용돼 있다.** 09-07에 직접 확인했다.
-
-- `report-renewal.sql`: 컬럼 4개·체크 제약·인덱스 확인.
-- `report-synthesis.sql`: `kind`·`source_history_ids`·`title_ko`, 회사 컬럼 NOT NULL 해제, 인덱스 확인.
-- `company-entity.sql`(`event.entity_names`), `report-visual-quality.sql`도 적용돼 있다.
-  이전 판 문서의 "미실행" 표기는 낡은 것이었다.
-
-**미적용은 없다.** 새 SQL을 추가하면 이 절에 적는다.
+이번 세션에서 새 SQL을 추가하지 않았다. 이전 세션까지의 적용 상태(`report-renewal.sql`,
+`report-synthesis.sql`, `company-entity.sql`, `report-visual-quality.sql` 전부 적용됨)는 그대로 유효하다.
 
 ## 5. 다음에 할 일 (우선순위 순)
 
-1. **[자동] 09-08 08:00 예약 점검 결과 확인.** `china-battery-lens-nightly-check`가 A~F를 훑는다.
-   핵심 판정: 유지 훅이 10건 안팎 도는가 / `duration_ms > 300000`이 없는가 / Farasis 반기가
-   `replaced` ≈ 52로 바꿔 넣어졌는가 / 보증 표 금액이 정확한가 / 새 규칙 이벤트의 수치 확인 불가 비율이
-   기존 40%대보다 뚜렷이 낮은가.
-2. **표 오독 잔여 문제 해결.** 여러 줄로 감싼 셀이 y좌표 묶기에 흩어지는 것(R&D 표, 헤더 행).
-   지금은 그런 표를 문장으로 펴지 않고 파이프 그대로 두어 **피해를 막고만 있다.**
-   제대로 고치려면 열 x좌표 군집화로 표를 복원해야 한다.
-3. **새 규칙 효과 판정 뒤 조치.** 수치 확인 불가 비율이 신규 코호트에서 20% 밑이면 성공. 30%를 넘으면
-   모델이 규칙을 무시하는 것이므로 **저장 전 기계 검사**(발췌에 없는 수치가 있으면 그 건을 버림)를 넣는다.
-   스키마·검사 자리는 이미 있다(`lib/event-backfill.js`의 `dropped` 집계).
-4. **사업 관계망 화면.** 설계 합의는 `docs/HANDOFF.md` "2026-09-08 방향" 절에 있다. 재료가 아직 얇다
-   (`event_fact` 196건, 상대방 있는 사실 31건, 추출된 이벤트 94/694). 유지 훅이 살아나 `facts` 단계가
-   돌면 채워진다. 회사당 상대방 분포를 보고 시작한다.
-5. **공시 원문 임베딩(`report_chunk`)이 0건이다.** `REPORT_TEXT_ONLY_EMBEDDING=1`을 켜야 도는데,
-   이미지 도표를 못 읽는 텍스트 전용 청크가 보고서 전체를 대표하는 것처럼 보이는 문제 때문에 꺼 뒀다.
-   표 후처리가 좋아졌으니 켤지 다시 판단한다.
-6. 미결: 약관 기반 매체 허용 목록(미착수), 벡터 검증 2단계(원문 재확보 대조,
-   `docs/VECTOR-VERIFICATION-PLAN.md` 3절).
+1. **[미검증] bootstrap 뉴스 수집이 실제로 기사를 찾아오는지 확인.** 09-07 23:00 KST 크론(또는 수동
+   수집 실행) 이후 `pipeline_log`에서 `collect` 단계의 `bootstrap_ids`, `process` 단계에서
+   `source_tier=web_search_bootstrap_*` 기사가 Top 10에 실제로 들어갔는지 본다. 이번 세션에서 채운
+   3년치 `event`와는 별개 경로라 서로 방해하지 않지만, 이 확인 없이는 bootstrap이 실전에서 동작하는지
+   모른다.
+2. **Reshine·Kaijin이 유지 훅(`pickDueWebBackfill`, 90일 리프레시)의 정상 순환에 들어갔는지 확인.**
+   이번 세션에서 채운 3년치는 수동 실행 결과라 `report_digest` 원장(`kind='web'`)에 기록이 남았는지
+   (남아야 유지 훅이 90일 안에 또 검색해 중복 API 비용을 쓰지 않는다) 확인이 필요하다.
+3. (이전 세션 미결, 유효함) **표 오독 잔여 문제.** 여러 줄로 감싼 셀이 y좌표 묶기에 흩어지는 것(R&D 표,
+   헤더 행). 지금은 그런 표를 문장으로 펴지 않고 파이프 그대로 두어 피해를 막고만 있다. 제대로
+   고치려면 열 x좌표 군집화로 표를 복원해야 한다.
+4. (이전 세션 미결, 유효함) **사업 관계망 화면.** 설계 합의는 `docs/HANDOFF.md` "2026-09-08 방향" 절에
+   있다. 재료가 아직 얇다.
+5. (이전 세션 미결, 유효함) **공시 원문 임베딩(`report_chunk`)이 0건.** `REPORT_TEXT_ONLY_EMBEDDING=1`을
+   켜야 도는데, 표 후처리가 좋아졌으니 켤지 다시 판단한다.
+6. (이전 세션 미결) 약관 기반 매체 허용 목록(미착수), 벡터 검증 2단계
+   (`docs/VECTOR-VERIFICATION-PLAN.md` 3절).
 
-### 교차검증 수정본 채택 — 구현 완료, 배포 대기
+## 6. 지금 수치 (2026-09-07 밤, 확인함)
 
-교차검증 판정을 `pass` / `corrected_pass` / `reject`로 나눴다. 일부 표현·수치만 잘못됐고 본문에서
-확인되는 의미 있는 사실이 남으면 기사 전체를 버리지 않고 검증자가 보수적으로 고친 수정본을 채택한다.
+| 회사 | event | 한글 없는 행 | 기간 |
+|---|---|---|---|
+| Reshine | 13 | 0 | 2023-01-28 ~ 2026-07-22 |
+| Kaijin | 20 | 0 | 2023-01-01 ~ 2026-05-29 |
 
-- `acceptedFactCheck(analysis, factCheck)`가 `pass`와 `corrected_pass`를 받아 검증자 수정본을 합친다.
-- 기사 제목·요약뿐 아니라 `event_title_ko`·`event_fact_ko`·근거 발췌도 수정본으로 덮어써, 1차 추출에서
-  제거된 과장이나 수치가 이벤트로 다시 유입되지 않게 했다.
-- `corrected_pass`도 레거시 통과 상태 `pending_review`로 저장하되 `source_tier`에 `_corrected` 접미사를,
-  `processing_note`에 교정 이유를 남긴다.
-- 기사 경로는 서버 규칙대로 계속 `reference`이며, 거래소 공시만 `core`다.
-- `scripts/check-corrected-fact-check.mjs`를 추가했다. 전체 회귀 검사 19개와 모듈 로드 검사가 통과했다.
+인수인계 위쪽 B절이 "빠져 있다"고 지목한 Reshine 사실 세 가지가 모두 들어왔다 — 2026-06-29 IPO 접수
+(37.8억 위안), 2026-07-22 질의 단계 진입, 란저우 인산철리튬 10만 톤. Kaijin도 CATL 핵심 공급사,
+구톈 20만 톤 프로젝트, 2025년 말 생산능력 59만 톤 등이 들어왔다.
 
-## 6. 지금 수치 (2026-09-07 저녁)
-
-| 항목 | 값 |
-|---|---|
-| `event` | 694 (core 535 / reference 159) |
-| `knowledge_chunk` | 1,573 (report_chunk 0) |
-| `event_fact` | 196 (상대방 있는 사실 31) |
-| 사실 추출된 이벤트 | 94 / 694 |
-| 갱신된 보고서 / 큐 | 0 / 107 |
-| 원문이 저장된 보고서 | 5 |
-| 비교 리포트 / 함의 종합 | 6 / 1 |
+이전 세션 수치(전사 `event` 694건 등)는 이 두 회사분(합계 33건 순증)이 반영되지 않은 값이니, 전사
+수치가 필요하면 다시 센다.
 
 ## 7. 검증 명령
 
@@ -375,16 +291,24 @@ for f in scripts/check-*.mjs; do node $f; done
 git diff --check
 ```
 
-회귀 스크립트 19개 모두 네트워크 없이 돈다. `node --check`는 구문만 보므로 `npm run check`(api 모듈
-실제 import)를 함께 돌린다.
+회귀 스크립트가 **20개**로 늘었다(`check-backfill-korean.mjs` 신규). 모두 네트워크 없이 돈다.
+`node --check`는 구문만 보므로 `npm run check`(api 모듈 실제 import)를 함께 돌린다.
 
-## 8. 주의 — 이 세션에서 세 번 반복한 실수
+## 8. 주의 — 이번 세션에서 배운 것
 
-제약이 **존재하는 것**과 제약이 **구속력을 갖는 것**을 구분하지 않아 세 번 오진했다.
-"Vercel 60초 한도"는 설정 형식이 틀려 무시되고 있었고, "발췌 300자 상한"은 평균 길이가 110자라 닿지도
-않았으며, "선택 탭은 채움 알약"은 나중 규칙이 밑줄 탭으로 덮고 있었다. 세 번 다 한 줄짜리 확인
-(`avg(length())`, 계산된 스타일, 공식 문서)이면 몇 초에 깨졌다.
+- **배포 직후 재시도는 배포 별칭이 실제로 새 배포를 가리키는지 먼저 확인한다.** 200초 timeout 수정을
+  배포한 직후 재시도가 여전히 35초 만에 실패해 "고쳤는데 왜 안 되나"로 보였다. `pipeline_log` 실패
+  시각과 `vercel inspect <alias>`의 배포 생성 시각을 맞춰 보니 요청이 별칭 전환 직전 옛 배포로 들어간
+  것이었다. `npx vercel inspect china-battery-lens.vercel.app`으로 현재 별칭이 가리키는 배포와 생성
+  시각을 먼저 보고 재시도한다.
+- **프롬프트의 한국어 지시는 한 번만 적으면 묻힌다.** 웹 백필 프롬프트에 "출처에 명시된 사실만
+  한국어로 쓴다"가 이미 있었는데도 모델이 12건 전부 중국어로 냈다. 목록 가운데 한 줄이 아니라 필드
+  이름을 짚어 다시 못박고, **서버가 결과를 검사해 강제하는 장치를 항상 같이 넣는다** — 이 저장소가
+  근거 등급(`timeline_eligibility`)을 서버가 정하는 것과 같은 원칙이다.
+- **Vercel Sensitive 환경변수는 `vercel env pull`로 실제 값을 받을 수 없다.** `CRON_SECRET`·
+  `APP_ACCESS_KEY`가 대시보드에서 Sensitive로 표시돼 있어 CLI가 `[SENSITIVE]` placeholder만 준다.
+  프로덕션 인증이 필요한 일회성 작업은 관리자 로그인 브라우저에서 URL을 직접 열게 하는 것이 유일한
+  경로다(이 프로젝트의 `?backfill=`처럼 GET으로도 동작하는 엔드포인트는 주소창에 붙여넣기만 하면 된다).
 
-`CLAUDE.md`에 진단 규칙 4개를 남겼다. 요약: **제약을 원인으로 지목하기 전에 실제로 걸리는지 센다 /
-코드 주석·문서의 단정은 증거가 아니다 / 가설이 서면 반증을 한 번 찾는다 / 확인한 것과 추정한 것을
-나눠 보고한다.**
+(이전 세션이 남긴 "제약의 존재와 구속력을 구분하라" 같은 진단 규칙은 `CLAUDE.md`에 있으므로 여기
+반복하지 않는다.)
