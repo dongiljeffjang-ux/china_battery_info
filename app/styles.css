@@ -206,3 +206,31 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .ask-grade{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:700;background:#fbe9e9;color:#bc5b5b}
 
 .compare-history-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 6px}.compare-history-toolbar .secondary-button{padding:6px 11px;font-size:12px}.compare-history-toolbar .secondary-button:disabled{opacity:.5;cursor:default}.compare-history-note{font-size:11px;color:var(--muted)}.compare-report-history li{display:flex;align-items:flex-start;gap:8px}.compare-report-history li input[type=checkbox]{margin:4px 0 0;flex:0 0 auto;cursor:pointer}.compare-report-history li .link-button{flex:1;min-width:0}.hist-kind{display:inline-block;margin-right:6px;padding:0 6px;border-radius:9px;font-size:10px;font-weight:800;background:var(--tech-bg);color:var(--tech);vertical-align:1px}.hist-ref{display:inline-block;margin-right:4px;padding:0 5px;border-radius:9px;font-size:9.5px;font-weight:800;background:#eef2f6;color:var(--muted);vertical-align:1px}.hist-more{margin:8px 0 0;padding:6px 11px;font-size:12px}
+
+/* 비교 화면 컨트롤 — 기업 A·B 선택을 좌우로 꽉 채우고, 실행 버튼과 옵션은 그 아래 줄로 내린다.
+   전에는 픽커 둘과 버튼이 한 줄에 섞여 있어 폭이 남는데도 선택창이 좁고 버튼이 중간에 끼었다.
+   A·B 고유색(--pick-a 네이비 / --pick-b 딥그린)은 아래 비교표의 기업 머리글에도 같이 쓴다.
+   위아래가 같은 색이라야 "왼쪽 열이 내가 A로 고른 회사"라는 것이 눈으로 이어진다.
+   시장(--market 파랑)·기술(--tech 갈색) 축 색과는 겹치지 않게 골랐다. */
+:root{--pick-a:#10365f;--pick-b:#0c6b4e}
+.compare-controls{display:grid;gap:12px;align-items:stretch;margin-bottom:22px}
+.compare-picks{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.compare-pick{min-width:0;border-left-width:3px}
+.compare-pick select{width:100%;min-width:0}
+.compare-pick.is-a{border-left-color:var(--pick-a);background:linear-gradient(#f7fafd,#fff)}
+.compare-pick.is-b{border-left-color:var(--pick-b);background:linear-gradient(#f5fbf8,#fff)}
+.compare-pick.is-a .compare-badge{background:var(--pick-a);color:#fff;border-color:var(--pick-a)}
+.compare-pick.is-b .compare-badge{background:var(--pick-b);color:#fff;border-color:var(--pick-b)}
+.compare-pick.is-a .compare-pick-label{color:var(--pick-a)}
+.compare-pick.is-b .compare-pick-label{color:var(--pick-b)}
+/* 밸류체인 탭은 채움 알약이 아니라 밑줄 탭이다(위 .segment 규칙). 배경을 채우면 글자색이 남아
+   읽히지 않으므로, 밑줄과 글자에만 A·B 색을 준다. */
+.compare-pick.is-a .segment.is-selected{color:var(--pick-a);border-color:var(--pick-a)}
+.compare-pick.is-b .segment.is-selected{color:var(--pick-b);border-color:var(--pick-b)}
+.compare-actions-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+/* 비교표 머리글. 픽커와 같은 색을 써서 어느 열이 A인지 색으로 이어 준다. */
+.cmp-head-a .eyebrow{color:var(--pick-a)}
+.cmp-head-b .eyebrow{color:var(--pick-b)}
+.cmp-head-a h2{border-bottom:2px solid var(--pick-a);padding-bottom:5px;display:inline-block}
+.cmp-head-b h2{border-bottom:2px solid var(--pick-b);padding-bottom:5px;display:inline-block}
+@media(max-width:760px){.compare-picks{grid-template-columns:1fr}}

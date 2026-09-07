@@ -1398,7 +1398,7 @@ async function renderComparison(){
   const asym = ratio >= 2 ? `<p class="coverage-warn">근거 두께가 ${ratio.toFixed(1)}배 차이 납니다. 빈칸은 "확인된 사실 없음"이지 "일이 없었다"가 아닙니다.</p>` : '';
   // 5열: 기업A 기술 | 기업A 시장 | 공통 시간축 | 기업B 시장 | 기업B 기술. 시장 열을 시간축 양옆에 붙여 대비시킨다.
   const COLS = 'grid-template-columns:1fr 1fr 118px 1fr 1fr;gap:12px';
-  target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:1080px">${asym}<div style="display:grid;${COLS};align-items:end;margin-bottom:4px"><div style="grid-column:1/3"><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2><p class="coverage-note">${escapeHtml(covA)}</p></div><div style="text-align:center;color:#617187;font-size:12px">공통<br>시간축</div><div style="grid-column:4/6;text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2><p class="coverage-note">${escapeHtml(covB)}</p></div></div><div style="display:grid;${COLS};margin-bottom:10px"><div class="cmp-tracklabel tech" style="text-align:right">기술</div><div class="cmp-tracklabel market" style="text-align:right">시장</div><div></div><div class="cmp-tracklabel market">시장</div><div class="cmp-tracklabel tech">기술</div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;${COLS};align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'tech', 'right', a)}</div><div>${eventCell(eventsA, date, 'market', 'right', a)}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'market', 'left', b)}</div><div>${eventCell(eventsB, date, 'tech', 'left', b)}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
+  target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:1080px">${asym}<div style="display:grid;${COLS};align-items:end;margin-bottom:4px"><div class="cmp-head-a" style="grid-column:1/3"><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2><p class="coverage-note">${escapeHtml(covA)}</p></div><div style="text-align:center;color:#617187;font-size:12px">공통<br>시간축</div><div class="cmp-head-b" style="grid-column:4/6;text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2><p class="coverage-note">${escapeHtml(covB)}</p></div></div><div style="display:grid;${COLS};margin-bottom:10px"><div class="cmp-tracklabel tech" style="text-align:right">기술</div><div class="cmp-tracklabel market" style="text-align:right">시장</div><div></div><div class="cmp-tracklabel market">시장</div><div class="cmp-tracklabel tech">기술</div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;${COLS};align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'tech', 'right', a)}</div><div>${eventCell(eventsA, date, 'market', 'right', a)}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'market', 'left', b)}</div><div>${eventCell(eventsB, date, 'tech', 'left', b)}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
 }
 function activateView(view){
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('is-visible', el.id === view));
@@ -1525,12 +1525,14 @@ async function initialize(){
   await loadCompanyCatalog();
   const compareA = document.querySelector('#compare-a');
   const compareB = document.querySelector('#compare-b');
+  // 첫 선택은 밸류체인 맨 앞(SNE 순위 1위)이다. 기업 분석과 비교 A는 셀사 1위, 비교 B는 양극재 1위로
+  // 열어 둔다. 셀과 양극재는 서로 다른 층이라 처음 보는 화면이 "무엇과 무엇을 견주는 자리"인지 바로 보인다.
   const firstIn = chain => companiesInValueChain(chain)[0]?.id || '';
-  currentCompany = firstIn('cathode') || companyCatalog[0]?.id || '';
-  const compareBId = firstIn('anode') || currentCompany;
-  currentChain = companyById(currentCompany)?.value_chain || 'cathode';
+  currentCompany = firstIn('cell') || companyCatalog[0]?.id || '';
+  const compareBId = firstIn('cathode') || currentCompany;
+  currentChain = companyById(currentCompany)?.value_chain || 'cell';
   renderCompanyPicker();
-  const chainA = currentChain, chainB = companyById(compareBId)?.value_chain || 'anode';
+  const chainA = currentChain, chainB = companyById(compareBId)?.value_chain || 'cathode';
   makeSelect(compareA, currentCompany, chainA);
   makeSelect(compareB, compareBId, chainB);
   makeChainTabs(document.querySelector('#compare-chain-a'), chainA, chain => { makeSelect(compareA, '', chain); renderComparison(); });
