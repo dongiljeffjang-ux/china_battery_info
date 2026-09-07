@@ -317,7 +317,7 @@ async function runCurateStage(request, hop) {
   const started = Date.now();
   let more = false;
   try {
-    const result = await runCurationHop({ deadline: started + STAGE_BUDGET_MS });
+    const result = await runCurationHop({ deadline: started + STAGE_BUDGET_MS, hop });
     more = result.more;
     console.info("[CURATE_STAGE]", JSON.stringify({ hop, ...result.log, more, ms: Date.now() - started }));
     await logPipeline("curate", { ...result.log, more }, { hop, durationMs: Date.now() - started });
