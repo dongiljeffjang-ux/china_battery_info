@@ -1,7 +1,7 @@
 import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { flushTraces } from "../lib/tracing.js";
 import { requireAccess } from "../lib/access.js";
-import { COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
+import { COMPANIES, TRACKED_COMPANIES, SELECTION_BASIS } from "../lib/china-sources.js";
 import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
 import { buildCompareReport, applyVerifiedFacts } from "../lib/compare-report.js";
@@ -34,7 +34,7 @@ function catalogEntry(company) {
 
 // 밸류체인 순서 → SNE 순위(없으면 뒤) → 한국어명 순으로 내보낸다.
 function sortedCatalog() {
-  return COMPANIES.map(catalogEntry).sort((a, b) => {
+  return TRACKED_COMPANIES.map(catalogEntry).sort((a, b) => {
     const chain = VALUE_CHAINS.indexOf(a.value_chain) - VALUE_CHAINS.indexOf(b.value_chain);
     if (chain) return chain;
     const rank = (a.priority ?? 99) - (b.priority ?? 99);
