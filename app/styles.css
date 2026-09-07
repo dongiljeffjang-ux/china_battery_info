@@ -65,9 +65,9 @@ h3{font-size:16px;font-weight:700;letter-spacing:-.2px}
 /* 로고 문구는 Arial로 고정하고, 단어마다 이미 쓰고 있는 축 색(시장·기술·양호)을 입혀
    새 색을 만들지 않는다. */
 .brand-name{font-family:Arial,Helvetica,sans-serif}
-.brand-name .w1{color:var(--blue)}
-.brand-name .w2{color:var(--tech)}
-.brand-name .w3{color:var(--good)}
+.brand-name .w1{color:var(--alert)}
+.brand-name .w2{color:var(--good)}
+.brand-name .w3{color:var(--blue)}
 .topbar nav{align-items:center}
 .nav-link{font-weight:400;color:var(--muted);border-bottom:0;padding:8px 16px;border-radius:999px}
 .nav-link.is-active{background:var(--pale);color:var(--blue);font-weight:700}
