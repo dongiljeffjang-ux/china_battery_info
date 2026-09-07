@@ -1368,23 +1368,31 @@ async function confirmAccessCode(actionLabel){
     return false;
   }
 }
-// 시계열 백필 1회 실행. 서버가 백그라운드에서 이어 돌리므로 화면을 잠그지 않는다.
+// 시계열 백필 1회 실행. Vercel은 같은 함수의 재귀 호출을 5번째에 508로 막으므로
+// 브라우저가 독립 요청으로 한 홉씩 호출한다. 탭을 닫으면 다음 홉은 시작되지 않는다.
 async function runTimelineBackfill(){
   if (!(await confirmAccessCode('시계열 백필 1회 실행'))) return;
-  if (!window.confirm('정기보고서 읽기·보강·시점 재확인을 서버에서 20~30분 동안 돌립니다. LLM 호출이 많으니 필요할 때만 실행하세요. 시작할까요?')) return;
+  if (!window.confirm('정기보고서 읽기·보강·시점 재확인을 20~30분 동안 돌립니다. 완료될 때까지 이 탭을 열어 두세요. LLM 호출이 많으니 필요할 때만 실행하세요. 시작할까요?')) return;
   const button = document.querySelector('#run-backfill-button');
   button.disabled = true; button.textContent = '백필 시작 중…';
   try {
-    const result = await fetch('/api/ingest-rss?curate_run=1', { method: 'POST' });
-    const payload = await result.json();
-    if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || '요청 실패');
-    button.textContent = '백필 진행 중 (백그라운드)';
-    window.alert(`시작했습니다.
-${payload.next_step || ''}`);
-    // 몇 분 뒤에 한 번 다시 읽어 채워지는 것을 보여준다. 이후는 새로 고침으로.
-    setTimeout(async () => { companyTimelineCache.clear(); await renderCompany(); button.disabled = false; button.textContent = '시계열 백필 1회 실행'; }, 5 * 60 * 1000);
+    let completed = 0;
+    let lastTask = '';
+    for (let hop = 1; hop <= 40; hop += 1) {
+      button.textContent = `시계열 백필 진행 중 (${hop}/40)`;
+      const result = await fetch(`/api/ingest-rss?curate_step=1&hop=${hop}`, { method: 'POST' });
+      const payload = await result.json();
+      if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `홉 ${hop} 요청 실패`);
+      completed = hop;
+      lastTask = payload.task || lastTask;
+      if (!payload.more) break;
+    }
+    companyTimelineCache.clear();
+    await renderCompany();
+    window.alert(`시계열 백필을 완료했습니다.\n실행 ${completed}단계 · 마지막 작업 ${lastTask || '없음'}`);
+    button.disabled = false; button.textContent = '시계열 백필 1회 실행';
   } catch (error) {
-    window.alert(`백필을 시작하지 못했습니다: ${error.message}`);
+    window.alert(`백필 실행 중 실패했습니다: ${error.message}`);
     button.disabled = false; button.textContent = '시계열 백필 1회 실행';
   }
 }

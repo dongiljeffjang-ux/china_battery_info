@@ -333,6 +333,22 @@ async function runCurateStage(request, hop) {
   await flushTraces();
 }
 
+// 관리자 화면의 수동 백필은 브라우저가 한 홉씩 호출한다. 같은 Vercel 함수가 자기 자신을 5번째
+// 호출하면 508 Loop Detected가 나므로, 수동 실행에서는 서버 재귀 체인을 만들지 않는다.
+async function runManualCurateStep(response, hop) {
+  const started = Date.now();
+  try {
+    const result = await runCurationHop({ deadline: started + CURATE_BUDGET_MS, hop });
+    await logPipeline("curate", { ...result.log, more: result.more, manual_step: true }, { hop, durationMs: Date.now() - started });
+    await flushTraces();
+    return response.status(200).json({ status: "ok", hop, more: result.more, task: result.log.hop_task, result: result.log[result.log.hop_task] || null });
+  } catch (error) {
+    await logPipeline("curate", { message: error.message, manual_step: true }, { hop, status: "failed", durationMs: Date.now() - started });
+    await flushTraces();
+    return response.status(502).json({ status: "failed", hop, message: error.message });
+  }
+}
+
 // 이미 저장된 연차보고서 이벤트의 시점을 다시 확인한다.
 // 기간 집계는 보고 기간 말일이 맞으므로 그대로 두고, 시점 사건만 실제 시기를 찾아 고친다.
 async function runRedate(response, companyId) {
@@ -407,7 +423,13 @@ async function handleRequest(request, response) {
   }
   const redateCompanyId = String(request.query?.redate || request.body?.redate || "").trim();
   if (redateCompanyId) return runRedate(response, redateCompanyId);
-  // 시계열 백필 1회 실행. 화면 버튼이 부른다(입장 세션). 뉴스 수집과 달리 유지 단계만 돌린다.
+  // 브라우저가 한 홉씩 부르는 수동 백필. 서버가 자기 자신을 재귀 호출하지 않는다.
+  if (request.method === "POST" && String(request.query?.curate_step || "") === "1") {
+    if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
+    const hop = Math.min(MAX_CURATE_HOPS, Math.max(1, Number(request.query?.hop) || 1));
+    return runManualCurateStep(response, hop);
+  }
+  // 레거시·내부 시계열 백필 시작점.
   if (request.method === "POST" && String(request.query?.curate_run || "") === "1") {
     if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
     await chainStage(request, "curate", 1, { curate: true });
