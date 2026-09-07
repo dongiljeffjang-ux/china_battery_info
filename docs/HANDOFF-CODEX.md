@@ -1,8 +1,31 @@
 # Codex → Claude Code 인수인계
 
+> **2026-09-07 밤 갱신 — Reshine bootstrap 구현·배포 완료. 실제 실행 검증은 아직.**
+>
+> 아래 C절 계획대로 구현해 커밋 `1b1459b`(`main`)까지 푸시했다. 사용자 요청으로 검색 기간은
+> 계획한 180일이 아니라 **365일**로 넓혔다(단독 그룹이라 요청 수는 늘지 않는다).
+>
+> - `lib/china-sources.js`: `buildSearchGroups(provider, pilot, bootstrapCompanyIds)`가 bootstrap
+>   대상을 일반 묶음에서 빼고 회사당 단독 그룹(`windowDays=365`)으로 낸다. 후보 기사에
+>   `bootstrap: true`가 붙는다.
+> - `api/ingest-rss.js`: `bootstrapCompanyIds()`가 `article_company` 연결 0건인 회사만
+>   (`reshine`, `kaijin-new-energy`) 매 실행 다시 계산한다(읽기 전용, 기사 1건만 생겨도 다음 실행부터
+>   빠짐). bootstrap 후보는 `source_tier=web_search_bootstrap_<provider>`로 저장. 파일럿(3사 검증)은
+>   bootstrap을 켜지 않는다. `selectHeadlineTop10()`이 3일 창과 별도로 bootstrap 기사 최대 2건을 뽑아
+>   본문대조까지 보낸다(news/bootstrap 중복은 article id로 dedupe).
+> - `scripts/check-search-plan.mjs`에 회귀 4종 추가(단독 그룹·365일 창·일반 그룹 미중복·기본 호출 불변).
+>   19개 회귀 스크립트·`npm run check`·`git diff --check` 모두 통과.
+>
+> **다음에 확인할 것**: 09-07 23:00 크론(또는 사용자가 직접 누르는 수집 버튼) 이후 Supabase에서
+> Reshine·Kaijin의 `article`/`article_company`/`event`를 확인한다. 특히
+> `source_tier=web_search_bootstrap_*`가 저장만 되고 Top 10(`pipeline_log`의 `process` 단계 로그)에서
+> 빠지지 않았는지, 연결되면 다음 실행부터 `bootstrap_ids`가 그 회사를 뺐는지(`collect` 로그) 본다.
+>
+> ---
+>
 > **2026-09-07 최신 추가 사항 — Reshine 수집 공백을 다음 작업의 최우선으로 둔다.**
 >
-> 이 절은 아래의 예전 인수인계보다 최신이다. 구현은 아직 시작하지 않았다. 작업 트리는 깨끗하고,
+> 이 절은 아래의 예전 인수인계보다 최신이다. (구현 완료 상태는 위 갱신 참고.) 작업 트리는 깨끗하고,
 > `main`에는 아래 두 커밋까지 푸시·Vercel Production 배포가 완료됐다.
 >
 > | 커밋 | 상태 | 내용 |
