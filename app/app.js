@@ -522,7 +522,7 @@ function enterSingleReportView(date){
 // 최신 뉴스(기사 발행일)와 Daily 리포트 날짜 중 더 최근을 쓴다. 데이터가 하나도
 // 없으면(아직 크롤링 전) 기존 표시를 건드리지 않는다.
 function updateAsOf(payload){
-  const el = document.querySelector('.as-of');
+  const el = document.querySelector('#as-of-text');
   if (!el) return;
   const dates = [];
   for (const list of [payload?.top10, payload?.companyNews, payload?.pendingNews]) {
