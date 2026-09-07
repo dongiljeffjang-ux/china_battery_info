@@ -17,7 +17,7 @@ export const ARTICLE_ANALYSIS_PROMPT_BODY = " 중국 배터리 산업 기사에�
 // 사건 시점은 기사 발행일이 아니다. 2026-09-04 大众日报 특집이 2026-03-05 발표된 비야디 2세대
 // 블레이드 배터리를 소개했는데, 발행일이 그대로 사건 시점으로 들어가 시계열이 6개월 어긋났다.
 // 기사 본문이 시점을 적지 않으면 그 사실을 남기고(occurred_basis=null) 뒤의 웹 검색 재확인 단계가 잡는다.
-export const ARTICLE_DATE_GUIDE = "occurred_at은 그 사실이 실제로 일어난(발표·체결·가동·출시된) 시점이지 기사 발행일이 아니다. 본문에 시점이 적혀 있으면(예: 3月5日, 今年上半年, 去年, 2025年) 그 시점을 쓰고, occurred_basis에 그 근거 문장을 원문 그대로 짧게 인용하며, occurred_precision에 확인된 정밀도(day/month/half/year)를 쓴다. 본문에 시점이 없으면 occurred_at에 발행일을 쓰되 occurred_precision은 month로, occurred_basis는 null로 둔다. 발행일을 근거로 지어 적지 않는다. retrospective는 이 기사가 새 소식이 아니라 이미 발표된 사실을 다시 소개·회고하는 글(특집·회객청·전문가 대담·기업 소개, 此前·曾·早在·回顾 같은 표현)이면 true다. retrospective가 true이고 본문에 발표 시점이 없으면 occurred_at에 발행일을 쓰되 occurred_precision을 year로 두어 시점이 불확실함을 표시한다.";
+export const ARTICLE_DATE_GUIDE = "occurred_at은 그 사실이 실제로 일어난(발표·체결·가동·출시된) 시점이지 기사 발행일이 아니다. 반드시 PostgreSQL date에 저장 가능한 YYYY-MM-DD 형식으로 쓴다. 월까지만 알면 그 달 1일, 연도만 알면 그해 1월 1일을 쓰고 정확도는 occurred_precision으로 구분한다. 본문에 시점이 적혀 있으면(예: 3月5日, 今年上半年, 去年, 2025年) 그 시점을 쓰고, occurred_basis에 그 근거 문장을 원문 그대로 짧게 인용하며, occurred_precision에 확인된 정밀도(day/month/half/year)를 쓴다. 본문에 시점이 없으면 occurred_at에 발행일을 쓰되 occurred_precision은 month로, occurred_basis는 null로 둔다. 발행일을 근거로 지어 적지 않는다. retrospective는 이 기사가 새 소식이 아니라 이미 발표된 사실을 다시 소개·회고하는 글(특집·회객청·전문가 대담·기업 소개, 此前·曾·早在·回顾 같은 표현)이면 true다. retrospective가 true이고 본문에 발표 시점이 없으면 occurred_at에 발행일을 쓰되 occurred_precision을 year로 두어 시점이 불확실함을 표시한다.";
 
 function isAuthorized(request) {
   const secret = process.env.CRON_SECRET;
@@ -28,6 +28,17 @@ function addDays(dateStr, days) {
   const date = new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+export function normalizeOccurredAt(value) {
+  const raw = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const date = new Date(`${raw}T00:00:00Z`);
+    return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== raw ? null : raw;
+  }
+  if (/^\d{4}-\d{2}$/.test(raw)) return `${raw}-01`;
+  if (/^\d{4}$/.test(raw)) return `${raw}-01-01`;
+  return null;
 }
 
 function htmlToText(html) {
@@ -232,16 +243,17 @@ export async function processPendingArticle(articleId, companyId) {
     });
     embedding = { status: "failed", chunks: 0 };
   }
-  if (verifiedResult.timeline_eligibility !== "exclude" && verifiedResult.occurred_at) {
+  const occurredAt = normalizeOccurredAt(verifiedResult.occurred_at);
+  if (verifiedResult.timeline_eligibility !== "exclude" && occurredAt) {
     // 발생 법인은 등록된 계열사 별칭 매칭으로만 정한다. 본문 전체가 아니라 이벤트 문장과
     // 근거 발췌만 대조해 각주·목록에 스치듯 나온 계열사가 섞이지 않게 한다.
     const entityNames = matchGroupEntities(companyId, [
       article.title_original, verifiedResult.event_title_ko, verifiedResult.event_fact_ko, verifiedResult.original_excerpt
     ].filter(Boolean).join(" "));
-    const candidate = { occurred_at: verifiedResult.occurred_at, title_ko: verifiedResult.event_title_ko, fact_ko: verifiedResult.event_fact_ko };
+    const candidate = { occurred_at: occurredAt, title_ko: verifiedResult.event_title_ko, fact_ko: verifiedResult.event_fact_ko };
     // 여러 매체가 같은 사건을 보도하면 거의 같은 이벤트가 겹쳐 쌓인다. 같은 회사에서 인접 시점의
     // 기존 이벤트와 같은 사실이면 새로 넣지 않는다(매체만 다른 중복 방지).
-    const nearby = await supabaseRest(`event?select=occurred_at,title_ko,fact_ko&company_id=eq.${encodeURIComponent(companyId)}&occurred_at=gte.${addDays(verifiedResult.occurred_at, -3)}&occurred_at=lte.${addDays(verifiedResult.occurred_at, 3)}`);
+    const nearby = await supabaseRest(`event?select=occurred_at,title_ko,fact_ko&company_id=eq.${encodeURIComponent(companyId)}&occurred_at=gte.${addDays(occurredAt, -3)}&occurred_at=lte.${addDays(occurredAt, 3)}`);
     if ((nearby || []).some((prev) => sameFact(prev, candidate))) {
       console.info("[EVENT_DUP_SKIPPED]", JSON.stringify({ articleId, companyId, title: verifiedResult.event_title_ko }));
       return { status: "pending_review", verification_outcome: factCheck.verdict, analysis: verifiedResult, fact_check: factCheck, embedding, duplicate: true, primary_provider: primaryProvider, verifier_provider: verifierProvider };
@@ -250,7 +262,7 @@ export async function processPendingArticle(articleId, companyId) {
     // 임베딩 실패는 이벤트 적재를 되돌리지 않는다. 남은 것은 임베딩 크론이 채운다.
     const storedEvents = await supabaseRest("event", { method: "POST", prefer: "return=representation", body: {
       entity_names: entityNames,
-      company_id: companyId, article_id: articleId, occurred_at: verifiedResult.occurred_at,
+      company_id: companyId, article_id: articleId, occurred_at: occurredAt,
       // 본문이 시점을 말하지 않은 이벤트는 basis가 null로 남아 웹 검색 재확인 큐에 들어간다.
       occurred_precision: ["day", "month", "half", "year"].includes(verifiedResult.occurred_precision) ? verifiedResult.occurred_precision : "month",
       occurred_basis: verifiedResult.occurred_basis ? String(verifiedResult.occurred_basis).slice(0, 300) : null,
