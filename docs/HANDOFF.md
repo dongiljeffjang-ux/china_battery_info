@@ -75,9 +75,13 @@
 - `supabase/ingestion-guard.sql`: `ingestion_guard` 테이블(수집 체인 잠금). 실행됨.
 - `supabase/report-visual-quality.sql`: 공시 PDF의 텍스트/이미지 도표 완전성 상태. 실행됨.
 
-**다음 실행 필요**: `supabase/report-renewal.sql`. 주요 상장사 정기보고서의 원문 해시와 재분석 상태를 기록한다. SQL 적용 전에는 갱신 큐가 동작하지 않는다.
+2026-09-07에 운영 DB에서 적용 여부를 직접 확인했다. 아래 둘은 **적용돼 있다**. 이전 판 문서의 "미실행"
+표기는 낡은 것이었다.
 
-**미실행**: `supabase/company-entity.sql` (`event.entity_names`). 코드 배포 전에 SQL Editor에서 실행해야 한다. 컬럼이 없는 상태로 새 코드가 이벤트를 INSERT하면 Supabase가 거부해 기사 처리가 실패한다.
+- `supabase/company-entity.sql`: `event.entity_names` 존재 확인.
+- `supabase/report-renewal.sql`: `report_digest`의 `renewed_at`·`renewal_status`·`renewal_inserted`·
+  `source_sha256` 네 컬럼, `report_digest_renewal_status_check` 제약, `report_digest_renewal_queue_idx`
+  인덱스까지 모두 확인. 갱신 큐 대상은 107건이다(장부 125건 중).
 
 운영 DB에 SQL을 실행한 뒤 `Success. No rows returned`를 확인한다. 이후 스키마 변경도 재실행 가능한 SQL로 남긴다.
 
@@ -669,3 +673,75 @@ pdfjs의 텍스트 레이어만으로는 이미지로 삽입된 표·그래프 �
 - 기존 청크와 이벤트는 삭제하지 않는다. 운영 DB에는 `supabase/report-visual-quality.sql`을
   먼저 적용해야 품질 상태가 저장된다. 미적용 상태에서도 핵심 파이프라인은 실패하지 않도록
   품질 메타데이터 PATCH만 독립적으로 실패 허용한다.
+
+## 2026-09-07: 핵심 상장사 정기보고서 갱신 큐 (`a3a79bf`)
+
+2024년 이후 연차·반기보고서를 **삭제 없이** 다시 내려받아 새 추출 규칙으로 읽고 새 이벤트만
+더하는 큐를 넣었다.
+
+- `pickRenewalReport()`가 `TRACKED_COMPANIES` 중 거래소 코드가 있는 회사의 `renewed_at is null`
+  · `published_at >= 2024-01-01` 행을 최신순으로 고른다. `missing:`·`web:` 태그 행은 건너뛴다.
+- `renewReport()`는 기존 `storeEvents` 경로로 저장하므로 중복 방지가 그대로 걸린다. 결과를
+  `renewed_at`·`renewal_status`·`renewal_inserted`·`source_sha256`에 적고 `events_inserted`를 더한다.
+- `extractPdfText()`가 내려받은 PDF 바이트의 SHA-256을 함께 돌려준다. 같은 URL을 다시 읽었을 때
+  원본이 바뀌었는지 판별하는 근거다.
+- `renew`는 `HEAVY_TASKS`에 들어가 자기 훅을 따로 받고, `pendingWork()`가 잔량을 확인한다.
+- 검사: `scripts/check-report-renewal.mjs`(삭제 없음·해시 기록·스키마 컬럼 고정).
+
+## 2026-09-07: 훅이 다시 60초를 넘긴 두 지점 (`42c5b5b`)
+
+`CURATE_BUDGET_MS` 50초는 훅 본체 기준이라 그 뒤의 로그 기록·대기열 확인·다음 홉 호출까지
+합치면 60초를 넘긴 사례가 나왔다. **45초로 내렸다.**
+
+헤드라인 번역도 한 호출에 30건을 묶으면 번역 뒤 기사별 상태 기록까지 48초가 걸려 체인 넘길
+시간이 남지 않았다. `TITLES_PER_CALL`을 **10건**으로 줄였다. 훅당 처리량은 줄지만 야간 크론이
+40훅까지 도므로 며칠이면 밀린 분이 소화된다. `scripts/check-headline-hop-budget.mjs`가 상한을
+고정한다.
+
+## 2026-09-07: 수동 백필을 브라우저가 홉 단위로 부른다 (`7255b76`)
+
+화면의 "시계열 백필 1회 실행"은 서버가 자기 자신을 이어 호출하는 방식이었다. **Vercel은 같은
+함수의 5번째 재귀 호출을 508 Loop Detected로 막는다.** 그래서 수동 백필이 늘 4홉에서 끊겼다.
+
+- `POST /api/ingest-rss?curate_step=1&hop=N`을 새로 열었다. 한 홉만 돌고 결과(`more`, `task`)를
+  돌려줄 뿐 다음 홉을 스스로 부르지 않는다.
+- `app/app.js`의 `runTimelineBackfill()`이 `more`가 false가 될 때까지 최대 40번 순차 호출하고
+  진행률을 버튼에 표시한다. **탭을 닫으면 다음 홉이 시작되지 않는다.** 확인 문구에 그렇게 적었다.
+- 기존 `?curate_run=1`은 크론·내부용으로 남겼다.
+
+## 2026-09-07: Daily의 사실과 해석을 화면에서 분리 (`c82f390`)
+
+`sections`(사실)에 "산업 총평" 카테고리가 있어 해석이 사실 영역으로 새어 들어왔다.
+`CLAUDE.md`의 "사실과 해석은 컬럼과 화면 영역을 분리한다"에 어긋난다.
+
+- `SUMMARY_CATEGORIES`에서 "산업 총평"을 빼 셀·양극재·음극재·정책·공급망 넷으로 한정하고,
+  스키마 `maxItems`도 4로 내렸다. 프롬프트에 "sections에 산업 총평이나 해석을 만들지 않는다"를 적었다.
+- 해석 쪽 머리글을 "오늘의 그림" → **"산업 총평"**으로 옮겼다. `headline_ko`는 한 회사 실적을
+  나열하지 말고 여러 회사를 연결·대조해 두세 문장으로 종합하도록 프롬프트를 고쳤다.
+- 화면은 해석(`#daily-insight`)을 사실 목록 위로 올렸다. 옛 리포트가 남긴 "산업 총평" 섹션은
+  사실 영역에서 "주요 사실"로, "오늘의 그림"은 해석 영역에서 "산업 총평"으로 렌더링한다.
+- 검사: `scripts/check-daily-industry-summary.mjs`.
+
+## 2026-09-07: 갱신 결과에 품질 메타가 비어 있던 버그
+
+운영 DB에서 갱신 큐를 확인하다 찾았다. 첫 갱신 성공 건(farasis 2026 반기, 이벤트 47건 추가)의
+`source_sha256`이 null이고 `visual_pages`가 빈 배열이었다.
+
+원인은 `lib/event-backfill.js`의 `digestReport()`가 호출자에게 돌려주는 `report` 객체를
+`{url, title, published_at, pages, text, section}`으로 **줄여서** 만들고 있던 것이다.
+`readReport()`는 `parse_quality`·`visual_pages`·`source_sha256`을 채워 주는데 여기서 떨어졌다.
+
+그래서 `digestReport`를 쓰는 세 경로가 모두 영향을 받았다.
+
+| 경로 | 증상 |
+|---|---|
+| `renewReport` | `source_sha256` 저장 안 됨. `renewal_status`가 항상 `renewed_text_only` |
+| `runDueReport` | `parse_quality`가 항상 `text_only`, `visual_pages` 항상 `[]` |
+| `enrichReport` | 같음 |
+
+즉 `ab8415b`이 넣은 이미지 도표 완전성 표시가 **보고서를 읽는 모든 경로에서 무력화돼 있었다.**
+`embedReportChunks`가 PDF를 직접 다시 내려받는 경로만 정상이었다.
+
+`digestReport`가 세 필드를 그대로 넘기도록 고쳤고, `scripts/check-report-renewal.mjs`가
+반환 객체에 세 필드가 있는지 확인한다. 이미 `renewed_text_only`로 기록된 행은 해시가 없으므로,
+필요하면 `renewed_at`을 비워 큐에 되돌린다.
