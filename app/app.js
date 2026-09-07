@@ -175,8 +175,9 @@ function renderDailySummary(){
     return;
   }
   target.innerHTML = sections.map(section => {
-    const chip = section.category
-      ? `<p class="summary-cat ${summaryCategoryClass[section.category] || ''}">${escapeHtml(section.category)}</p>`
+    const category = section.category === '산업 총평' ? '주요 사실' : section.category;
+    const chip = category
+      ? `<p class="summary-cat ${summaryCategoryClass[category] || ''}">${escapeHtml(category)}</p>`
       : '';
     return `<div class="summary-block">${chip}<ul>${section.points.map(point => `<li>${formatSummaryPoint(point)}</li>`).join('')}</ul></div>`;
   }).join('');
@@ -202,9 +203,10 @@ function renderDailyInsight(){
       const basis = split ? split[2].trim() : '';
       return `<p class="insight-point">${chip}${highlightMetrics(lead)}${basis ? `<span class="insight-basis">근거 · ${highlightMetrics(basis)}</span>` : ''}</p>`;
     }).join('');
-    return `<div class="summary-block">${section.category ? `<p class="summary-cat insight">${escapeHtml(section.category)}</p>` : ''}${blocks}</div>`;
+    const category = section.category === '오늘의 그림' ? '산업 총평' : section.category;
+    return `<div class="summary-block">${category ? `<p class="summary-cat insight">${escapeHtml(category)}</p>` : ''}${blocks}</div>`;
   }).join('');
-  target.innerHTML = `<div class="insight-head"><p class="eyebrow">INSIGHT</p><h3>한국 배터리사·소재사에 주는 의미</h3><span class="source-rule">사실이 아니라 해석입니다</span></div>${body}`;
+  target.innerHTML = `<div class="insight-head"><p class="eyebrow">INSIGHT</p><h3>산업 총평과 한국 기업 관점</h3><span class="source-rule">사실이 아니라 해석입니다</span></div>${body}`;
 }
 function feedbackClientKey(){
   const key = 'cbl_feedback_client_key';
