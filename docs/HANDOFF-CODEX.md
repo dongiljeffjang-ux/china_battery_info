@@ -1,3 +1,86 @@
+# Codex → Claude Code 인수인계
+
+> **2026-09-07 최신 추가 사항 — Reshine 수집 공백을 다음 작업의 최우선으로 둔다.**
+>
+> 이 절은 아래의 예전 인수인계보다 최신이다. 구현은 아직 시작하지 않았다. 작업 트리는 깨끗하고,
+> `main`에는 아래 두 커밋까지 푸시·Vercel Production 배포가 완료됐다.
+>
+> | 커밋 | 상태 | 내용 |
+> |---|---|---|
+> | `7e7156c` | 배포 완료 | 교차검증의 `corrected_pass`를 버리지 않고 보수적 수정본으로 저장 |
+> | `b2104f0` | 배포 완료 | `occurred_at='2026-09'` 같은 부분 날짜를 `2026-09-01`로 정규화해 event 적재 실패 방지 |
+>
+> ## A. 방금 운영에서 검증한 것
+>
+> 1. 수동 수집·분석 1회를 실행했다. 이번 코호트의 결과는 본문대조 통과 4건,
+>    `corrected_pass` 1건, 기각 1건이었다. `corrected_pass`가 실제로
+>    `source_tier=openai_deepseek_corrected`로 저장된 것을 Supabase에서 확인했다.
+> 2. 그 수정 통과 기사(샨샨 인조흑연 가격)는 event 저장 단계에서 모델이 `occurred_at='2026-09'`를
+>    반환해 PostgreSQL date 오류가 났다. 기사 본문대조 결과 자체는 보존됐지만
+>    `processing_status=processing_failed`가 남았다. `b2104f0`이 이후 실행을 고쳤다.
+>    **이미 실패한 이 한 건은 pending이 아니므로 자동 재처리되지 않는다.** 후속 작업자는 배포 뒤
+>    안전한 재처리 경로(기사 상태를 무작정 UPDATE하지 말 것)를 마련하거나 event를 검증해 보완해야 한다.
+> 3. Youshan은 검증 기사 0→1건이 됐다. Hithium 4건, SVOLT 4건은 유지됐다.
+>    Reshine과 Kaijin은 검증 기사가 아직 0건이다.
+>
+> ## B. Reshine 공백의 확인된 원인 (추측 아님)
+>
+> Reshine에 기사가 없는 것이 아니다. 외부 검색으로 아래의 최근·직접 기사를 확인했다.
+>
+> - 2026-06-29 창업판 IPO 접수, 37.8억 위안 조달 계획과 LFP 50만 톤 증설
+> - 2026-07-22 IPO `已问询`(질의 단계) 전환
+> - 난퉁 기지 삼원계 20.26만 톤, 란저우 LFP 10만 톤 생산능력 관련 보도
+>
+> 근거 URL(Claude Code에서도 브라우저로 열어 확인 가능):
+>
+> - https://www.stcn.com/ipo/detail/3777.html
+> - https://news.smm.cn/live/detail/103986980
+> - https://finance.sina.com.cn/roll/2026-07-02/doc-inifmfcu5895386.shtml
+>
+> 코드·운영 데이터로 확인한 원인은 세 가지다.
+>
+> 1. `lib/china-sources.js`의 `discoverWebSearchNews()`가 모든 회사에 **최근 3일**만 검색한다.
+>    위 핵심 기사는 6~7월 것이므로 후보가 될 수 없다.
+> 2. Reshine은 `listed: false`라 `cninfo` 수집기가 없다. 상장사 공시를 받는 우회 경로도 없다.
+> 3. 별칭 매칭은 원인이 아니다. `金川瑞翔`, `甘肃金川瑞翔`, `瑞翔新材`, `湖南瑞翔`,
+>    `南通瑞翔`, `Jinchuan Reshine`, `Reshine`가 이미 등록돼 있고, 발견된 후보는 연결될 수 있다.
+>
+> 추가로, Reshine은 OpenAI에서는 `reshine,youshan`, DeepSeek에서는
+> `wanrun-new-energy,lopal,reshine` 묶음에 들어간다. 단독 검색이 아니므로 작은 비상장사가
+> 그룹의 결과 상한에 밀릴 위험도 있다. DeepSeek은 그룹당 회사별 검색을 한 번만 하라는 프롬프트와
+> 3개 기사 상한을 같이 받는다.
+>
+> ## C. 다음 구현 순서 (사용자가 “진행하자”라고 승인했고, 이번에는 중단 요청으로 실제 변경 전 멈춤)
+>
+> 목표는 Reshine·Kaijin처럼 **기사가 0건인 비상장 핵심사만** 처음 한 번 과거 기사를 확보하고,
+> 평상시에는 지금의 최근 3일 수집 비용으로 돌아가게 하는 것이다.
+>
+> 1. `api/ingest-rss.js`에서 `article_company`를 읽어 bootstrap 후보
+>    (`reshine`, `kaijin-new-energy`) 중 연결 기사가 0건인 ID만 계산한다. 읽기 전용 쿼리다.
+>    raw 기사 1건만 생겨도 반복 과거 검색은 멈추도록 한다.
+> 2. `lib/china-sources.js`의 `buildSearchGroups()` / `plannedSearchRequests()` /
+>    `discoverWebSearchNews()`에 `bootstrapCompanyIds`를 전달한다. bootstrap 대상은 일반 묶음에서
+>    빼고 **단독 검색**, 기간은 180일로 한다. 일반 회사는 현재의 3일·그룹 크기를 그대로 유지한다.
+>    `api/news.js`의 공개 조회는 비용 폭증을 막기 위해 bootstrap을 켜지 않는다.
+> 3. bootstrap 검색에서 나온 후보에는 `bootstrap: true`를 붙이고,
+>    `api/ingest-rss.js`는 `source_tier=web_search_bootstrap_<provider>`로 저장한다.
+>    `selectHeadlineTop10()`은 기존 최근 3일 Top 10과 별도로 bootstrap 기사 최대 1~2건을 골라
+>    실제 본문대조까지 보내야 한다. 이 단계를 빼면 6~7월 기사는 DB에만 쌓이고 화면에는 여전히 없다.
+> 4. `scripts/check-search-plan.mjs`에 다음 회귀 조건을 추가한다.
+>    - bootstrap 회사가 provider별 단독 그룹이며 `windowDays=180`
+>    - 일반 그룹에는 bootstrap ID가 중복되지 않음
+>    - 기본 호출(bootstrap 없음)의 기존 그룹·예산은 유지
+>    - `plannedSearchRequests(...bootstrapIds)`와 실제 그룹 수가 일치
+> 5. `node --check api/ingest-rss.js`, `node --check lib/china-sources.js`,
+>    `npm run check`, 모든 `scripts/check-*.mjs`, `git diff --check`를 돌린다.
+> 6. `main` 푸시 후 Vercel Ready를 확인하고, **사용자가 직접 수집 버튼을 한 번 실행**하게 하거나
+>    정상 크론을 기다린다. 실행 후 Supabase에서 Reshine의 article/article_company/event를 각각 확인한다.
+>    특히 `web_search_bootstrap_*`가 저장만 되고 Top 10에서 누락되지 않았는지 확인한다.
+>
+> 범위를 넓혀 SZSE IPO 공식 문서 전용 수집기를 새로 만드는 것은 다음 단계다. 먼저 위 180일 단독
+> 백필로 실제 기사 확보·본문대조가 되는지 검증한다. 새 API 파일을 만들기 전에는 CLAUDE.md의
+> Vercel 함수 수 가드레일을 따른다.
+
 # Claude → codex 인수인계
 
 마지막 갱신: 2026-09-07 저녁 (커밋 `509fb25`까지)
