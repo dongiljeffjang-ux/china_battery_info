@@ -8,6 +8,7 @@ import { embedVerifiedArticle, embedEvents } from "../lib/vector-ingestion.js";
 import { LAYER_ENUM, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
 import { sameFact } from "../lib/curation.js";
 import { extractPdfText } from "../lib/report-reader.js";
+import { checkRobots, waitForHostSlot, CRAWLER_UA } from "../lib/robots.js";
 
 const MAX_BODY_CHARS = 30000;
 
@@ -139,13 +140,24 @@ export async function processPendingArticle(articleId, companyId) {
   let bodyText;
   if (isDisclosure) {
     try {
-      bodyText = String(await extractPdfText(resolvedUrl)).slice(0, MAX_BODY_CHARS);
+      // extractPdfText는 { text, pages } 객체를 돌려준다. String()으로 감싸면 "[object Object]"(15자)가
+      // 되어 본문이 항상 body_too_short로 떨어졌다. 공시가 한 건도 분석되지 않은 원인이다.
+      const extracted = await extractPdfText(resolvedUrl);
+      bodyText = String(extracted?.text || "").slice(0, MAX_BODY_CHARS);
     } catch (error) {
       await recordProcessing(articleId, "body_unavailable", `PDF 추출 실패: ${error.message} · ${resolvedUrl}`);
       return { status: "body_unavailable", reason: "pdf_extract_failed" };
     }
   } else {
-    const sourceResponse = await fetch(resolvedUrl, { headers: { "User-Agent": "Mozilla/5.0 (compatible; ChinaBatteryLens/0.1; research)" } });
+    // 남의 사이트다. robots.txt가 막으면 읽지 않고, 같은 도메인 연속 요청에는 간격을 둔다.
+    // 막힌 기사는 processing_status가 남아 다시 선별되지 않는다(헤드라인·요약은 그대로 쓴다).
+    const robots = await checkRobots(resolvedUrl);
+    if (!robots.allowed) {
+      await recordProcessing(articleId, "robots_disallowed", `robots.txt가 본문 수집을 허용하지 않음 · ${resolvedUrl}`);
+      return { status: "robots_disallowed", reason: robots.reason };
+    }
+    await waitForHostSlot(robots.host, robots.delayMs);
+    const sourceResponse = await fetch(resolvedUrl, { headers: { "User-Agent": CRAWLER_UA }, signal: AbortSignal.timeout(20000) });
     const contentType = sourceResponse.headers.get("content-type") || "";
     if (!sourceResponse.ok || !contentType.includes("text/html")) {
       await recordProcessing(articleId, "body_unavailable", `HTTP ${sourceResponse.status} · content-type: ${contentType || "없음"} · ${resolvedUrl}`);

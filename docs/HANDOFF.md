@@ -370,3 +370,41 @@ node scripts/check-response-json.mjs
    2015년 이전 날짜는 모델 오류로 보고 버린다. 시점이 바뀌면 이벤트 청크를 다시 임베딩한다.
 
 비야디 건은 수동으로 2026-03-05로 고쳤다. 기존 기사 이벤트 108건은 다음 curate 훅들이 회사별로 훑는다.
+
+## 2026-09-07 저녁: 수집 예절과 pending 재고 정리
+
+### robots.txt 확인과 요청 간격
+
+기사 본문 읽기는 검색으로 찾은 임의의 매체 페이지를 그대로 가져왔다. `lib/robots.js`를 두어
+본문을 받기 전에 그 도메인의 `robots.txt`에서 우리 UA와 `*`에 대한 규칙을 본다.
+
+- 막혀 있으면 본문을 읽지 않고 `processing_status='robots_disallowed'`로 남긴다. 헤드라인과
+  검색 요약은 그대로 쓴다.
+- 규칙 우선순위는 표준을 따른다. 이름을 지목한 그룹이 `*`보다 우선하고, 가장 긴 규칙이 이기며,
+  같은 길이면 Allow가 이긴다. `*` 와일드카드와 `$` 종료 앵커를 지원한다.
+- `Crawl-delay`가 있으면 그 간격을, 없으면 같은 도메인 연속 요청에 1.5초를 둔다.
+- `robots.txt`가 401·403이면 전면 차단으로 본다. 404·5xx·연결 실패는 제한 없음으로 본다.
+- 결과는 도메인당 24시간 캐시한다(함수 인스턴스 메모리).
+- 거래소 공시(CNINFO·HKEX)와 CATL 뉴스룸은 이 경로를 타지 않는다. 법정 공개 자료와 회사가
+  배포 목적으로 낸 자료다.
+- 약관은 기계적으로 읽을 수 없다. 반복 등장 매체를 허용 목록으로 관리하는 것은 아직 안 했다.
+- 검사: `node scripts/check-robots.mjs` (네트워크 없음).
+
+### pending 재고 재검토
+
+`verification_status='pending'` 861건을 훑어 세 가지를 찾았다.
+
+1. **공시가 한 번도 분석되지 않은 진짜 원인.** `api/process-article.js`가
+   `String(await extractPdfText(url))`로 받았는데 이 함수는 `{ text, pages }` 객체를 돌려준다.
+   `"[object Object]"` 15자가 본문이 되어 항상 `body_too_short`로 떨어졌다. `.text`를 쓰도록 고쳤다.
+   codex가 고친 `DOMMatrix` 오류(1eb11a3)와는 별개 버그다. 그 오류로 실패한 39건은 수정 이전
+   (09-04~09-05)의 것이라 상태를 비워 다시 시도하게 했다.
+2. **공시 257건이 3일 창 밖으로 밀려 있었다.** 공시는 뉴스와 시의성이 다르다.
+   `DISCLOSURE_WINDOW_DAYS=45`로 창을 늘리고 `DISCLOSURE_PER_RUN=4`로 뉴스 Top 10과 몫을 나눴다.
+   뉴스 자리를 뺏지 않으면서 재고를 조금씩 소화한다. 현재 대상 296건.
+3. **상태 불일치 5건.** `processing_status='fact_check_rejected'`인데 `verification_status`가
+   `pending`으로 남아 있었다. `rejected`로 맞췄다.
+
+**정리하지 않은 것**: `google_news_rss`로 들어온 447건(2016~2026-09-01)은 `source_tier`가
+`needs_review`라 본문 분석 필터를 통과하지 못한다. 지금은 없는 RSS 경로의 잔재다. 헤드라인
+번역·Sankey에는 쓰이므로 지우지 않았다. 본문 분석 대상으로 살릴지 결정이 필요하다.

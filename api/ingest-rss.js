@@ -17,6 +17,10 @@ export const maxDuration = 60;
 const TOP10_LIMIT = 10;
 // 본문 분석 후보로 볼 기간. 수집이 최근 3일치를 훑으므로 같은 창으로 맞춘다.
 const PROCESS_WINDOW_DAYS = 3;
+// 거래소 공시는 뉴스와 시의성이 다르다. 3일 창으로 끊으니 8월에 모은 공시 257건이 창 밖으로
+// 밀려 한 번도 분석되지 않았다. 공시는 창을 길게 주고, 뉴스 자리를 뺏지 않도록 몫을 따로 둔다.
+const DISCLOSURE_WINDOW_DAYS = 45;
+const DISCLOSURE_PER_RUN = 4;
 const PROCESS_CONCURRENCY = 3;
 // 한 함수는 60초 안에 끝나야 한다. 본문 처리는 이 시간까지만 새 기사를 집고 나머지는 다음 호출로 넘긴다.
 const STAGE_BUDGET_MS = 42000;
@@ -122,23 +126,34 @@ async function selectHeadlineTop10(pilot = false) {
   // 후보는 최근 며칠치로 끊는다. 예전에는 미처리 기사 전체(수년치)를 놓고 점수를 매겨,
   // 신호 단어가 많은 옛 기사가 오늘 기사를 계속 밀어내고 재고만 쌓였다. Daily는 오늘 것을
   // 읽는 게 목적이므로, 그 창을 벗어난 기사는 다시 집지 않고 흘려보낸다.
+  const select = "id,title_original,source_name,source_tier,published_at,article_company(company_id)";
+  const filter = "verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)";
   const since = new Date(Date.now() - PROCESS_WINDOW_DAYS * 86400000).toISOString();
-  const [rows, preference] = await Promise.all([
-    supabaseRest(`article?select=id,title_original,source_name,source_tier,published_at,article_company(company_id)&verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)&published_at=gte.${since}&order=published_at.desc&limit=500`),
+  const disclosureSince = new Date(Date.now() - DISCLOSURE_WINDOW_DAYS * 86400000).toISOString();
+  const [rows, disclosureRows, preference] = await Promise.all([
+    supabaseRest(`article?select=${select}&${filter}&published_at=gte.${since}&order=published_at.desc&limit=500`),
+    supabaseRest(`article?select=${select}&${filter}&source_tier=eq.official_disclosure&published_at=gte.${disclosureSince}&order=published_at.desc&limit=300`),
     feedbackPreference(),
   ]);
-  const unique = new Map();
-  for (const article of rows) {
-    if (pilot && !article.article_company?.some(link => ['catl','hunan-yuneng','btr'].includes(link.company_id))) continue;
-    const key = normalizeHeadline(article.title_original);
-    if (key && !unique.has(key)) unique.set(key, article);
-  }
-  return [...unique.values()]
-    // 웹 검색 기사·CATL 뉴스룸에 더해 거래소 공시(1차 출처)도 본문 분석 대상에 넣는다.
-    .filter((article) => article.source_tier.startsWith("web_search_") || article.source_tier === "official_disclosure" || article.source_name === "CATL Newsroom")
-    .map((article) => ({ ...article, headline_score: headlineScore(article, preference) }))
-    .sort((a, b) => b.headline_score - a.headline_score || new Date(b.published_at) - new Date(a.published_at))
-    .slice(0, TOP10_LIMIT);
+  const pick = (candidates, keep) => {
+    const unique = new Map();
+    for (const article of candidates) {
+      if (pilot && !article.article_company?.some(link => ['catl','hunan-yuneng','btr'].includes(link.company_id))) continue;
+      const key = normalizeHeadline(article.title_original);
+      if (key && !unique.has(key)) unique.set(key, article);
+    }
+    return [...unique.values()]
+      .filter(keep)
+      .map((article) => ({ ...article, headline_score: headlineScore(article, preference) }))
+      .sort((a, b) => b.headline_score - a.headline_score || new Date(b.published_at) - new Date(a.published_at));
+  };
+  // 뉴스는 최근 3일 창에서 Top 10. 공시는 45일 창에서 별도 몫으로 뽑아 밀린 재고를 조금씩 소화한다.
+  const news = pick(rows || [], (article) =>
+    article.source_tier !== "official_disclosure"
+    && (article.source_tier.startsWith("web_search_") || article.source_name === "CATL Newsroom")
+  ).slice(0, TOP10_LIMIT);
+  const disclosures = pick(disclosureRows || [], () => true).slice(0, DISCLOSURE_PER_RUN);
+  return [...news, ...disclosures];
 }
 
 async function processSelectedBatch(rows, deadline = Infinity) {
