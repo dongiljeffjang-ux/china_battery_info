@@ -814,6 +814,35 @@ OpenAI가 종합한다. 결과는 같은 목록에 `함의 종합` 배지로 저
   **`supabase/report-synthesis.sql` 적용이 먼저다**(5절).
 - 검사: `scripts/check-report-synthesis.mjs`.
 
+## 2026-09-07 저녁: 핵심(core) 등급은 거래소 공시에만 준다
+
+기업 시계열의 기본 화면은 `timeline_eligibility='core'`만 보여 주고, `reference`는 "보조 데이터 포함"을
+켜야 보인다. 그런데 그 등급을 **모델이 골랐다.** 추출 프롬프트에 "단일 제3자 언론 기사만으로는 core로
+두지 않는다"가 있었는데도 11건이 `core`로 들어와 있었다.
+
+| 출처 | 건수 |
+|---|---|
+| CATL 뉴스룸(`catl.com/news/...`) | 5 |
+| 新浪财经의 회사 공고 전재(BYD 4, XTC 1 중 4건) | 4 |
+| Gotion 자사 홈페이지 뉴스 | 1 |
+| Schaeffler 보도자료 | 1 |
+
+전부 거래소에 제출된 공시 원문이 아니다. 회사가 자기 채널에 낸 보도자료는 1차 출처처럼 보이지만
+법정 공시가 아니고, 우리가 CNINFO에서 원문을 받아 대조한 것도 아니다.
+
+- **등급은 서버가 정한다.** `api/process-article.js`가 `isDisclosure`(source_tier가
+  `official_disclosure`이거나 URL이 PDF)면 `core`, 그 밖에는 모두 `reference`로 저장한다.
+  모델 값은 `exclude`(시계열에 넣지 말 것)만 존중한다.
+- 프롬프트도 "core는 고르지 않는다 — 공시 여부는 서버가 판단한다"로 바꿨다.
+- 운영 DB의 11건을 `reference`로 고쳤다. 이제 `core`는 `annual_report` 235 + `periodic_report` 300
+  = 535건이고 전부 거래소 원문에서 나온 것이다. `reference`는 기사 110 + 웹 백필 49 = 159건이다.
+- 임베딩은 다시 만들지 않았다. 청크 본문에 등급이 들어가지 않는다.
+- 검사: `scripts/check-evidence-grade.mjs`.
+
+**화면에 보이는 변화**: CATL 뉴스룸 발표는 기본 화면에서 빠지고 "보조 데이터 포함"을 켜야 보인다.
+CATL은 뉴스룸이 유일한 자체 수집 경로라 기본 화면의 최근 이벤트가 눈에 띄게 줄어든다. 정기보고서에서
+뽑은 사실은 그대로 남는다.
+
 ## 2026-09-07 저녁: 벡터 데이터 1단계 검증 결과
 
 `docs/VECTOR-VERIFICATION-PLAN.md`의 1단계(오프라인 자동 검사)를 운영 DB에 SQL로 돌렸다. 결과와 판정은
