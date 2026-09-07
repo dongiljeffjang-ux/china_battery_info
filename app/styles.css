@@ -129,7 +129,10 @@ h3{font-size:16px;font-weight:700;letter-spacing:-.2px}
 .digest-col h4{color:var(--blue);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
 .digest-col.tech h4{color:var(--tech)}
 .digest-col+.digest-col{border-left:1px solid var(--line)}
-.digest-year>summary{border-bottom:1px solid var(--line)}
+/* 연도 대그룹은 회색 밴드 + 굵은 왼쪽 선으로, 그 안의 보고서·월별 줄(투명 배경)과
+   구분되게 한다. overflow:hidden은 밴드가 컨테이너의 둥근 위쪽 모서리 밖으로 삐져나오지 않게 한다. */
+.digest-year{overflow:hidden}
+.digest-year>summary{background:var(--band);border-bottom:1px solid var(--line);border-left:3px solid var(--ink)}
 /* 회사 목록 — 세로로 늘어지지 않게 격자를 유지한다. 마크는 중문 법인명 첫 글자다. */
 .company-chips{grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:8px}
 .company-chip{border:1px solid var(--line);border-radius:4px;padding:10px 12px;background:#fff;gap:10px}
