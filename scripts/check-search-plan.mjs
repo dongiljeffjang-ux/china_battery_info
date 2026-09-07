@@ -26,4 +26,28 @@ assert.deepEqual(new Set(pilot.flatMap((g) => g.ids)), new Set(['catl', 'hunan-y
 const planned = plannedSearchRequests(false);
 assert.equal(planned, buildSearchGroups('openai').length + buildSearchGroups('deepseek').length);
 assert.ok(searchBudgetFor(planned).search > planned, 'budget exceeds plan');
-console.log(`search plan checks passed (planned requests ${planned}, budget ${searchBudgetFor(planned).search})`);
+
+// Bootstrap: 검증 기사 0건인 핵심 비상장사(Reshine·Kaijin)를 처음 한 번 365일 단독 검색한다.
+// docs/HANDOFF-CODEX.md 2026-09-07 "Reshine 공백" 절 참고.
+const bootstrapIds = ['reshine', 'kaijin-new-energy'];
+for (const provider of ['openai', 'deepseek']) {
+  const withBootstrap = buildSearchGroups(provider, false, bootstrapIds);
+  const bootstrapGroups = withBootstrap.filter((g) => g.bootstrap);
+  assert.equal(bootstrapGroups.length, bootstrapIds.length, `${provider}: one solo group per bootstrap company`);
+  for (const group of bootstrapGroups) {
+    assert.deepEqual(group.ids.length, 1, `${provider}: bootstrap group is solo`);
+    assert.equal(group.windowDays, 365, `${provider}: bootstrap window is 365 days`);
+  }
+  const normalIds = new Set(withBootstrap.filter((g) => !g.bootstrap).flatMap((g) => g.ids));
+  for (const id of bootstrapIds) assert.ok(!normalIds.has(id), `${provider}: ${id} not duplicated in a normal group`);
+  // 기본 호출(bootstrap 없음)은 기존 그룹·예산 그대로다.
+  assert.deepEqual(buildSearchGroups(provider, false), buildSearchGroups(provider, false, []));
+}
+const plannedWithBootstrap = plannedSearchRequests(false, bootstrapIds);
+assert.equal(
+  plannedWithBootstrap,
+  buildSearchGroups('openai', false, bootstrapIds).length + buildSearchGroups('deepseek', false, bootstrapIds).length,
+);
+assert.ok(plannedWithBootstrap > planned, 'bootstrap adds extra requests');
+
+console.log(`search plan checks passed (planned requests ${planned}, with bootstrap ${plannedWithBootstrap}, budget ${searchBudgetFor(planned).search})`);

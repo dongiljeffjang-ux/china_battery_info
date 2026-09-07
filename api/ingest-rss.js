@@ -19,6 +19,11 @@ import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor }
 export const config = { maxDuration: 300 };
 
 const TOP10_LIMIT = 10;
+// 검증 기사가 0건인 핵심 비상장사. 연결 기사가 하나라도 생기면 그 회사는 다음 실행부터 빠진다
+// (bootstrapCompanyIds 계산이 매 실행 다시 확인한다). docs/HANDOFF-CODEX.md 2026-09-07 절 참고.
+const BOOTSTRAP_CANDIDATE_IDS = ["reshine", "kaijin-new-energy"];
+// 한 회차에 실제 본문대조까지 보내는 bootstrap 기사 상한. 평상시 Top10 예산을 침해하지 않게 작게 둔다.
+const BOOTSTRAP_PER_RUN = 2;
 // 본문 분석 후보로 볼 기간. 수집이 최근 3일치를 훑으므로 같은 창으로 맞춘다.
 const PROCESS_WINDOW_DAYS = 3;
 // 거래소 공시는 뉴스와 시의성이 다르다. 3일 창으로 끊으니 8월에 모은 공시 257건이 창 밖으로
@@ -135,6 +140,16 @@ function headlineScore(article, preference = EMPTY_PREFERENCE) {
     + feedbackBonus(article, preference) - Math.min(ageDays, 30) / 10;
 }
 
+// 연결 기사가 0건인 bootstrap 후보만 골라낸다. 읽기 전용 쿼리다. raw 기사(article_company 링크) 1건만
+// 생겨도 그 회사는 빠지므로, 365일 단독 검색은 처음 한 번만 돌고 평상시 3일 수집으로 돌아간다.
+async function bootstrapCompanyIds() {
+  if (!BOOTSTRAP_CANDIDATE_IDS.length) return [];
+  const ids = BOOTSTRAP_CANDIDATE_IDS.map((id) => `"${id}"`).join(",");
+  const linked = await supabaseRest(`article_company?select=company_id&company_id=in.(${ids})&limit=1000`);
+  const hasArticles = new Set((linked || []).map((row) => row.company_id));
+  return BOOTSTRAP_CANDIDATE_IDS.filter((id) => !hasArticles.has(id));
+}
+
 async function selectHeadlineTop10(pilot = false) {
   // 본문을 못 가져온 기사는 다시 집어도 같은 결과다. 한 회차 본문 분석 예산이 열 건뿐이라
   // 죽은 URL이 그 자리를 계속 차지하면 새 기사가 밀린다. body_unavailable과 body_too_short는
@@ -147,9 +162,12 @@ async function selectHeadlineTop10(pilot = false) {
   const filter = "verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)";
   const since = new Date(Date.now() - PROCESS_WINDOW_DAYS * 86400000).toISOString();
   const disclosureSince = new Date(Date.now() - DISCLOSURE_WINDOW_DAYS * 86400000).toISOString();
-  const [rows, disclosureRows, preference] = await Promise.all([
+  // bootstrap 기사는 최대 365일 전 것이라 위 3일 창에 들지 않는다. 창 없이 별도로 뽑아,
+  // 처음 한 번 확보한 과거 기사가 실제 본문대조까지 가도록 한다.
+  const [rows, disclosureRows, bootstrapRows, preference] = await Promise.all([
     supabaseRest(`article?select=${select}&${filter}&published_at=gte.${since}&order=published_at.desc&limit=500`),
     supabaseRest(`article?select=${select}&${filter}&source_tier=eq.official_disclosure&published_at=gte.${disclosureSince}&order=published_at.desc&limit=300`),
+    supabaseRest(`article?select=${select}&${filter}&source_tier=like.web_search_bootstrap_*&order=published_at.desc&limit=50`),
     feedbackPreference(),
   ]);
   const pick = (candidates, keep) => {
@@ -170,7 +188,11 @@ async function selectHeadlineTop10(pilot = false) {
     && (article.source_tier.startsWith("web_search_") || article.source_name === "CATL Newsroom")
   ).slice(0, TOP10_LIMIT);
   const disclosures = pick(disclosureRows || [], () => true).slice(0, DISCLOSURE_PER_RUN);
-  return [...news, ...disclosures];
+  const bootstrap = pick(bootstrapRows || [], () => true).slice(0, BOOTSTRAP_PER_RUN);
+  // 최근에 발견된 bootstrap 기사는 news 창(3일)에도 걸릴 수 있다. 같은 기사를 두 번 처리하지 않는다.
+  const combined = new Map();
+  for (const article of [...news, ...disclosures, ...bootstrap]) combined.set(article.id, article);
+  return [...combined.values()];
 }
 
 async function processSelectedBatch(rows, deadline = Infinity) {
@@ -513,8 +535,10 @@ async function handleRequest(request, response) {
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ id, name_ko, name_zh, name_en, type_tags }) => ({ id, name_ko, name_zh, name_en, type_tags })) });
     stage = "source_collection";
     const isPilot = request.query?.pilot === '1';
-    const searchBudget = searchBudgetFor(plannedSearchRequests(isPilot));
-    const candidates = await withSearchBudget(() => discoverChinaSources({pilot: isPilot}), searchBudget);
+    // 파일럿(3개사 검증)은 bootstrap을 켜지 않는다. 검증 대상이 정해져 있어 과거 백필이 필요 없다.
+    const bootstrapIds = isPilot ? [] : await bootstrapCompanyIds();
+    const searchBudget = searchBudgetFor(plannedSearchRequests(isPilot, bootstrapIds));
+    const candidates = await withSearchBudget(() => discoverChinaSources({pilot: isPilot, bootstrapCompanyIds: bootstrapIds}), searchBudget);
     stage = "company_matching";
     const matchedCandidates = candidates
       .map((candidate) => ({ candidate, companies: companiesFor(candidate) }))
@@ -522,7 +546,7 @@ async function handleRequest(request, response) {
     const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
         source_language: "zh", published_at: safePublishedAt(candidate.publishedAt),
-        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? `web_search_${candidate.searchProvider || "discovered"}` : "needs_review",
+        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? `web_search_${candidate.bootstrap ? "bootstrap_" : ""}${candidate.searchProvider || "discovered"}` : "needs_review",
         discovered_via: discoveredVia(candidate),
     }));
     stage = "article_storage";
@@ -559,7 +583,7 @@ async function handleRequest(request, response) {
     const discovery = discoveryStats() || {};
     await logPipeline("collect", {
       run_id: runId, request_limits: searchBudget,
-      pilot: request.query?.pilot === '1',
+      pilot: request.query?.pilot === '1', bootstrap_ids: bootstrapIds,
       trigger: isCronRequest(request) ? "cron" : "manual",
       raw: discovery.raw || {}, failed: discovery.failed || [], unique: candidates.length, by_via: discovery.by_via || {},
       web_search: discovery.web_search || [],
