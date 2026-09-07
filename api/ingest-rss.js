@@ -5,12 +5,12 @@ import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { waitUntil } from "@vercel/functions";
 import { runCurationHop } from "../lib/curation.js";
-import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats } from "../lib/china-sources.js";
+import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats, plannedSearchRequests } from "../lib/china-sources.js";
 import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
-import { acquireRun, releaseRun, claimStage, withSearchBudget, SEARCH_LIMITS } from '../lib/ingestion-guard.js';
+import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor } from '../lib/ingestion-guard.js';
 
 export const maxDuration = 60;
 
@@ -419,7 +419,9 @@ async function handleRequest(request, response) {
     request.runId = runId;
     await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ id, name_ko, name_zh, name_en, type_tags }) => ({ id, name_ko, name_zh, name_en, type_tags })) });
     stage = "source_collection";
-    const candidates = await withSearchBudget(() => discoverChinaSources({pilot: request.query?.pilot === '1'}));
+    const isPilot = request.query?.pilot === '1';
+    const searchBudget = searchBudgetFor(plannedSearchRequests(isPilot));
+    const candidates = await withSearchBudget(() => discoverChinaSources({pilot: isPilot}), searchBudget);
     stage = "company_matching";
     const matchedCandidates = candidates
       .map((candidate) => ({ candidate, companies: companiesFor(candidate) }))
@@ -463,7 +465,7 @@ async function handleRequest(request, response) {
     // 크론이 시작한 실행만 깊게 돈다(훅 6회). 화면 버튼은 한 훅만 돌아 1분 안팎에 끝난다.
     const discovery = discoveryStats() || {};
     await logPipeline("collect", {
-      run_id: runId, request_limits: SEARCH_LIMITS,
+      run_id: runId, request_limits: searchBudget,
       pilot: request.query?.pilot === '1',
       trigger: isCronRequest(request) ? "cron" : "manual",
       raw: discovery.raw || {}, failed: discovery.failed || [], unique: candidates.length, by_via: discovery.by_via || {},
@@ -479,7 +481,7 @@ async function handleRequest(request, response) {
     else await releaseRun(runId);
     return response.status(200).json({
       status: shouldProcess && llmReady ? "started" : "ok",
-      run_id: runId, request_limits: SEARCH_LIMITS,
+      run_id: runId, request_limits: searchBudget,
       search_runs: (discovery.web_search || []).length, discovered: candidates.length, stored: storedArticles.length,
       next_step: shouldProcess && llmReady
         ? "본문 처리와 Daily 생성이 별도 호출로 이어집니다. 몇 분 뒤 첫 화면에 반영됩니다."
