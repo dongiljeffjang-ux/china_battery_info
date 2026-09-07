@@ -187,25 +187,18 @@ Schaeffler 보도자료 1). 전부 거래소 제출 원문이 아니다.
 6. 미결: 약관 기반 매체 허용 목록(미착수), 벡터 검증 2단계(원문 재확보 대조,
    `docs/VECTOR-VERIFICATION-PLAN.md` 3절).
 
-### 진행 중으로 보이는 남의 작업 — 건드리지 않았다
+### 교차검증 수정본 채택 — 구현 완료, 배포 대기
 
-작업 폴더에 커밋되지 않은 `scripts/check-corrected-fact-check.mjs`가 있다(2026-09-07 15:52 생성,
-이 세션의 마지막 커밋 `509fb25` 15:44 이후). `api/process-article.js`에서 아직 없는 함수
-`acceptedFactCheck`를 import하므로 지금은 실패한다.
+교차검증 판정을 `pass` / `corrected_pass` / `reject`로 나눴다. 일부 표현·수치만 잘못됐고 본문에서
+확인되는 의미 있는 사실이 남으면 기사 전체를 버리지 않고 검증자가 보수적으로 고친 수정본을 채택한다.
 
-미결 항목이던 **"교차검증 기각 시 검증자 수정본 채택"**을 테스트부터 쓰는 방식으로 시작한 것으로 보인다.
-그 테스트가 요구하는 계약은 이렇다.
-
-- `acceptedFactCheck(analysis, corrected)`를 `api/process-article.js`에서 export한다.
-- `verdict === "corrected_pass"`면 기사를 폐기하지 않고, **검증자 수정본**의 `title_ko`·`summary_ko`·
-  `event_title_ko`·`event_fact_ko`를 쓴다(1차 추출본의 과장이 이벤트로 다시 새면 안 된다).
-- `verdict === "reject"`면 `null`을 돌려 지금처럼 기각한다.
-
-**이 세션에서는 구현하지 않았다.** 남의 작업 중인 파일이라 커밋에도 넣지 않았다. 이어서 할 사람은
-현재 `factCheck.verdict` 처리 경로(`api/process-article.js`의 기각 분기, `verification_status='rejected'`와
-`body_original` 삭제)를 함께 손봐야 한다. 제품 판단이 하나 남아 있다: 교차검증자(DeepSeek) 단독 수정본을
-화면에 올리는 셈이라, 그것을 `core`가 아닌 `reference` 등급으로 둘지 정해야 한다(2.5절의 서버 등급
-규칙상 기사 경로는 이미 전부 `reference`이므로 그대로 두면 자동 충족된다).
+- `acceptedFactCheck(analysis, factCheck)`가 `pass`와 `corrected_pass`를 받아 검증자 수정본을 합친다.
+- 기사 제목·요약뿐 아니라 `event_title_ko`·`event_fact_ko`·근거 발췌도 수정본으로 덮어써, 1차 추출에서
+  제거된 과장이나 수치가 이벤트로 다시 유입되지 않게 했다.
+- `corrected_pass`도 레거시 통과 상태 `pending_review`로 저장하되 `source_tier`에 `_corrected` 접미사를,
+  `processing_note`에 교정 이유를 남긴다.
+- 기사 경로는 서버 규칙대로 계속 `reference`이며, 거래소 공시만 `core`다.
+- `scripts/check-corrected-fact-check.mjs`를 추가했다. 전체 회귀 검사 19개와 모듈 로드 검사가 통과했다.
 
 ## 6. 지금 수치 (2026-09-07 저녁)
 
@@ -227,7 +220,7 @@ for f in scripts/check-*.mjs; do node $f; done
 git diff --check
 ```
 
-회귀 스크립트 18개 모두 네트워크 없이 돈다. `node --check`는 구문만 보므로 `npm run check`(api 모듈
+회귀 스크립트 19개 모두 네트워크 없이 돈다. `node --check`는 구문만 보므로 `npm run check`(api 모듈
 실제 import)를 함께 돌린다.
 
 ## 8. 주의 — 이 세션에서 세 번 반복한 실수

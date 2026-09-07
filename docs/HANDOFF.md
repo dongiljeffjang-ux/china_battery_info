@@ -37,8 +37,8 @@
 3. URL 중복을 제거하고 회사 별칭과 **그룹 계열사 별칭**으로 `article_company`를 연결한다.
 4. 헤드라인 신호로 최대 10건을 선택한다. **선별 대상은 `source_tier`가 `web_search_*`이거나 `CATL Newsroom`인 기사뿐이다.**
 5. `api/process-article.js`가 원문 HTML을 가져온다.
-6. OpenAI가 한국어 사실·이벤트를 추출하고 DeepSeek가 같은 본문으로 교차검증한다.
-7. 통과 기사는 `pending_review`로 저장된다. 이 상태명은 레거시이며 현재 의미는 "자동 팩트체크 통과"다.
+6. OpenAI가 한국어 사실·이벤트를 추출하고 DeepSeek가 같은 본문으로 교차검증한다. 판정은 `pass` / `corrected_pass` / `reject`다. 일부 표현·수치만 잘못됐고 본문으로 확인되는 의미 있는 사실이 남으면 검증자가 보수적으로 고친 기사·이벤트를 채택한다.
+7. `pass`와 `corrected_pass` 기사는 `pending_review`로 저장된다. 이 상태명은 레거시이며 현재 의미는 "자동 본문 대조 통과"다. `corrected_pass`는 `source_tier`의 `_corrected` 접미사와 `processing_note`에 교정 이유를 남긴다.
 8. 이벤트를 저장할 때 `layer_key`를 8개 규격 값으로 정규화하고, 등록된 계열사 별칭 매칭으로 `entity_names`를 채운다.
 9. 원문을 약 1,800자, 180자 중첩으로 나누고 `text-embedding-3-small` 기본 모델로 배치 임베딩한다.
 10. `knowledge_chunk`에 회사·기사·출처·청크 순서·원문·한국어 요약 결합 텍스트를 저장한다.

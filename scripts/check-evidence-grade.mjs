@@ -10,7 +10,7 @@ const backfill = fs.readFileSync(new URL("../lib/event-backfill.js", import.meta
 
 // 서버가 정한다: 공시가 아니면 무조건 reference. 모델의 exclude만 존중한다.
 assert.ok(
-  /timeline_eligibility: result\.timeline_eligibility === "exclude" \? "exclude" : isDisclosure \? "core" : "reference"/.test(article),
+  /timeline_eligibility: verifiedResult\.timeline_eligibility === "exclude" \? "exclude" : isDisclosure \? "core" : "reference"/.test(article),
   "기사 등급은 서버가 정해야 한다. 공시가 아니면 reference, 모델 값은 exclude만 존중한다",
 );
 assert.ok(!/timeline_eligibility: isDisclosure \? "core" : result\.timeline_eligibility/.test(article), "모델이 고른 등급을 그대로 저장하면 안 된다");

@@ -40,7 +40,7 @@ flowchart LR
   VECTOR -. 향후 RAG 챗 .-> UI
 ```
 
-수집은 공개 트리거를 허용하고, 비용이 발생하는 본문 LLM 처리·Daily 생성은 Vercel Cron의 `CRON_SECRET` 인증 요청에서만 실행한다. 뉴스 원문은 사용자의 명시 요구로 `article.body_original`에 보관하며 청킹·임베딩에 사용한다.
+수집은 공개 트리거를 허용하고, 비용이 발생하는 본문 LLM 처리·Daily 생성은 Vercel Cron의 `CRON_SECRET` 인증 요청에서만 실행한다. 뉴스 원문은 사용자의 명시 요구로 `article.body_original`에 보관하며 청킹·임베딩에 사용한다. 본문 교차검증은 `pass` / `corrected_pass` / `reject` 세 단계다. 일부 오류를 제거하고 의미 있는 사실이 남는 `corrected_pass`는 검증자가 다시 작성한 기사·이벤트 필드만 저장하며, 확인 가능한 사실이 전혀 없거나 회사와 무관할 때만 기사 전체를 기각한다.
 
 RSS 수집기는 웹 검색 방식으로 전환하면서 호출이 끊겨 제거했다. 실제 수집 경로는 위 네 가지다.
 
