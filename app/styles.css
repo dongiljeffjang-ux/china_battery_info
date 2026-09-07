@@ -232,8 +232,8 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .compare-pick.is-b .segment.is-selected{color:var(--pick-b);border-color:var(--pick-b)}
 /* 버튼은 위 A·B 픽커 행과 나란히 화면 폭을 채운다. 보조 데이터 체크박스는 줄이지 않고 옆에 붙인다. */
 .compare-actions-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-.compare-actions-row #compare-report{flex:1 1 240px;padding:13px 20px;font-size:14px;background:var(--blue);color:#fff;border-color:var(--blue)}
-.compare-actions-row #compare-report:hover{background:#0038cc;border-color:#0038cc;color:#fff}
+.compare-actions-row #compare-report{flex:1 1 240px;padding:13px 20px;font-size:14px;font-weight:700;background:var(--pale);color:var(--blue);border-color:#cfe0fb}
+.compare-actions-row #compare-report:hover{background:#e2ecfd;border-color:#b9d1f8}
 /* 비교표 머리글. 픽커와 같은 색을 써서 어느 열이 A인지 색으로 이어 준다. */
 .cmp-head-a .eyebrow{color:var(--pick-a)}
 .cmp-head-b .eyebrow{color:var(--pick-b)}
