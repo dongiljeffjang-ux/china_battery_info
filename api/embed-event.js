@@ -1,6 +1,7 @@
 import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { requireAccess } from "../lib/access.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
+import { fetchEmbeddableEvents } from "../lib/curation.js";
 
 // 한 번에 임베딩할 이벤트 수. 60초 함수 안에서 조회·임베딩·적재가 끝나야 한다.
 const BATCH_LIMIT = 60;
@@ -33,7 +34,7 @@ export default async function handler(request, response) {
       // 아직 벡터에 없는 이벤트만 고른다. knowledge_chunk.event_id가 채워진 것은 건너뛴다.
       const embedded = await supabaseRest("knowledge_chunk?select=event_id&event_id=not.is.null");
       const done = new Set(embedded.map((row) => row.event_id));
-      const all = (await supabaseRest(`event?select=${EVENT_SELECT}&timeline_eligibility=neq.exclude&order=occurred_at.desc&limit=500`)).map(flatten);
+      const all = (await fetchEmbeddableEvents(EVENT_SELECT)).map(flatten);
       events = all.filter((event) => !done.has(event.id)).slice(0, limit);
       if (!events.length) return response.status(200).json({ status: "ok", embedded: 0, remaining: 0, message: "임베딩할 이벤트가 없습니다." });
     }

@@ -315,6 +315,10 @@ node scripts/check-response-json.mjs
 
 `knowledge_chunk`에 기사당 행이 2~3개인 것을 중복으로 오판하고 삭제 SQL을 실행해 `event_fact` 청크 7건을 지웠다. 실제로는 기사당 `article_chunk` 1건 + 이벤트별 `event_fact` 1건이 정상이고, `content_hash`에 이미 유니크 제약이 있어 **중복 청크는 애초에 발생할 수 없다.**
 
-복구는 자동이다. 임베딩 백로그는 `knowledge_chunk.event_id`에 없는 `event` 행으로 계산하므로, `/api/embed-event` 크론(UTC 16:00, KST 01:00)이 지워진 7건을 다시 만든다.
+복구 경로를 확인하다 별개의 버그를 찾았다. 임베딩 백로그는 `knowledge_chunk.event_id`에 없는 `event` 행으로 계산하는데, 그 조회가 `order=occurred_at.desc&limit=500`이었다. 지워진 7건은 567~582위라 **조회 범위 밖이어서 영원히 백로그에 잡히지 않았다.** 청크를 잃은 오래된 이벤트는 무엇이든 같은 사각지대에 빠진다.
+
+`lib/curation.js`의 `fetchEmbeddableEvents`가 전체를 1,000건 페이지로 훑도록 고쳤다. `api/embed-event.js`도 같은 함수를 쓴다. 이 수정이 배포되면 `/api/embed-event` 크론(UTC 16:00, KST 01:00)이 지워진 7건을 다시 만든다.
+
+수동 확인·복구는 `scripts/restore-missing-event-chunks.mjs`를 쓴다. 기본은 목록만 출력하고 `--apply`를 붙여야 임베딩한다. 다만 로컬 `.env`의 값은 마스킹돼 있어 로컬에서는 실행되지 않는다.
 
 **교훈**: `knowledge_chunk`의 행 수를 셀 때 `source_type`을 함께 봐야 한다. `article_chunk`, `event_fact`, `headline`, `daily_report`, `report_chunk`는 같은 `article_id`를 공유하는 별개 행이다.
