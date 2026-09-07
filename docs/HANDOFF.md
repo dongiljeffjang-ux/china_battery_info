@@ -408,3 +408,44 @@ node scripts/check-response-json.mjs
 **정리하지 않은 것**: `google_news_rss`로 들어온 447건(2016~2026-09-01)은 `source_tier`가
 `needs_review`라 본문 분석 필터를 통과하지 못한다. 지금은 없는 RSS 경로의 잔재다. 헤드라인
 번역·Sankey에는 쓰이므로 지우지 않았다. 본문 분석 대상으로 살릴지 결정이 필요하다.
+
+## 2026-09-07 밤: Google News 재고 삭제와 관리자 파이프라인 화면
+
+### Google News RSS 447건 삭제
+
+`discovered_via='google_news_rss'` 기사를 지웠다(article 447, article_company 491).
+삭제 전 확인: 파생 데이터가 전혀 없었다(청크 0, 이벤트 0, 피드백 0, 처리 시도 0, 한국어 제목 0).
+`canonical_url`이 전부 `news.google.com` 리디렉션 링크이고 `source_tier`가 `needs_review`라
+본문 분석 필터를 통과하지 못했다. 지금 코드에는 RSS 수집기가 없어(`discoverChinaSources`의
+수집기는 OpenAI 검색·DeepSeek 검색·CATL 뉴스룸·CNINFO 넷) 다시 채워지지도 않는다.
+`embedPendingHeadlines`가 이들을 번역 큐에 넣어 2016년 기사까지 번역 비용을 쓸 참이었다.
+
+**제목은 있었다.** `title_original`이 채워져 있어 헤드라인 번역·Sankey 재료로는 쓸 수 있었다.
+다만 2016~2026-09-01에 걸쳐 있어 최근 신호를 보는 화면(기본 3일 창)에는 거의 잡히지 않았다.
+되살리려면 RSS 수집기를 다시 만들어야 하며, 그때는 `source_tier`를 필터가 받는 값으로 넣어야 한다.
+
+### 관리자 · 파이프라인 메뉴
+
+`/admin#pipeline`에 소스·프롬프트·단계·보관 정책을 보는 화면을 열었다.
+
+핵심 규칙: **화면에 값을 옮겨 적지 않는다.** `lib/pipeline-manifest.js`가 실제 실행 모듈에서
+상수와 프롬프트를 import 해 그대로 내보내고, `api/admin.js?view=pipeline`이 그것을 돌려준다.
+코드가 바뀌면 화면도 같이 바뀐다. 이를 위해 프롬프트를 정의 위치에서 내보내도록 옮겼다.
+
+| 상수 | 위치 |
+|---|---|
+| `ARTICLE_ANALYSIS_PROMPT_BODY`, `ARTICLE_FACT_CHECK_PROMPT`, `ARTICLE_DATE_GUIDE` | `api/process-article.js` |
+| `DAILY_REPORT_PROMPT` | `api/generate-daily.js` |
+| `searchProviderPrompt()`, `searchInstructions()` | `lib/china-sources.js` |
+| `ARTICLE_TRANSLATION_PROMPT` | `lib/article-translation.js` |
+| `FACT_EXTRACTION_PROMPT` | `lib/fact-extraction.js` |
+| `CONCEPT_EDGE_PROMPT` | `lib/concept-graph.js` |
+| `HEADLINE_TRANSLATION_PROMPT` | `lib/headline-knowledge.js` |
+| `REDATE_INSTRUCTIONS`, `ARTICLE_REDATE_INSTRUCTIONS` | `lib/event-backfill.js` |
+
+화면 구성: 요약 카드 4개(추적 회사·검색 요청·소스 수·임베딩 조각), 수집 소스 6곳(가져오는 곳·모델·
+API 키 설정 여부·묶음 수·robots 정책·저장 위치), 단계 5개와 각 단계의 프롬프트 전문(접었다 펴기),
+원문 보관 정책 표. 읽기 전용이며 DB를 건드리지 않는다.
+
+프롬프트를 옮긴 뒤 `npm run check`와 회귀 스크립트 8개로 순환 참조·구문을 확인했고,
+로컬 임시 서버로 화면을 띄워 렌더링을 눈으로 확인했다.

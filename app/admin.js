@@ -160,6 +160,52 @@
     $('#se-list').innerHTML = results.length ? results.map((r, i) => `<div class="chunk"><header><span class="sim">${r.similarity.toFixed(3)}</span> #${i + 1} ${tag(r.source_type)} ${esc(companyName(r.company_id))} · ${fmtDay(r.published_at)} · ${esc(r.source_name || '')} ${r.article_id ? `· <a class="link" data-article="${esc(r.article_id)}">기사</a>` : ''} ${r.source_url ? `· <a class="link" href="${esc(r.source_url)}" target="_blank" rel="noopener">원문</a>` : ''}</header><pre>${esc(r.content_ko)}</pre>${r.original_excerpt ? `<details><summary class="small muted">원문 발췌</summary><pre>${esc(r.original_excerpt)}</pre></details>` : ''}</div>`).join('') : '<p class="muted">근거 없음</p>';
   }
 
+  // ---------- 파이프라인 ----------
+  async function loadPipeline() {
+    const { pipeline: p } = await api({ view: 'pipeline' });
+    const card = (label, value, sub) => value == null || value === '' ? '' : `<div class="stat"><p class="label">${esc(label)}</p><p class="value">${esc(value)}</p>${sub ? `<p class="sub">${esc(sub)}</p>` : ''}</div>`;
+    const rows = (pairs) => pairs.filter(([, v]) => v != null && v !== '').map(([k, v]) => `<tr><th style="width:150px">${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
+
+    const sources = p.sources.map((s) => `
+      <div class="chunk">
+        <header><b>${esc(s.label)}</b> <span class="tag ${esc(s.id)}">${esc(s.id)}</span></header>
+        <p style="margin:6px 0 10px">${esc(s.what)}</p>
+        <table class="admin">${rows([
+          ['가져오는 곳', s.endpoint], ['모델', s.model], ['API 키', s.api_key],
+          ['검색 묶음', s.groups ? `${s.groups}개` : null], ['묶음당 회사', s.companies_per_group],
+          ['대상 회사', s.companies ? `${s.companies}곳` : null],
+          ['User-Agent', s.user_agent], ['robots.txt', s.robots],
+          ['저장 위치', s.stores], ['비고', s.note],
+        ])}</table>
+        ${s.group_labels ? `<details><summary class="small muted">묶음 ${s.group_labels.length}개 보기</summary><pre>${esc(s.group_labels.join('\n'))}</pre></details>` : ''}
+      </div>`).join('');
+
+    const stages = p.stages.map((st) => `
+      <div class="chunk">
+        <header><b>${esc(st.label)}</b> <span class="muted small">${esc(st.runs)}</span></header>
+        <p style="margin:6px 0 10px">${esc(st.what)}</p>
+        ${st.rules ? `<ul class="small" style="margin:0 0 10px 18px">${st.rules.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+        ${st.prompts.length ? st.prompts.map((pr) => `<details><summary class="small">프롬프트 · ${esc(pr.name)} <span class="tag ${esc(pr.provider)}">${esc(pr.provider)}</span> <span class="muted">${num(String(pr.text || '').length)}자</span></summary><pre>${esc(pr.text)}</pre></details>`).join('')
+          : '<p class="muted small">LLM을 쓰지 않는 단계입니다.</p>'}
+      </div>`).join('');
+
+    const retention = p.retention.map((r) => `<tr><td><b>${esc(r.kind)}</b></td><td>${esc(r.policy)}</td><td class="muted">${esc(r.why)}</td></tr>`).join('');
+
+    $('#pipe-body').innerHTML = `
+      <div class="cards">
+        ${card('추적 회사', p.universe.total, `셀 ${p.universe.cell} · 양극재 ${p.universe.cathode} · 음극재 ${p.universe.anode}`)}
+        ${card('한 실행의 검색 요청', p.budget.planned_search_requests, `허용 상한 ${p.budget.allowed_search_requests}회`)}
+        ${card('수집 소스', p.sources.length + '곳', '검색 2 · 공시 2 · 뉴스룸 1 · 본문 1')}
+        ${card('임베딩 조각', `${num(p.embedding.chunk_chars)}자`, `겹침 ${p.embedding.chunk_overlap}자 · ${p.embedding.model}`)}
+      </div>
+      <p class="muted small" style="margin:0 0 6px">${esc(p.budget.note)}</p>
+      <h3 style="margin:22px 0 10px">수집 소스 ${p.sources.length}곳</h3>${sources}
+      <h3 style="margin:22px 0 10px">단계와 프롬프트</h3>${stages}
+      <h3 style="margin:22px 0 10px">원문 보관 정책</h3>
+      <div class="tbl-wrap"><table class="admin"><thead><tr><th>대상</th><th>정책</th><th>이유</th></tr></thead><tbody>${retention}</tbody></table></div>
+      <p class="muted small" style="margin-top:14px">시계열 레이어 ${p.universe.layers.length}종: ${esc(p.universe.layers.join(', '))}</p>`;
+  }
+
   // ---------- 공통 ----------
   async function loadCompanies() {
     try {
@@ -171,7 +217,7 @@
       for (const id of ['#art-company', '#ev-company', '#ch-company', '#se-company']) $(id).innerHTML = options;
     } catch {}
   }
-  const loaders = { overview: loadOverview, runs: loadRuns, articles: loadArticles, events: loadEvents, chunks: loadChunks, search: loadSearch };
+  const loaders = { overview: loadOverview, runs: loadRuns, articles: loadArticles, events: loadEvents, chunks: loadChunks, search: loadSearch, pipeline: loadPipeline };
   const loaded = new Set();
   let current = 'overview';
   async function show(panel, force = false) {

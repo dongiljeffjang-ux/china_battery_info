@@ -7,6 +7,7 @@ import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { requireAccess } from "../lib/access.js";
 import { searchKnowledge } from "../lib/knowledge-search.js";
 import { chunkArticleBody } from "../lib/vector-ingestion.js";
+import { pipelineManifest } from "../lib/pipeline-manifest.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -142,12 +143,18 @@ async function search(query) {
   };
 }
 
+// 파이프라인 명세. 소스·프롬프트·단계·보관 정책을 실제 코드에서 읽어 그대로 돌려준다.
+// 정적인 값이라 DB를 건드리지 않는다.
+async function pipeline() {
+  return { pipeline: pipelineManifest() };
+}
+
 export default async function handler(request, response) {
   if (request.method !== "GET") return response.status(405).json({ status: "method_not_allowed" });
   if (!requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
   const view = String(request.query?.view || "overview");
-  const handlers = { overview, runs, articles, article, events, chunks, search };
+  const handlers = { overview, runs, articles, article, events, chunks, search, pipeline };
   const run = handlers[view];
   if (!run) return response.status(400).json({ status: "unknown_view", view });
   try {

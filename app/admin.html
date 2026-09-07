@@ -101,6 +101,7 @@
           <button data-panel="events">이벤트</button>
           <button data-panel="chunks">청크 · 임베딩</button>
           <button data-panel="search">벡터 검색 시험</button>
+          <button data-panel="pipeline">파이프라인 · 소스와 프롬프트</button>
         </nav>
 
         <section id="panel-overview" class="panel is-visible">
@@ -171,6 +172,11 @@
           <div id="ch-list"></div>
         </section>
 
+        <section id="panel-pipeline" class="panel">
+          <p class="muted small" style="margin:0 0 14px">이 화면의 숫자와 프롬프트는 실제 실행 코드에서 직접 읽습니다. 화면용으로 따로 적어 둔 값이 아니므로 코드가 바뀌면 여기도 함께 바뀝니다.</p>
+          <div id="pipe-body"></div>
+        </section>
+
         <section id="panel-search" class="panel">
           <div class="filters">
             <label>질문<input id="se-q" type="text" placeholder="예: 룽바이 LFP 증설 계획" /></label>
@@ -186,6 +192,6 @@
       <aside id="drawer" class="drawer" hidden aria-label="기사 상세"></aside>
     </div>
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./admin.js?v=20260906a"></script>
+    <script src="./admin.js?v=20260907-pipeline"></script>
   </body>
 </html>
