@@ -50,7 +50,7 @@ erDiagram
 | `article` | `source_id`, `title`, `url`, `published_at`, `summary_ko`, `body_fetched`, `cluster_id` | 뉴스 메타데이터와 자체 요약; 본문은 미저장 |
 | `article_company` | `article_id`, `company_id`, `category` | 뉴스와 기업의 다대다 매핑 |
 | `review_queue` | `candidate_id`, `review_status`, `evidence_policy`, `source_requirement`, `timeline_eligibility` | 정독 전 후보와 시점별 출처 정책·시계열 검수 상태 |
-| `report_digest` | `parse_quality`, `visual_pages` | PDF 텍스트 전용/이미지 검토 필요/시각 확인 완료 상태와 큰 이미지 의심 페이지 |
+| `report_digest` | `parse_quality`, `visual_pages`, `renewed_at`, `renewal_status`, `renewal_inserted`, `source_sha256` | PDF 텍스트 전용/이미지 검토 필요 상태, 큰 이미지 의심 페이지, 원문 재다운로드·재분석 이력 |
 | `ingestion_run` | `id`, `generated_at`, `candidate_count`, `payload_hash` | 매일 수집 JSON 스냅샷의 실행 이력 |
 | `candidate_observation` | `ingestion_run_id`, `candidate_id`, `observed_on` | 어떤 후보가 어느 일일 수집에서 관측됐는지 보존 |
 | `fact` | `subject_company_id`, `predicate`, `value_json`, `occurred_at`, `confidence` | 예: “CATL-계획생산능력-XX GWh” |

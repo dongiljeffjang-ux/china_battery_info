@@ -73,6 +73,9 @@
 
 - `supabase/headline-knowledge.sql`: `knowledge_chunk`의 `headline` 소스 타입 허용, 검색 함수 `include_unverified` 기본값. 실행됨.
 - `supabase/ingestion-guard.sql`: `ingestion_guard` 테이블(수집 체인 잠금). 실행됨.
+- `supabase/report-visual-quality.sql`: 공시 PDF의 텍스트/이미지 도표 완전성 상태. 실행됨.
+
+**다음 실행 필요**: `supabase/report-renewal.sql`. 주요 상장사 정기보고서의 원문 해시와 재분석 상태를 기록한다. SQL 적용 전에는 갱신 큐가 동작하지 않는다.
 
 **미실행**: `supabase/company-entity.sql` (`event.entity_names`). 코드 배포 전에 SQL Editor에서 실행해야 한다. 컬럼이 없는 상태로 새 코드가 이벤트를 INSERT하면 Supabase가 거부해 기사 처리가 실패한다.
 
@@ -145,6 +148,8 @@
 4. 위 등록 기준 1~5를 적용해 5곳 내외를 고르고 `evidence`에 원문을 그대로 옮긴다.
 
 ## 9. 알려진 기술 부채와 다음 우선순위
+
+주요 상장사의 2024년 이후 연차·반기보고서는 기존 데이터를 삭제하지 않고 다시 내려받아 텍스트를 재추출하고, 새 이벤트만 보강하는 갱신 큐가 추가됐다. 원본 PDF 해시를 남기며 큰 이미지가 있는 페이지는 `visual_review_required`로 유지한다. 이 단계는 **PDF 텍스트 갱신**이고 완전성 승인이 아니다. 거래소가 XBRL·Excel·HTML 표 같은 구조화 원본을 함께 제공하는 경우 그 수치를 먼저 수집하는 경로는 아직 구현되지 않았다.
 
 1. **CNINFO 공시가 수집되지만 분석되지 않는다.** `selectHeadlineTop10()`이 `web_search_*`와 CATL 뉴스룸만 선별 대상으로 삼아, 회당 200건이 넘는 공시가 `pending` 상태로만 쌓인다. `prd.md`의 "공식 공시·IR을 최우선 출처로 한다"와 `data-model.md`의 "과거 구간은 공시·IR 우선 검수"에 어긋난다. 공시는 PDF라 `process-article.js`의 HTML 경로로는 처리되지 않으므로 PDF 텍스트 추출과 Vercel 60초 제약 대응이 함께 필요하다. Top 10과 분리해 회사별 소수만 `timeline_eligibility='core'` 이벤트로 만드는 방향이 검토됐다.
 2. `layer_key`가 비어 있는 기존 `event` 행의 재분류 백필. 화면에서는 트랙별 `미분류` 행에 모인다.
