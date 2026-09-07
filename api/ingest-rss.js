@@ -54,7 +54,8 @@ const MAX_CURATE_HOPS = 40;
 // 한 훅 안에서 검색 1회 + 추출이 끝나야 하므로 회사당 건수를 낮춘다.
 const BACKFILL_MAX_EVENTS = 12;
 const BACKFILL_SINCE = "2023-01-01";
-const DIGEST_MAX_EVENTS = 10;
+// 운영·디버그용 ?digest= 경로. 추출 단위를 쪼갠 뒤 건수가 늘어 유지 훅과 같은 상한을 쓴다.
+const DIGEST_MAX_EVENTS = 30;
 const HIGH_SIGNAL_TERMS = [
   "扩产", "增产", "产能", "投产", "开工", "项目", "签约", "订单", "定点", "认证", "量产", "出货", "交付",
   "营收", "收入", "净利润", "财报", "业绩", "海外", "建厂", "投资", "收购", "合作", "固态", "硅碳", "lmfp",
