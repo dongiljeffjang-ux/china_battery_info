@@ -10,11 +10,14 @@ globalThis.fetch=async(url,opts)=>{
   if(opts.method==='POST') {
     if(!rows.has(body.key)){ rows.set(body.key,{...body});result=[body]; }
   } else {
-    const key=query.get('key')?.slice(3), row=rows.get(key);
-    const owner=query.get('owner')?.slice(3), expiry=query.get('expires_at');
-    const valid=row&&(!owner||row.owner===owner)&&(!expiry||(expiry.startsWith('lt.')?row.expires_at<expiry.slice(3):row.expires_at>expiry.slice(3)));
-    if(valid&&opts.method==='PATCH'){Object.assign(row,body);result=[row];}
-    if(valid&&opts.method==='DELETE')rows.delete(key);
+    const keyFilter=query.get('key'), owner=query.get('owner')?.slice(3), expiry=query.get('expires_at');
+    for(const [key,row] of [...rows]){
+      if(keyFilter&&(keyFilter.startsWith('eq.')?key!==keyFilter.slice(3):key===keyFilter.slice(4)))continue;
+      if(owner&&row.owner!==owner)continue;
+      if(expiry&&!(expiry.startsWith('lt.')?row.expires_at<expiry.slice(3):row.expires_at>expiry.slice(3)))continue;
+      if(opts.method==='PATCH'){Object.assign(row,body);result.push(row);}
+      if(opts.method==='DELETE')rows.delete(key);
+    }
   }
   return Response.json(result);
 };
@@ -27,11 +30,12 @@ await releaseRun(crypto.randomUUID());assert.equal(await acquireRun(),null);
 rows.get('collection').expires_at='2000-01-01T00:00:00.000Z';
 const next=await acquireRun();assert.ok(next);assert.notEqual(owner,next);
 await releaseRun(owner);assert.equal(await acquireRun(),null);
+assert.equal(rows.has(`${owner}:process:1`),false,'stage claims are removed with the run');
 await releaseRun(next);assert.ok(await acquireRun());
 await Promise.all([1,2].map(()=>withSearchBudget(async()=>{
-  for(let i=0;i<6;i++)takeSearchBudget('search');
+  for(let i=0;i<18;i++)takeSearchBudget('search');
   assert.throws(()=>takeSearchBudget('search'),/BUDGET_EXHAUSTED/);
-  takeSearchBudget('recovery');takeSearchBudget('recovery');
+  for(let i=0;i<4;i++)takeSearchBudget('recovery');
   assert.throws(()=>takeSearchBudget('recovery'),/BUDGET_EXHAUSTED/);
 })));
 console.log('Concurrent ownership, stage deduplication, expiry, stale release and isolated budgets passed');

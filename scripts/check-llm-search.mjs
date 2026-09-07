@@ -25,6 +25,7 @@ output = [{ type: 'web_search_call', status: 'completed' }, message];
 const result = await createJsonResponse(options);
 assert.equal(result.telemetry.search_calls, 1);
 assert.equal(logs.at(-1).status, 'ok');
+assert.equal(logs.some(row => row.payload.kind === 'search_response_raw'), false, 'successful searches are not captured');
 output = [{ type: 'web_search_call', status: 'completed' }, { type: 'message', content: [{ type: 'output_text', text: '검증된 기사를 선정하겠습니다.\n{"articles":[]}\n완료' }] }];
 assert.deepEqual((await createJsonResponse(options)).data, { articles: [] });
 const invalid = { type: 'message', content: [{ type: 'output_text', text: '宁德时代 https://example.com/news not JSON' }] };

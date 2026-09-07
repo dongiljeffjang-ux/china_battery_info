@@ -1,6 +1,7 @@
 {
   "name": "china-battery-lens",
   "private": true,
+  "type": "module",
   "version": "0.1.0",
   "engines": {
     "node": ">=20"

@@ -277,6 +277,12 @@ async function runProcessStage(request, hop) {
 
 async function runDailyStage(request) {
   const started = Date.now();
+  // 3개사 파일럿은 검증용이다. 그 기사만으로 오늘 Daily를 덮어쓰면 운영 리포트가 훼손된다.
+  if (request.query?.pilot === '1') {
+    await logPipeline("daily", { status: "skipped_pilot", run_id: request.query?.run_id }, { durationMs: 0 });
+    await flushTraces();
+    return;
+  }
   try {
     const report = await generateDailyReport();
     console.info("[DAILY_STAGE]", JSON.stringify({ status: report.status, top10: report.top10_count || 0, ms: Date.now() - started }));
@@ -352,7 +358,7 @@ async function handleRequest(request, response) {
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "db_not_configured" });
   if (request.query?.pilot === '1' && !request.query?.stage && request.method === 'GET') {
     response.setHeader('Content-Type','text/html; charset=utf-8');
-    return response.status(200).send('<!doctype html><meta charset="utf-8"><h1>3개 회사 실서비스 검증</h1><p>CATL·후난위넝·BTR. 검색 요청 최대 6회, 요청당 기사 최대 2건. 본문 처리 후 오늘 Daily를 재생성합니다.</p><form method="post" action="?pilot=1&process=1"><button onclick="this.disabled=true;this.form.submit()">3개 회사 테스트 1회 실행</button></form>');
+    return response.status(200).send('<!doctype html><meta charset="utf-8"><h1>3개 회사 실서비스 검증</h1><p>CATL·후난위넝·BTR. 회사당 검색 요청 1회씩, 요청당 기사 최대 2건. 본문 처리까지만 하고 Daily는 생성하지 않습니다.</p><form method="post" action="?pilot=1&process=1"><button onclick="this.disabled=true;this.form.submit()">3개 회사 테스트 1회 실행</button></form>');
   }
   // Explicit, authenticated diagnostic. GET never starts a paid request.
   if (request.query?.deepseek_sample === '1') {
@@ -474,7 +480,7 @@ async function handleRequest(request, response) {
     return response.status(200).json({
       status: shouldProcess && llmReady ? "started" : "ok",
       run_id: runId, request_limits: SEARCH_LIMITS,
-      search_runs: (llmConfig("openai") ? 3 : 0) + (llmConfig("deepseek") ? 3 : 0), discovered: candidates.length, stored: storedArticles.length,
+      search_runs: (discovery.web_search || []).length, discovered: candidates.length, stored: storedArticles.length,
       next_step: shouldProcess && llmReady
         ? "본문 처리와 Daily 생성이 별도 호출로 이어집니다. 몇 분 뒤 첫 화면에 반영됩니다."
         : "process=1 또는 크론이 본문 분석을 시작합니다."

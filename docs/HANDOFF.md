@@ -1,6 +1,6 @@
 # China Battery Lens 인수인계
 
-기준일: 2026-09-02
+기준일: 2026-09-07
 
 ## 1. 운영 자산
 
@@ -66,6 +66,11 @@
 - `supabase/vector-schema.sql`: pgvector 검색 기반
 - `supabase/vector-ingestion.sql`: 원문 보관·청크 필드·임베딩 상태
 - `supabase/event-facts.sql`: `event_fact` 테이블(구조화 사실) + `event.facts_extracted_at`. 실행됨.
+
+2026-09-06~07에 추가로 실행됐다.
+
+- `supabase/headline-knowledge.sql`: `knowledge_chunk`의 `headline` 소스 타입 허용, 검색 함수 `include_unverified` 기본값. 실행됨.
+- `supabase/ingestion-guard.sql`: `ingestion_guard` 테이블(수집 체인 잠금). 실행됨.
 
 **미실행**: `supabase/company-entity.sql` (`event.entity_names`). 코드 배포 전에 SQL Editor에서 실행해야 한다. 컬럼이 없는 상태로 새 코드가 이벤트를 INSERT하면 Supabase가 거부해 기사 처리가 실패한다.
 
@@ -146,8 +151,9 @@
 5. `pending_review`를 의미가 분명한 `verified`로 스키마 마이그레이션.
 6. 검색 실행별 OpenAI/DeepSeek 발견·중복·본문 성공·팩트 통과·임베딩 청크 수를 운영 화면에 표시.
 7. 기사 원문 저장은 사용자의 명시 요구로 활성화됐다. 저작권·보존기간·접근통제 정책을 제품 문서와 일치시키는 결정이 필요하다.
-8. Vercel 60초 함수 안에서 검색 6회 + 본문 분석 20회 + 임베딩이 실행되므로 시간초과가 발생하면 큐/비동기 작업으로 분리한다.
-9. 남은 밸류체인 상위사의 그룹 마스터 확장. 홍콩 상장사(CALB, REPT)는 HKEXnews 연차보고서를 근거로 인정하기로 했으나 HKEX 수집 경로가 없다.
+8. Vercel 60초 함수 안에서 검색과 본문 분석·임베딩이 실행되므로 시간초과가 계속되면 큐/비동기 작업으로 분리한다. 2026-09-07에 검색 요청을 회사 4곳 단위로 쪼개 요청 하나의 부담을 낮췄으나, 전체 31개사 모드의 성공률은 아직 실측하지 않았다.
+9. 파일럿(`?pilot=1`)은 3개사만 돌고 Daily를 만들지 않는다. 전체 모드 1회 실행으로 검색 성공률과 Daily 생성을 확인하는 절차가 남아 있다.
+10. 남은 밸류체인 상위사의 그룹 마스터 확장. 홍콩 상장사(CALB, REPT)는 HKEXnews 연차보고서를 근거로 인정하기로 했으나 HKEX 수집 경로가 없다.
 
 ## 10. 검증 절차
 
@@ -162,7 +168,16 @@ node --check lib/vector-ingestion.js
 node --check api/ingest-rss.js
 node --check api/process-article.js
 git diff --check
+npm run check
+node scripts/check-ingestion-guard.mjs
+node scripts/check-json-recovery.mjs
+node scripts/check-llm-search.mjs
+node scripts/check-pipeline-status.mjs
+node scripts/check-report-classification.mjs
+node scripts/check-response-json.mjs
 ```
+
+회귀 스크립트는 모두 네트워크를 가짜로 물려 돌리므로 API 과금이 없다.
 
 `node --check`는 구문만 본다. 스크립트로 파일을 편집했다면 **주요 함수가 그대로 남아 있는지 함께 확인한다.** 편집 사고로 함수 본문이 뭉개져도 정규식 리터럴로 파싱돼 `node --check`가 통과한 사례가 있었다.
 
@@ -261,3 +276,45 @@ git diff --check
 - 배포가 복구됐으므로 폴리필이 적용됐다. 오늘 밤 curate가 실패로 남긴 장부를 다시 집는지 확인할 것. `report_digest.report_url`이 `missing:` 또는 오류 문자열로 시작하는 행은 14일 뒤 재시도 대상이라, 필요하면 그 행을 지워 즉시 다시 읽게 할 수 있다.
 - **Vercel 로그는 로컬 CLI로 본다**: `npx vercel logs china-battery-lens.vercel.app --scope dongiljeffjang-uxs-projects --json`, 배포 목록은 `npx vercel ls`, 실패 원인은 `npx vercel inspect --logs <배포 URL>`. CLI는 이 PC에 로그인돼 있다.
 - **DeepSeek 검색 진단**: `DEEPSEEK_API_KEY`는 9월 2일부터 Production에 있다. 키 부재가 아니다. 같은 기간 OpenAI 검색 기사는 쌓였는데 DeepSeek 발견 기사는 0건이므로, 검색 호출이 매번 빈 출력이거나 오류로 끝난다는 뜻이다. `scripts/probe-web-search.mjs`로 키를 주고 한 번 호출하면 HTTP 상태·output 항목 종류·빈 출력 여부가 그대로 찍힌다. 배포된 새 코드는 수집 때마다 `pipeline_log`에 경로별 원시 발견 수와 실패 사유를 남기므로, 화면 "수집·분석 1회 실행"을 누른 뒤 관리자 페이지 실행 이력에서도 확인할 수 있다.
+
+## 2026-09-07 변경 요약
+
+전날(2026-09-06) codex가 커밋한 8건을 검토하고 보완했다. codex 변경의 원래 기록은 `docs/FIXES-2026-09-06-CODEX.md`에 있다.
+
+### 수집 체인 잠금과 검색 예산
+
+- `lib/ingestion-guard.js`가 수집 → 본문 처리 → Daily 체인을 UUID 리스 하나로 묶는다. 동시 시작은 409로 막힌다. 리스는 10분이고 단계마다 갱신되며 Daily가 끝나면 해제된다.
+- 각 단계 훅은 `claimStage`로 한 번만 실행된다. 가드 배포 전인 2026-09-06 19:52에 같은 훅이 두 번 돌아 기사 4건이 중복 처리된 전례가 있다.
+- `releaseRun`은 collection 리스뿐 아니라 그 실행이 만든 단계 claim 행까지 지운다. 만료된 남은 행도 함께 정리한다.
+- 검색 요청 예산은 실행당 18회, 포맷 복구 4회다. AsyncLocalStorage로 요청별로 분리된다. **요청 횟수 상한이지 비용 상한이 아니다.** 제공자 내부 검색 도구 호출 수는 우리가 정하지 못한다.
+
+### 검색 요청 분할
+
+밸류체인 하나(회사 10~12곳)를 한 요청에 넣으면 모델이 검색만 반복하다 35초 안에 JSON을 못 냈다. 2026-09-06 19:51 로그에서 DeepSeek 세 그룹이 전부 실패하고 OpenAI도 한 그룹이 시간초과했다. `lib/china-sources.js`의 `SEARCH_GROUP_SIZE`(4)로 회사를 쪼개 요청 하나를 짧게 만든다. 31개사면 제공자당 9그룹이다.
+
+### DeepSeek 응답 처리
+
+- 검색 중간 설명 텍스트를 최종 JSON과 분리해 파싱한다. 마지막 `message`만 최종 응답으로 본다.
+- 산문에 섞인 JSON은 `lib/json-recovery.js`가 한 개만 추출하고 스키마·URL을 검증한다.
+- 파싱이 실패하면 OpenAI에 도구 없는 포맷 정리 요청을 **한 번만** 보낸다. 원문에 없던 URL이 나오면 거부한다.
+- DeepSeek 검색 응답 원문 보존은 **실패했을 때만** 한다. 성공까지 매번 저장하면 진단용 기록이 상시 비용이 된다. `DEEPSEEK_CAPTURE_RAW=1`이면 항상 저장한다.
+
+### 파일럿 모드
+
+`/api/ingest-rss?pilot=1`은 CATL·후난위넝·BTR 세 곳만, 요청당 기사 2건으로 돈다. GET은 실행 버튼 화면이고 POST만 과금된다. **파일럿은 Daily를 만들지 않는다.** 3개사 기사만으로 그날 운영 리포트를 덮어쓰면 안 되기 때문이다. 2026-09-06에 파일럿 실행이 오늘 Daily를 세 번 덮어쓴 전례가 있다.
+
+### 리포트 분류
+
+동박(铜箔)은 집전체이지 음극 활물질이 아니다. `lib/report-classification.js`가 동박만 언급된 항목을 양극재·음극재에서 `정책·공급망`으로 옮긴다. 활물질이 함께 언급되면 그대로 둔다. Daily 생성 시점과 저장된 리포트 표시 시점에 모두 적용된다.
+
+### 실패 기록
+
+`lib/pipeline-log.js`는 하위 결과에 `error`나 `failed` 상태가 있으면 실행 전체를 `partial`로 남긴다. 교차검증 기각(`rejected`)과 본문 미확보(`body_unavailable`, `body_too_short`)는 기사 자체의 결과이지 파이프라인 실패가 아니므로 `partial` 사유에서 제외한다.
+
+### 2026-09-07 벡터 청크 사고
+
+`knowledge_chunk`에 기사당 행이 2~3개인 것을 중복으로 오판하고 삭제 SQL을 실행해 `event_fact` 청크 7건을 지웠다. 실제로는 기사당 `article_chunk` 1건 + 이벤트별 `event_fact` 1건이 정상이고, `content_hash`에 이미 유니크 제약이 있어 **중복 청크는 애초에 발생할 수 없다.**
+
+복구는 자동이다. 임베딩 백로그는 `knowledge_chunk.event_id`에 없는 `event` 행으로 계산하므로, `/api/embed-event` 크론(UTC 16:00, KST 01:00)이 지워진 7건을 다시 만든다.
+
+**교훈**: `knowledge_chunk`의 행 수를 셀 때 `source_type`을 함께 봐야 한다. `article_chunk`, `event_fact`, `headline`, `daily_report`, `report_chunk`는 같은 `article_id`를 공유하는 별개 행이다.
