@@ -978,6 +978,9 @@ function renderAskResult(payload, scoped){
   if (payload.guidance_ko) {
     parts.push(`<div class="ask-block"><p class="ask-label guide">${payload.sufficient ? '더 확인할 것' : '근거가 부족합니다 · 확인할 것'}</p><p class="ask-answer">${escapeHtml(payload.guidance_ko)}</p></div>`);
   }
+  if (payload.completeness_warning) {
+    parts.push(`<div class="ask-block"><p class="ask-label conflict">PDF 완전성 경고</p><p class="ask-answer">${escapeHtml(payload.completeness_warning)}</p></div>`);
+  }
   if (payload.sources?.length) {
     const items = payload.sources.map(source => {
       const head = [displayName(source.company_id), source.published_at, source.source_name].filter(Boolean).join(' · ');

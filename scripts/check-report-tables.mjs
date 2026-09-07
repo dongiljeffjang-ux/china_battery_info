@@ -1,6 +1,7 @@
 // 보고서 표 추출·청킹 회귀 검사. 네트워크·API 호출 없음.
 // 2026-09-08: 표가 join("")로 뭉개져 헤더가 떨어져 나가던 문제를 고친 뒤 그 동작을 고정한다.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 const { pageToLines } = await import('../lib/report-reader.js');
 const { chunkStructuredText } = await import('../lib/vector-ingestion.js');
 
@@ -43,4 +44,8 @@ const prose = chunkStructuredText(['문단 하나.', '문단 둘.', '문단 셋.
 assert.equal(prose.length, 1);
 assert.equal(prose[0], '문단 하나.\n문단 둘.\n문단 셋.');
 
-console.log('보고서 표 추출·청킹 검사 통과 (네트워크 없음)');
+const readerSource = fs.readFileSync(new URL('../lib/report-reader.js', import.meta.url), 'utf8');
+assert.match(readerSource, /getOperatorList\(\)/, 'PDF 이미지 연산 목록을 검사해야 한다');
+assert.match(readerSource, /visual_review_required/, '큰 이미지 페이지는 시각 검토 대상으로 표시해야 한다');
+
+console.log('보고서 표 추출·청킹·이미지 감지 검사 통과 (네트워크 없음)');
