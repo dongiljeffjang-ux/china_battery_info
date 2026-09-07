@@ -1,15 +1,53 @@
 {
   "crons": [
-    { "path": "/api/ingest-rss", "schedule": "0 14 * * *" },
-    { "path": "/api/embed-event", "schedule": "0 16 * * *" }
+    {
+      "path": "/api/ingest-rss",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/embed-event",
+      "schedule": "0 16 * * *"
+    }
   ],
   "rewrites": [
-    { "source": "/", "destination": "/app/index.html" },
-    { "source": "/styles.css", "destination": "/app/styles.css" },
-    { "source": "/access.css", "destination": "/app/access.css" },
-    { "source": "/access-gate.js", "destination": "/app/access-gate.js" },
-    { "source": "/app.js", "destination": "/app/app.js" },
-    { "source": "/admin", "destination": "/app/admin.html" },
-    { "source": "/admin.js", "destination": "/app/admin.js" }
-  ]
+    {
+      "source": "/",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/styles.css",
+      "destination": "/app/styles.css"
+    },
+    {
+      "source": "/access.css",
+      "destination": "/app/access.css"
+    },
+    {
+      "source": "/access-gate.js",
+      "destination": "/app/access-gate.js"
+    },
+    {
+      "source": "/app.js",
+      "destination": "/app/app.js"
+    },
+    {
+      "source": "/admin",
+      "destination": "/app/admin.html"
+    },
+    {
+      "source": "/admin.js",
+      "destination": "/app/admin.js"
+    }
+  ],
+  "functions": {
+    "api/ingest-rss.js": {
+      "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"
+    },
+    "api/process-article.js": {
+      "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"
+    },
+    "api/company.js": {
+      "includeFiles": "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"
+    }
+  }
 }

@@ -594,3 +594,31 @@ facts → embed_report → embed_article → embed_headline → redate_article �
 
 훅당 처리량은 줄지만 체인이 40훅까지 살아 총량은 늘고, 그동안 한 번도 실행되지 못했던
 공시 원문 임베딩과 보고서 보강이 자기 차례를 받는다.
+
+## 2026-09-08: 훅 재구성 뒤 드러난 두 가지
+
+훅을 "하나에 무거운 단계 하나"로 바꾸자 소요가 16초·52초로 한도 안에 들어왔다. 그러면서 가려져
+있던 문제 둘이 드러났다.
+
+### 1. 사실 추출이 0건을 처리했다
+
+예산 여유 검사(`deadline - CALL_BUDGET_MS`)를 첫 배치에도 적용한 것이 문제였다. 훅 예산이
+42초인데 40초를 남기면 2초만 남는다. 앞의 값싼 단계가 몇 초만 써도 곧바로 break 해서 한 건도
+처리하지 못한다. 실제로 `remaining: 25`인데 `events: 0`이었다.
+
+- 첫 배치는 무조건 돌리고, 여유 검사는 두 번째 배치부터 한다.
+- 유지 훅 예산을 42초에서 **50초**로 올렸다(`CURATE_BUDGET_MS`). 훅이 무거운 단계를 하나만
+  맡으므로 60초 한도에서 체인 넘김 여유만 남기면 된다. 수집·본문 처리 단계는 42초 그대로다.
+
+### 2. 보고서 읽기가 pdfjs 워커를 못 찾았다
+
+`digest` 단계가 `Setting up fake worker failed: "Cannot find module ..."`로 실패했다.
+Node에는 워커가 없어 pdfjs가 가짜 워커를 쓰는데, 그때 `pdf.worker.mjs`를 동적 import 한다.
+Vercel 번들에 그 파일이 없으면 죽는다. 로컬에는 있어서 재현되지 않았다.
+
+- `lib/report-reader.js`에 `loadPdfjs()`를 두고 `GlobalWorkerOptions.workerSrc`에 워커 경로를
+  명시한다. pdfjs 모듈은 한 번만 불러 재사용한다.
+- `vercel.json`의 `functions.includeFiles`로 워커 파일을 함수 번들에 포함시킨다.
+  대상은 PDF를 읽는 `api/ingest-rss.js`, `api/process-article.js`, `api/company.js`다.
+
+이 둘이 그동안 공시 원문 임베딩과 보고서 보강이 한 번도 성공하지 못한 이유다.

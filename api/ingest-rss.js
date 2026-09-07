@@ -24,6 +24,9 @@ const DISCLOSURE_PER_RUN = 4;
 const PROCESS_CONCURRENCY = 3;
 // 한 함수는 60초 안에 끝나야 한다. 본문 처리는 이 시간까지만 새 기사를 집고 나머지는 다음 호출로 넘긴다.
 const STAGE_BUDGET_MS = 42000;
+// 유지 훅은 무거운 단계를 하나만 맡는다(lib/curation.js). LLM 호출 하나가 25~40초라
+// 42초로는 앞 단계가 몇 초만 써도 그 하나를 못 돌린다. 60초 한도에서 체인 넘김 여유만 남긴다.
+const CURATE_BUDGET_MS = 50000;
 // 다음 단계 호출을 넘기고 기다리는 최대 시간. 요청이 나갔는지만 확인하면 되므로 짧게 둔다.
 const CHAIN_HANDOFF_MS = 1500;
 // 본문 처리 호출을 최대 몇 번 이어 붙일지. 하루치 헤드라인 10건이면 두어 번이면 끝난다.
@@ -317,7 +320,7 @@ async function runCurateStage(request, hop) {
   const started = Date.now();
   let more = false;
   try {
-    const result = await runCurationHop({ deadline: started + STAGE_BUDGET_MS, hop });
+    const result = await runCurationHop({ deadline: started + CURATE_BUDGET_MS, hop });
     more = result.more;
     console.info("[CURATE_STAGE]", JSON.stringify({ hop, ...result.log, more, ms: Date.now() - started }));
     await logPipeline("curate", { ...result.log, more }, { hop, durationMs: Date.now() - started });
