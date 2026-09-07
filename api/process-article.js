@@ -11,6 +11,11 @@ import { extractPdfText } from "../lib/report-reader.js";
 
 const MAX_BODY_CHARS = 30000;
 
+// 사건 시점은 기사 발행일이 아니다. 2026-09-04 大众日报 특집이 2026-03-05 발표된 비야디 2세대
+// 블레이드 배터리를 소개했는데, 발행일이 그대로 사건 시점으로 들어가 시계열이 6개월 어긋났다.
+// 기사 본문이 시점을 적지 않으면 그 사실을 남기고(occurred_basis=null) 뒤의 웹 검색 재확인 단계가 잡는다.
+const DATE_PROMPT_GUIDE = "occurred_at은 그 사실이 실제로 일어난(발표·체결·가동·출시된) 시점이지 기사 발행일이 아니다. 본문에 시점이 적혀 있으면(예: 3月5日, 今年上半年, 去年, 2025年) 그 시점을 쓰고, occurred_basis에 그 근거 문장을 원문 그대로 짧게 인용하며, occurred_precision에 확인된 정밀도(day/month/half/year)를 쓴다. 본문에 시점이 없으면 occurred_at에 발행일을 쓰되 occurred_precision은 month로, occurred_basis는 null로 둔다. 발행일을 근거로 지어 적지 않는다. retrospective는 이 기사가 새 소식이 아니라 이미 발표된 사실을 다시 소개·회고하는 글(특집·회객청·전문가 대담·기업 소개, 此前·曾·早在·回顾 같은 표현)이면 true다. retrospective가 true이고 본문에 발표 시점이 없으면 occurred_at에 발행일을 쓰되 occurred_precision을 year로 두어 시점이 불확실함을 표시한다.";
+
 function isAuthorized(request) {
   const secret = process.env.CRON_SECRET;
   return Boolean(secret && request.headers.authorization === `Bearer ${secret}`);
@@ -37,7 +42,7 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
   const schema = {
     type: "object",
     additionalProperties: false,
-    required: ["title_ko", "summary_ko", "keywords_ko", "headline_signals", "event_title_ko", "event_fact_ko", "original_excerpt", "original_excerpt_ko", "occurred_at", "trajectory_track", "layer_key", "region_scope", "timeline_eligibility", "confidence_note"],
+    required: ["title_ko", "summary_ko", "keywords_ko", "headline_signals", "event_title_ko", "event_fact_ko", "original_excerpt", "original_excerpt_ko", "occurred_at", "occurred_precision", "occurred_basis", "retrospective", "trajectory_track", "layer_key", "region_scope", "timeline_eligibility", "confidence_note"],
     properties: {
       title_ko: { type: "string" },
       keywords_ko: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
@@ -59,6 +64,9 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
       original_excerpt: { type: "string" },
       original_excerpt_ko: { type: "string" },
       occurred_at: { type: ["string", "null"] },
+      occurred_precision: { type: "string", enum: ["day", "month", "half", "year"] },
+      occurred_basis: { type: ["string", "null"] },
+      retrospective: { type: "boolean" },
       trajectory_track: { type: "string", enum: ["market", "technology"] },
       layer_key: { type: "string", enum: LAYER_ENUM },
       region_scope: { type: ["string", "null"] },
@@ -72,7 +80,7 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
   const input = `${companyContext}\n원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}${disclosureNote}\n본문:\n${bodyText}`;
   const { data } = await createJsonResponse({
     name: "battery_article_event", schema,
-    instructions: "중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. summary_ko는 서술형 문단이 아니라 개조식으로 쓴다: 확인된 사실 하나당 '- '로 시작하는 한 줄을 만들고, 각 줄은 명사형으로 끝내며 회사명과 핵심 수치를 앞에 둔다(예: '- CATL, 헝가리 1공장 1기 라인 가동 개시 - 연 40GWh'). 접속사·수식어 없이 사실만 나열하고 2~4줄로 쓴다. title_ko는 기사 자체의 주제를 그대로 쓴다. 기사가 여러 회사를 함께 다루거나 정책·산업 전반을 다루면 특정 회사 관점으로 좁히지 않는다(예: 여러 업체의 진척을 곁들인 정책 기사는 ‘중국, 전고체 배터리 정의·과세 기준 마련’). 한 회사만 다루는 기사일 때만 그 회사를 제목의 주어로 쓴다. 기사에 회사가 여럿 나오면 summary_ko에 회사마다 한 줄씩 담아, 어느 회사로 이 기사를 보더라도 그 회사 사실이 보이게 한다. 반면 event_title_ko와 event_fact_ko는 시계열에 넣을 한 건이므로 제공된 ‘서비스 표준 회사명’ 회사의 사실만 쓴다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). headline_signals는 이 기사가 산업의 무엇을 확대(expansion) 또는 축소(contraction)시키는 신호인지 신호별로 판단한 것이다. keyword_ko에는 회사명·기관명·부처명·매체명·일반 산업명을 쓰지 않는다(예: 공업정보화부, 리튬전지 산업, 출하량 순위는 신호가 아니다). 생산능력·출하·수주·고객·가격·투자·기술 같은 실제로 늘거나 주는 대상을 쓴다. direction은 본문에 적힌 사실을 근거로 정하고, 판단 근거가 약하면 neutral을 쓴다. reason_ko에는 왜 그 방향인지 본문 사실을 들어 한 문장으로 쓴다. 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다. " + LAYER_PROMPT_GUIDE,
+    instructions: DATE_PROMPT_GUIDE + " 중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. summary_ko는 서술형 문단이 아니라 개조식으로 쓴다: 확인된 사실 하나당 '- '로 시작하는 한 줄을 만들고, 각 줄은 명사형으로 끝내며 회사명과 핵심 수치를 앞에 둔다(예: '- CATL, 헝가리 1공장 1기 라인 가동 개시 - 연 40GWh'). 접속사·수식어 없이 사실만 나열하고 2~4줄로 쓴다. title_ko는 기사 자체의 주제를 그대로 쓴다. 기사가 여러 회사를 함께 다루거나 정책·산업 전반을 다루면 특정 회사 관점으로 좁히지 않는다(예: 여러 업체의 진척을 곁들인 정책 기사는 ‘중국, 전고체 배터리 정의·과세 기준 마련’). 한 회사만 다루는 기사일 때만 그 회사를 제목의 주어로 쓴다. 기사에 회사가 여럿 나오면 summary_ko에 회사마다 한 줄씩 담아, 어느 회사로 이 기사를 보더라도 그 회사 사실이 보이게 한다. 반면 event_title_ko와 event_fact_ko는 시계열에 넣을 한 건이므로 제공된 ‘서비스 표준 회사명’ 회사의 사실만 쓴다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). headline_signals는 이 기사가 산업의 무엇을 확대(expansion) 또는 축소(contraction)시키는 신호인지 신호별로 판단한 것이다. keyword_ko에는 회사명·기관명·부처명·매체명·일반 산업명을 쓰지 않는다(예: 공업정보화부, 리튬전지 산업, 출하량 순위는 신호가 아니다). 생산능력·출하·수주·고객·가격·투자·기술 같은 실제로 늘거나 주는 대상을 쓴다. direction은 본문에 적힌 사실을 근거로 정하고, 판단 근거가 약하면 neutral을 쓴다. reason_ko에는 왜 그 방향인지 본문 사실을 들어 한 문장으로 쓴다. 단일 제3자 언론 기사만으로는 timeline_eligibility를 core로 두지 않는다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다. " + LAYER_PROMPT_GUIDE,
     input, provider
   });
   return data;
@@ -177,7 +185,7 @@ export async function processPendingArticle(articleId, companyId) {
   let embedding = { status: "skipped", chunks: 0 };
   try {
     embedding = await embedVerifiedArticle({
-      article, companyId, bodyText, titleKo: factCheck.title_ko, summaryKo: factCheck.summary_ko,
+      article: { ...article, company_name_ko: company?.name_ko }, companyId, bodyText, titleKo: factCheck.title_ko, summaryKo: factCheck.summary_ko,
       sourceUrl: resolvedUrl, sourceName: article.source_name, publishedAt: article.published_at,
       // 거래소 공시는 공개 자료라 원문을 남기고, 언론 기사는 한국어 요약만 남긴다.
       keepOriginal: isDisclosure,
@@ -208,6 +216,9 @@ export async function processPendingArticle(articleId, companyId) {
     const storedEvents = await supabaseRest("event", { method: "POST", prefer: "return=representation", body: {
       entity_names: entityNames,
       company_id: companyId, article_id: articleId, occurred_at: result.occurred_at,
+      // 본문이 시점을 말하지 않은 이벤트는 basis가 null로 남아 웹 검색 재확인 큐에 들어간다.
+      occurred_precision: ["day", "month", "half", "year"].includes(result.occurred_precision) ? result.occurred_precision : "month",
+      occurred_basis: result.occurred_basis ? String(result.occurred_basis).slice(0, 300) : null,
       title_ko: result.event_title_ko, fact_ko: result.event_fact_ko,
       // layer_key 소속에 맞춰 트랙을 맞춘다. 시장 레이어인데 기술로 들어가는 어긋남을 막는다.
       trajectory_track: normalizeLayerKey(result.layer_key)?.startsWith("technology-") ? "technology"
