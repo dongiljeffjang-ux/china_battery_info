@@ -1664,7 +1664,10 @@ function compareReportParts(payload){
   const added = (check.added_evidence || []).map(item => `
     <li><strong>${escapeHtml(item.company === 'B' ? payload.company_b : payload.company_a)}</strong> · ${escapeHtml(item.occurred_at || '')} · ${escapeHtml(item.fact_ko || '')}<span class="basis">${escapeHtml(item.source_name || '')} · <a href="${escapeHtml(item.source_url || '')}">${escapeHtml(item.source_url || '')}</a></span></li>`).join('');
   const stamp = new Date(payload.generated_at || Date.now()).toLocaleString('ko-KR');
-  const dbLine = payload.verification_status === 'draft_only'
+  // 검증이 실패한 리포트는 "대조했는데 고칠 게 없었다"와 구분해야 한다. 둘 다 수정 목록이 비어 있지만,
+  // 실패는 아직 아무것도 대조하지 않은 상태다. 같은 문구를 쓰면 검증을 통과한 리포트로 읽힌다.
+  const verifyFailed = payload.verification_status === 'draft_only';
+  const dbLine = verifyFailed
     ? '웹 검증에 실패해 초안 상태입니다.'
     : `DB 반영 · 시점 수정 ${db.dates_fixed || 0}건 · 참고 이벤트 추가 ${db.events_added || 0}건`;
   const styles = `
@@ -1729,10 +1732,10 @@ ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
 <h2>2. 궤적 비교</h2>${cmpRow('시장', 'market_ko')}${cmpRow('기술', 'technology_ko')}${cmpRow('갈린 지점', 'divergence_ko')}
 <h2 class="insight">3. 한국 배터리사·소재사 관점 — 해석</h2>
 ${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
-<h2 class="check">4. 웹 검증</h2>
-<p class="txt">${escapeHtml(check.checked_ko || '검증 정보 없음')}</p>
-${fixes ? `<p class="who" style="margin-top:4px">수정</p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>'}
-${added ? `<p class="who" style="margin-top:4px">검색으로 새로 확인한 사실</p><ul>${added}</ul>` : ''}
+<h2 class="check">4. 웹 검증${verifyFailed ? ' — 미실시' : ''}</h2>
+<p class="txt">${escapeHtml(check.checked_ko || (verifyFailed ? '웹 검증 단계가 실패해 초안 그대로입니다.' : '검증 정보 없음'))}</p>
+${verifyFailed ? '' : (fixes ? `<p class="who" style="margin-top:4px">수정</p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>')}
+${verifyFailed || !added ? '' : `<p class="who" style="margin-top:4px">검색으로 새로 확인한 사실</p><ul>${added}</ul>`}
 <footer>1~2장은 수집된 사실 정리, 3장은 해석입니다. 투자 판단 자료가 아닙니다. ${escapeHtml(dbLine)}</footer>`;
   return { title: `${A} vs ${B} 비교 리포트`, styles, body };
 }
