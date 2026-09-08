@@ -313,7 +313,7 @@ function renderHeadlineSankey(){
   const grades = new Map();
   // 왜 그 방향인지는 서버가 신호마다 판단해 내려준다. 화면은 그 근거를 모아 툴팁으로 보여준다.
   const reasons = new Map();
-  const includeHeadlines = document.querySelector('#sankey-include-headlines')?.checked !== false;
+  const includeHeadlines = document.querySelector('#sankey-include-headlines')?.checked === true;
   let headlineArticles = 0;
   // 오른쪽 노드 라벨(keyword)은 서버가 테마 10개로 접어 내려준다. 화면에서 다시 다듬지 않는다.
   rangeFlows.forEach(({company_id, keyword, direction, reason, title, grade, matched}) => {
