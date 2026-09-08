@@ -25,8 +25,23 @@
 | F10 | `digestReport`가 `returned`/`dropped{badDate,empty}`를 돌려주지만 **어디에도 저장하지 않는다.** `pipeline_log`는 09-06부터라 보고서 대부분의 추출 기록이 없다 | 코드·로그 |
 | F11 | `renewReport`(바꿔 넣기 재처리)가 있고 `HEAVY_TASKS` 맨 끝에 배선돼 있는데 **`renewed_at` 채워진 행 0건.** 재처리 대기 107건 | `lib/curation.js:394,598` |
 | F12 | `rag_evaluation` 테이블 생성 완료, 0행 | — |
+| F13 | **로컬 `.env`·`.env.local`은 플레이스홀더다.** `OPENAI_401`, `SUPABASE_URL` 파싱 실패. 실제 키는 Vercel에만 있어 `vercel env pull .env.local` 전에는 어떤 진단도 로컬에서 못 돈다 | 09-08 probe 실행 |
+| F14 | `digestReport`가 조각을 `Promise.all`로 돌려 **조각 하나의 타임아웃이 앞 조각들의 결과까지 통째로 버렸다.** 09-08 수정(`allSettled`). "보고서 절반이 3건 이하"의 원인 후보 | `lib/event-backfill.js`, 커밋 `50739af` |
+| F15 | PDF 다운로드·파싱(`readReport`)은 로컬에서 키 없이 정상 동작한다. 완룬 section은 조각 5개로 나뉜다 | 09-08 probe 실행 |
 
 **아직 모르는 것**: F6의 미추출이 (a) LLM이 안 냈는지 (b) 냈는데 `/^\d{4}-\d{2}-\d{2}$/` 검증에서 버려졌는지 (c) 조각별 타임아웃인지. T0.1이 가른다.
+
+## 1.5 사람이 해야 하는 것 (이게 막히면 아래가 전부 막힌다)
+
+| # | 조치 | 막히는 것 | 상태 |
+|---|---|---|---|
+| U1 | `vercel env pull .env.local` — 로컬에 실제 키를 받는다 | T0.1, T1 검증, T2 재생성. **전부** | ⬜ |
+| U2 | `supabase/report-digest-diagnostics.sql`을 SQL Editor에서 실행 | 진단값이 안 쌓인다(파이프라인은 돎) | ⬜ |
+| U3 | `supabase/rag-evaluation.sql` 실행 | — | ✅ 09-08 완료 |
+| U4 | 결정: `market_financial` 6,098행(발췌 없음, eastmoney)을 RAG 근거로 허용할지 | T4 착수 | ⬜ |
+| U5 | T6 기준선 판정 (질문 5개 × 근거 10건) | 개선 전후 비교 근거 | ⬜ |
+
+U1이 최우선이다. 키가 없으면 진단·검증이 전부 추측으로 돌아간다.
 
 ## 2. 원칙 (모든 작업 공통)
 
@@ -68,10 +83,16 @@ T6 rag_evaluation 기준선 ─ 독립, 지금 (T1·T2 전에 찍어야 의미 �
 
 **준비돼 있는 것**: `scripts/probe-digest.mjs`(이 계획과 함께 작성됨). `.env`에서 키를 읽고 `digestReport({company, kind:'semiannual', knownUrl, maxEvents:30})`를 호출해 조각별 `returned`, `dropped`, 저장 가능 행, 이벤트 목록(시점·정밀도·제목)을 출력한다.
 
+**선행(U1)**: `vercel env pull .env.local`. 2026-09-08 실행에서 PDF 파싱까지는 갔으나
+`OPENAI_401`로 멈췄다. 로컬 `.env`는 플레이스홀더다.
+
 **실행**:
 ```bash
 node scripts/probe-digest.mjs wanrun-new-energy semiannual https://static.cninfo.com.cn/finalpage/2026-08-29/1225524978.PDF
 ```
+
+출력 JSON의 `verdict`가 판정을 한 줄로 낸다. `per_chunk_returned`(조각별 산출 건수)와
+`chunk_errors`(실패한 조각)를 함께 본다. `diagnostics`는 그대로 `report_digest`에 적히는 값이다.
 
 **판정 기준** (결과를 `wanrun-recall.md`의 28건과 대조):
 - `rows ≈ 3` → 현재 코드가 재현한다. **T1 필수.** 조각별 `returned`를 보고 프롬프트(적게 냄) vs 검증(많이 버림)을 가른다.
@@ -116,7 +137,7 @@ node scripts/probe-digest.mjs wanrun-new-energy semiannual https://static.cninfo
 
 **T1d 조각 크기** — 조각별 `returned`가 앞 조각에 쏠릴 때: `DIGEST_CHUNK_CHARS` 12,000 → 6,000. 호출 수는 2배지만 T1c가 상쇄한다.
 
-**T1e 부분 실패 보존** — 조각 타임아웃 시 `Promise.all` → `Promise.allSettled`로 바꿔 성공한 조각만 저장하고 실패 조각 수를 반환값에 남긴다. `renewReport`의 `canReplace`는 실패 조각이 있으면 false(옛 것을 지우지 않음).
+**T1e 부분 실패 보존** — ✅ **T0.2에서 먼저 끝냈다(`50739af`).** `Promise.allSettled`, 조각별 산출 건수, `renewReport`의 `canReplace`에 `partial` 반영까지 완료. T1에서 다시 하지 않는다.
 
 **검증**: 본문 보유 5건(완룬·XTC·파라시스·창위안리커·전화신재료)을 `probe-digest.mjs`로 **수정 전/후** 돌려 `rows`·정밀도 분포·조각별 `returned`를 표로 남긴다. 완룬 ≥20, 다른 4건은 감소하지 않아야 한다. `check-fact-granularity.mjs` 갱신.
 
@@ -188,13 +209,26 @@ T3 재파싱이 `visual_pages`를 채우면 "이미지 도표 있는 보고서 �
 
 ## 5. 진행 상태
 
-| 작업 | 상태 | 담당 | 갱신 |
+| 작업 | 상태 | 막는 것 | 갱신 |
 |---|---|---|---|
-| T0.1 | 스크립트 작성됨, 미실행 | — | 09-08 |
-| T0.2 | 미착수 | — | |
-| T1 | 미착수 (T0.1 대기) | — | |
-| T2 | 미착수 | — | |
-| T3 | 미착수 (T1 대기) | — | |
-| T4 | 미착수 (결정 대기) | — | |
-| T5 | 보류 | — | |
-| T6 | 미착수 | 사람 | |
+| T0.1 | 스크립트 준비 완료. **실행이 U1에 막힘** (`OPENAI_401`) | U1 | 09-08 |
+| T0.2 | ✅ 완료 (`50739af`). SQL은 U2 대기 | — | 09-08 |
+| T1e | ✅ 완료 (T0.2에 포함) | — | 09-08 |
+| T1 | 미착수 | T0.1 | |
+| T2 | 미착수. 코드는 키 없이 쓸 수 있고 재생성만 U1 필요 | (부분) U1 | |
+| T3 | 미착수 | T1 | |
+| T4 | 미착수 | U4 | |
+| T5 | 보류 | T3 | |
+| T6 | 미착수 | U1·사람 | |
+
+### 다음 사람이 바로 할 수 있는 것
+
+1. U1이 끝났으면 **T0.1 실행** → `verdict`를 보고 T1 범위를 정한다.
+2. U1을 기다리는 동안 **T2 코드 작성**(`lib/vector-ingestion.js` `embedEvents`에 시점 정밀도·근거·상대방 추가 + 회귀). 재생성 스크립트는 쓰되 실행은 U1 뒤로 미룬다.
+3. U4 결정이 나면 **T4**는 LLM 호출 0회라 언제든 시작할 수 있다.
+
+### 손대면 안 되는 것
+
+- `lib/compare-report.js`, `app/app.js`는 다른 세션이 작업 중일 수 있다. 커밋 전 `git status`로 확인한다.
+- `market_financial`·`report_metric`·`knowledge_chunk`에 DELETE/UPDATE를 돌리지 않는다. T4는 읽기만 한다.
+- `REPORT_TEXT_ONLY_EMBEDDING`을 지금 켜지 않는다(T5, 근거 미확보).
