@@ -30,6 +30,7 @@ assert.ok(digest.includes("chunkErrors.push("), "실패한 조각을 세야 한�
 for (const field of [
   "section_chars", "digest_chunks", "digest_chunks_failed", "digest_returned",
   "digest_dropped_bad_date", "digest_dropped_empty", "digest_prompt_version",
+  "digest_dropped_ungrounded_excerpt",
 ]) {
   assert.ok(digest.includes(`${field}:`), `digestReport의 diagnostics에 ${field}가 있어야 한다`);
 }
@@ -44,6 +45,15 @@ assert.ok(/export const DIGEST_PROMPT_VERSION = crypto\.createHash\("sha256"\)\.
 
 assert.ok(digest.includes("badDateSamples"), "버린 날짜 표기의 표본을 남겨야 한다");
 assert.ok(/dropped\.badDateSamples\.length < 5/.test(digest), "표본은 상한을 둬야 한다");
+
+// --- 3.1) 보고서 원문 근거 정합성 ------------------------------------------
+
+assert.ok(backfill.includes("isGroundedReportExcerpt"), "보고서 원문 발췌를 입력 조각에서 재검증해야 한다");
+assert.ok(/ungroundedExcerpt/.test(digest), "근거 없는 발췌는 저장 후보에서 제외해야 한다");
+const { isGroundedReportExcerpt } = await import("../lib/event-backfill.js");
+assert.equal(isGroundedReportExcerpt("매출 1,200만원", "표 행 | 매출 1,200만원 | 전년 900만원"), true);
+assert.equal(isGroundedReportExcerpt("매출 1,300만원", "표 행 | 매출 1,200만원 | 전년 900만원"), false, "숫자를 바꾼 발췌는 차단한다");
+assert.equal(isGroundedReportExcerpt("짧음", "짧음이 포함된 원문"), false, "너무 짧은 발췌는 근거로 쓰지 않는다");
 
 // --- 4) 세 저장 경로가 진단값을 적는다 ---------------------------------------
 
@@ -81,6 +91,7 @@ assert.ok(/RENEW_REPLACE_MIN_EVENTS = 3/.test(curation) && /RENEW_REPLACE_MIN_RA
 for (const column of [
   "section_chars", "digest_chunks", "digest_chunks_failed", "digest_returned",
   "digest_dropped_bad_date", "digest_dropped_empty", "digest_prompt_version",
+  "digest_dropped_ungrounded_excerpt",
 ]) {
   assert.ok(migration.includes(`add column if not exists ${column}`), `SQL에 ${column} 컬럼이 있어야 한다`);
 }

@@ -25,6 +25,9 @@ alter table public.report_digest
   add column if not exists digest_dropped_bad_date smallint,
   -- title_ko·fact_ko가 비어 버린 건수.
   add column if not exists digest_dropped_empty smallint,
+  -- 모델이 낸 원문 발췌가 실제로 입력한 같은 보고서 조각에 연속해서 존재하지 않아 버린 건수.
+  -- 표의 다른 행을 섞거나 숫자를 지어낸 후보를 저장 전 차단한다.
+  add column if not exists digest_dropped_ungrounded_excerpt smallint,
   -- 그때 쓴 DIGEST_INSTRUCTIONS의 해시 앞 12자. 프롬프트를 고친 뒤 어느 행이 옛 규칙으로
   -- 뽑혔는지 구분해야 재처리 대상을 고를 수 있다.
   add column if not exists digest_prompt_version text;
