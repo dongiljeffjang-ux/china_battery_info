@@ -15,6 +15,8 @@ assert.match(lib, /pair_lite\.scope_ko/);
 assert.match(lib, /upstream 공급 신호/);
 assert.match(lib, /downstream 수요 신호/);
 assert.match(lib, /제한적 해석은 허용/);
+assert.match(lib, /문단형 줄글은 금지/);
+assert.match(lib, /'• '/);
 assert.match(lib, /판가 요인 미분리/);
 assert.match(lib, /데이터 공백/);
 assert.match(lib, /PAIR_LITE_RULE/);
