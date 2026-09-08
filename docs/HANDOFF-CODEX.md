@@ -1,29 +1,38 @@
 # Codex → Claude Code 인수인계
 
-> **2026-09-08 갱신 — 기업 질의응답에 하이브리드 검색 도입. SQL 적용 대기 중.**
+> **2026-09-08 갱신 — 기업 질의응답에 하이브리드 검색 도입. 커밋·SQL 적용 완료, 배포·화면 확인 남음.**
 >
-> 기업 페이지의 근거 인용 질의응답이 코사인 단일 경로였다. `SW-2413` 같은 코드·모델명·정확한
-> 수치는 임베딩이 문맥에 녹여 버려 상위 k에 들어오지 못한다. 의미 검색과 단어 검색을 나란히
-> 돌려 RRF로 합치는 구조로 바꿨다.
+> ## 무엇을 왜
 >
-> - `supabase/hybrid-search.sql` (신규): `pgroonga` 확장, `knowledge_chunk.search_text` 생성 컬럼
->   (`content_ko + original_excerpt + content_original`), PGroonga 인덱스
->   (`TokenBigramSplitSymbolAlphaDigit`), `lexical_knowledge_chunks()` RPC.
->   **아직 SQL Editor에서 실행하지 않았다.** 이것을 돌리기 전까지 단어 검색은 404로 죽고
->   의미 검색만으로 동작한다(의도된 물러남).
-> - `lib/knowledge-search.js`: `buildLexicalQuery()`(토큰화 · 조사 변형 OR 확장 · 연산자 차단),
->   `fuseByRrf()`(k=60, 가중치 0.5/0.5), `searchKnowledge()`가 두 검색기를 `Promise.allSettled`로
->   병렬 실행. 검색기당 10건 → 후보 최대 20건 → 프롬프트 10건(`MATCH_COUNT`, `ANSWER_SCHEMA`의
->   `used_sources` 상한과 동일해야 한다. 회귀가 이 등식을 검사한다).
-> - `api/company.js`: `[KNOWLEDGE_ASK]` 로그에 `retrieval` 통계 추가. `lexical_matched`가 계속
->   0이면 SQL 미적용이거나 질의가 비어 있는 것이다.
-> - `app/app.js`·`app/styles.css`: 근거마다 `의미+단어` / `단어 검색` / `의미 검색` 칩, 하단에 융합 통계.
-> - `scripts/check-hybrid-search.mjs` (신규): 합집합·겹침 보너스·연산자 차단·404 물러남 검사.
->   25개 회귀 스크립트, `npm run check`, `git diff --check` 모두 통과.
+> 기업 페이지의 근거 인용 질의응답(`api/company.js` `runAsk` → `lib/knowledge-search.js`
+> `answerFromKnowledge`)이 임베딩 코사인 단일 경로였다. `SW-2413` 같은 코드·모델명·정확한 수치는
+> 임베딩이 주변 문맥에 녹여 버려 상위 k에 들어오지 못한다. 의미 검색(기존)과 단어 검색(신규)을
+> 나란히 돌려 RRF(Reciprocal Rank Fusion)로 순위를 합치는 구조로 바꿨다. 하이브리드는 후보를
+> 좁히는 장치가 아니라 넓히는 장치다 — 검색기당 10건 → 합집합 후보 최대 20건 → 프롬프트 10건.
 >
-> **왜 Kiwi가 아닌가**(사용자가 처음 요청한 것). 처음에 "`content_ko`에 한국어와 중국어가 섞여 있다"고
-> 표본 1건을 보고 단정했는데, 사용자가 "번역된 한국어 아니냐"고 되물어 실제 분포를 셌더니 절반만
-> 맞았다. 측정값을 남긴다.
+> ## 무엇을 바꿨나
+>
+> - `supabase/hybrid-search.sql` (신규, **운영 DB에 적용 완료**): `pgroonga` 확장,
+>   `knowledge_chunk.search_text` 생성 컬럼(`content_ko + original_excerpt + content_original`),
+>   `TokenBigramSplitSymbolAlphaDigit` 토크나이저 인덱스, `lexical_knowledge_chunks()` RPC.
+> - `lib/knowledge-search.js`: `buildLexicalQuery()`(질문 토큰화 → 불용어 제거 → 조사 변형 OR
+>   확장 → 연산자 문자 차단), `fuseByRrf()`(k=60, 가중치 0.5/0.5), `searchKnowledge()`가 두
+>   검색기를 `Promise.allSettled`로 병렬 실행하고 **독립적으로 실패**한다(아래 참고).
+>   `MATCH_COUNT`(프롬프트에 넣는 근거 수)는 `ANSWER_SCHEMA`의 `used_sources` 상한과 같아야
+>   하고, 회귀가 이 등식을 검사한다.
+> - `api/company.js`: `[KNOWLEDGE_ASK]` 로그에 `retrieval` 통계(`vector_matched`,
+>   `lexical_matched`, `candidates`, `overlapped`, `*_available`) 추가.
+> - `app/app.js`·`app/styles.css`: 근거마다 `의미+단어` / `단어 검색` / `의미 검색` 칩, 하단에
+>   융합 통계 문구. 의미 검색이 끊긴 경우와 단어 검색 색인이 없는 경우를 다른 문구로 구분.
+> - `scripts/check-hybrid-search.mjs` (신규): 합집합·겹침 보너스가 가중치로 안 뒤집힘·연산자
+>   삽입 차단·양방향 물러남(단어 검색 404 / 임베딩 429 / 둘 다 실패) 회귀. 26개 회귀 스크립트,
+>   `npm run check`, `git diff --check` 모두 통과.
+> - 커밋 `e6b772e`(`main`, **아직 push 안 함** — 배포는 사용자 승인 대기).
+>
+> ## 왜 Kiwi가 아니라 PGroonga인가 (측정 기반 정정 포함)
+>
+> 처음에 "`content_ko`에 한국어·중국어가 섞여 있다"를 표본 1건(`article_chunk`)만 보고
+> 단정했는데, 사용자가 "번역된 한국어 아니냐"고 되물어 실제 분포를 셌더니 절반만 맞았다.
 >
 > | source_type | 행 | 한글 | 한자 | 30자↑ 중국어 덩어리 |
 > |---|---|---|---|---|
@@ -32,19 +41,41 @@
 > | `headline` | 340 | 34% | 15% | 36 |
 > | `original_excerpt`(컬럼) | 1064 | 0% | 65% | — |
 >
-> `event_fact`는 사실상 순수 한국어가 맞다. 다만 기본 검색 풀(헤드라인 제외 1359행)의 44%인
-> `article_chunk`는 한자가 한글의 2배가 넘고 `original_excerpt`는 한글이 0%다. 그래서 한국어 전용
-> 분석기는 여전히 절반을 놓친다. 더 중요한 이유는 이 검색이 건져야 하는 것이 형태소가 아니라
-> 부서지지 않은 코드·모델명·고유명사라는 점이고, kiwi 모델 58.7MB를 Vercel 함수에 실을 이유도 없다.
+> `event_fact`는 사실상 순수 한국어다. 다만 기본 검색 풀(헤드라인 제외 1359행)의 44%인
+> `article_chunk`는 한자가 한글의 2배가 넘고 `original_excerpt`는 한글 0%라, 한국어 전용
+> 분석기는 여전히 절반을 놓친다. 더 중요한 이유는 이 검색이 건져야 하는 게 형태소가 아니라
+> 부서지지 않은 코드·모델명·고유명사이고, kiwi 모델(58.7MB, 공식 ONNX 빌드 없음)을 Vercel
+> 함수에 실을 이유도 없다는 것이다.
 >
-> **LLM 회계**(사용자의 "최대한 LLM을 안 쓰는 방향" 요구): 단어 검색은 Postgres 안에서 끝나 외부
+> **LLM 회계**(사용자의 "최대한 LLM 안 쓰는 방향" 요구): 단어 검색은 Postgres 안에서 끝나 외부
 > 호출이 0이다. 이 기능의 외부 호출은 질문 임베딩(OpenAI) 1회와 답변 생성(LLM) 1회 그대로다.
-> 처음 구현에서 임베딩 실패 시 전체를 throw하게 둔 것을 고쳤다. 이제 두 검색기가 독립적으로 실패하고,
-> 한쪽만 살아 있으면 그것으로 답한다. 둘 다 죽었을 때만 오류를 올린다.
+> 처음 구현에서 임베딩 실패 시 단어 검색이 멀쩡해도 전체를 throw하던 것을 고쳤다 — 이제 두
+> 검색기가 독립 실패하고, 한쪽만 살아 있으면 그것으로 답하며, 둘 다 죽었을 때만 오류를 올린다.
 >
-> **다음에 확인할 것**: SQL 적용 후 화면에서 `단어 검색`으로만 걸린 근거가 실제로 나오는지,
-> `lexical_matched`가 0이 아닌지. 재현율이 지나치면 `LEXICAL_WEIGHT`를 낮추거나
-> `QUESTION_STOPWORDS`를 넓힌다. 후보를 더 줄이는 리랭킹은 아직 없다.
+> **리랭킹(bge-reranker-v2-m3)은 검토 후 보류했다.** 568M 크로스인코더(safetensors 2.27GB,
+> ONNX 빌드 없음)라 Vercel에 못 싣고 호스팅 API(외부 호출 1회 추가, 질문당 ~$0.0003)만
+> 가능한데, 회사별 청크가 중앙값 35건(32개사 중 28곳이 60건 이하)이라 "넓게 뽑기"가 사실상
+> 전수 조회가 된다. 코퍼스가 회사당 수백 건대로 쌓이면 재검토할 만하다. 사용자 판단으로 구현
+> 안 함(코드 변경 없음).
+>
+> ## 운영 DB에서 확인한 것 (읽기 전용 검증, 파괴적 작업 없음)
+>
+> - `pgroonga` 3.2.5, `search_text` 컬럼, 인덱스, RPC 네 가지 모두 설치 확인.
+> - 색인 재현율이 `LIKE` 원문 대조와 정확히 일치: `NCM` 4/4, `811`(문자열 안 숫자 조각) 2/2,
+>   `NCM811`은 코퍼스에 원래 없어 0/0(색인 문제 아님).
+> - 점수 변별력 확인(30건 중 6.0/5.0/4.0 세 구간, 동점 아님).
+> - `search_text` 추가로 테이블 용량 +1.4MB(1,699행 기준). 무시할 수준.
+>
+> ## 다음에 확인할 것
+>
+> 1. **배포 여부를 사용자에게 확인 후 push.** push하면 Vercel이 `main`을 배포한다.
+> 2. 배포된 기업 페이지에서 질문을 던져 하단에 "의미 검색 N건 + 단어 검색 M건 …" 문구와
+>    근거별 `단어 검색`/`의미+단어` 칩이 실제로 뜨는지 확인(이 부분은 SQL·RPC 단위로만
+>    검증했고 앱을 통한 전체 경로는 아직 안 봤다).
+> 3. `lexical_matched`가 계속 0으로 로그에 남으면 `buildLexicalQuery()`가 그 질문에서 빈
+>    문자열을 냈거나(불용어만 남음) RPC 권한 문제다.
+> 4. 재현율이 지나치면(무관한 근거가 단어 검색으로 많이 들어오면) `LEXICAL_WEIGHT`를 낮추거나
+>    `QUESTION_STOPWORDS`를 넓힌다. 반대로 놓치는 게 많으면 `KO_SUFFIX_*` 조사 목록을 넓힌다.
 
 > **2026-09-07 밤 갱신 — Reshine bootstrap 구현·배포 완료. 실제 실행 검증은 아직.**
 >
