@@ -1173,6 +1173,7 @@ function compareReportParts(payload){
   const insight = r.korea_insight || {};
   const check = r.verification || {};
   const db = payload.db_updates || {};
+  const pair = payload.pair_context || null;
   const A = escapeHtml(payload.company_a), B = escapeHtml(payload.company_b);
   const traj = r.trajectory || {};
   const cmp = r.comparison || {};
@@ -1228,9 +1229,11 @@ a{color:#1674c5;text-decoration:none;word-break:break-all}
 footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8px;color:#617187}
 @media screen{body{max-width:186mm;margin:18px auto;padding:0 14px}}
 `;
+  const pairNote = pair ? `<p class="coverage-note">비교 관계 · ${escapeHtml(pair.mode || 'X')} / ${escapeHtml(pair.label_ko || '')}<br>A 근거 ${pair.coverage_a?.total || 0}건(시장 ${pair.coverage_a?.market || 0} · 기술 ${pair.coverage_a?.tech || 0}, ${escapeHtml(pair.coverage_a?.earliest || '미상')}~${escapeHtml(pair.coverage_a?.latest || '미상')}) · B 근거 ${pair.coverage_b?.total || 0}건(시장 ${pair.coverage_b?.market || 0} · 기술 ${pair.coverage_b?.tech || 0}, ${escapeHtml(pair.coverage_b?.earliest || '미상')}~${escapeHtml(pair.coverage_b?.latest || '미상')})<br>${escapeHtml(pair.note_ko || '')}</p>` : '';
   const body = `<header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
 <h1>${A} vs ${B}</h1>
 <p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 근거 범위: ${payload.include_supporting ? '공시·핵심 + 보조(참고) 데이터' : '공시·핵심 데이터만'} · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
+${pairNote}
 ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
 <h2>1. 회사별 궤적 분석</h2><div class="pair">${trajCard(A, traj.a)}${trajCard(B, traj.b)}</div>
 <h2>2. 궤적 비교</h2>${cmpRow('시장', 'market_ko')}${cmpRow('기술', 'technology_ko')}${cmpRow('갈린 지점', 'divergence_ko')}

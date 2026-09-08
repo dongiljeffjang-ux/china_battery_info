@@ -106,6 +106,19 @@ function cleanTimelineEvents(list) {
   })).filter(event => event.id && event.date && event.title && event.fact);
 }
 
+// 비교 관계는 현재 마스터의 밸류체인 태그로만 잠정 분류한다. 고객·실거래·화학계는 추정하지 않는다.
+function pairContext(a, b, eventsA, eventsB) {
+  const chainOf = company => ["cell", "cathode", "anode"].find(tag => company.type_tags.includes(tag)) || "other";
+  const chainA = chainOf(a), chainB = chainOf(b);
+  const mode = chainA === chainB ? "P" : (chainA === "cell" || chainB === "cell") ? "V" : (new Set([chainA, chainB]).size === 2 ? "C" : "X");
+  const label = { P: "동종 밸류체인(잠정)", V: "셀-소재 수직 연쇄 가능성", C: "인접 소재", X: "비교 축 미확보" }[mode];
+  const coverage = events => {
+    const dates = events.map(event => event.date).filter(Boolean).sort();
+    return { total: events.length, market: events.filter(event => event.track === "market").length, tech: events.filter(event => event.track === "tech").length, earliest: dates[0] || "미상", latest: dates.at(-1) || "미상" };
+  };
+  return { mode, label_ko: label, note_ko: "밸류체인 태그만으로 한 잠정 분류이며 고객·거래·화학계 중복은 입력에 없으면 미확보로 둡니다.", coverage_a: coverage(eventsA), coverage_b: coverage(eventsB) };
+}
+
 async function runTimelineReport(request, response) {
   const companyId = String(request.body?.companyId || "").trim();
   const company = COMPANIES.find(item => item.id === companyId);
@@ -131,10 +144,11 @@ async function runCompareReport(request, response) {
   if (idA === idB) return response.status(400).json({ status: "invalid_request", message: "서로 다른 두 회사를 골라 주세요." });
   const eventsA = cleanEvents(request.body?.eventsA);
   const eventsB = cleanEvents(request.body?.eventsB);
+  const pairContextValue = pairContext(a, b, eventsA, eventsB);
   const includeSupporting = request.body?.includeSupporting === true;
   if (!eventsA.length && !eventsB.length) return response.status(400).json({ status: "no_evidence", message: "비교 화면에 근거로 쓸 이벤트가 없습니다." });
   try {
-    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB });
+    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB, pairContext: pairContextValue });
     // 웹 검증이 확인한 것은 리포트에만 두지 않고 DB에 되돌린다. 실패해도 리포트는 그대로 낸다.
     let dbUpdates = null;
     try {
@@ -172,7 +186,7 @@ async function runCompareReport(request, response) {
       status: "ok", company_a: a.name_ko, company_b: b.name_ko,
       events_a: eventsA.length, events_b: eventsB.length, include_supporting: includeSupporting,
       generated_at: generatedAt, history_id: historyId, history_error: historyError,
-      db_updates: dbUpdates, ...result
+      db_updates: dbUpdates, pair_context: pairContextValue, ...result
     });
   } catch (error) {
     console.error("[COMPARE_REPORT_FAILED]", JSON.stringify({ idA, idB, message: error.message }));
