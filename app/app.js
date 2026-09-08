@@ -840,20 +840,57 @@ async function renderCompany(){
 
 // 리포트 출력은 제한된 Markdown(제목·불릿·표·문단)만 HTML로 바꾼다. 모델 문자열은 항상
 // escapeHtml을 거치므로 링크나 태그를 포함해도 실행 가능한 HTML이 되지 않는다.
+// 리포트 출력은 제한된 Markdown만 HTML로 바꾼다. 모델 문자열은 먼저 전부 escapeHtml을 거치므로
+// 태그가 실행되지 않는다. 그 다음 우리가 아는 표기만 되살린다 — 굵게·기울임·코드·링크·줄바꿈.
+// 링크는 http(s)만 통과시킨다.
+function inlineMarkdown(text){
+  return escapeHtml(String(text || ''))
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (whole, label, href) =>
+      `<a href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${label}</a>`);
+}
 function renderTimelineMarkdown(markdown){
   const lines = String(markdown || '').replace(/\r/g, '').split('\n');
   const out = [];
   const isTable = line => /^\s*\|.+\|\s*$/.test(line);
   const cells = line => line.trim().split('|').slice(1, -1).map(cell => cell.trim());
+  const isBullet = line => /^[-*+]\s+/.test(line);
+  const isNumbered = line => /^\d+[.)]\s+/.test(line);
   for (let index = 0; index < lines.length;) {
     const line = lines[index].trim();
     if (!line) { index += 1; continue; }
-    const heading = line.match(/^##\s+(.+)$/);
-    if (heading) { out.push(`<h2>${escapeHtml(heading[1])}</h2>`); index += 1; continue; }
-    if (/^[-*]\s+/.test(line)) {
+    // 가로줄은 표 구분선과 헷갈리지 않게 먼저 걸러낸다.
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) { out.push('<hr>'); index += 1; continue; }
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const level = Math.min(4, Math.max(2, heading[1].length + 1));
+      out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+      index += 1; continue;
+    }
+    if (/^&gt;\s?/.test(line) || /^>\s?/.test(line)) {
+      const quote = [];
+      while (index < lines.length && /^>\s?/.test(lines[index].trim())) {
+        quote.push(lines[index].trim().replace(/^>\s?/, '')); index += 1;
+      }
+      out.push(`<blockquote>${inlineMarkdown(quote.join(' '))}</blockquote>`);
+      continue;
+    }
+    if (isNumbered(line)) {
       const items = [];
-      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
-        items.push(`<li>${escapeHtml(lines[index].trim().replace(/^[-*]\s+/, ''))}</li>`);
+      while (index < lines.length && isNumbered(lines[index].trim())) {
+        items.push(`<li>${inlineMarkdown(lines[index].trim().replace(/^\d+[.)]\s+/, ''))}</li>`);
+        index += 1;
+      }
+      out.push(`<ol class="timeline-report-list">${items.join('')}</ol>`);
+      continue;
+    }
+    if (isBullet(line)) {
+      const items = [];
+      while (index < lines.length && isBullet(lines[index].trim())) {
+        items.push(`<li>${inlineMarkdown(lines[index].trim().replace(/^[-*+]\s+/, ''))}</li>`);
         index += 1;
       }
       out.push(`<ul class="timeline-report-list">${items.join('')}</ul>`);
@@ -865,15 +902,17 @@ function renderTimelineMarkdown(markdown){
       const rows = tableLines.filter((row, rowIndex) => rowIndex !== 1 || !row.every(cell => /^[\s:-]+$/.test(cell)));
       if (rows.length) {
         const [head, ...body] = rows;
-        out.push(`<div class="timeline-report-table-scroll"><table class="timeline-report-table"><thead><tr>${head.map(cell => `<th>${escapeHtml(cell)}</th>`).join('')}</tr></thead><tbody>${body.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+        out.push(`<div class="timeline-report-table-scroll"><table class="timeline-report-table"><thead><tr>${head.map(cell => `<th>${inlineMarkdown(cell)}</th>`).join('')}</tr></thead><tbody>${body.map(row => `<tr>${row.map(cell => `<td>${inlineMarkdown(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
       }
       continue;
     }
     const paragraph = [];
-    while (index < lines.length && lines[index].trim() && !/^##\s+/.test(lines[index].trim()) && !/^[-*]\s+/.test(lines[index].trim()) && !isTable(lines[index])) {
+    while (index < lines.length && lines[index].trim()
+      && !/^#{1,4}\s+/.test(lines[index].trim()) && !isBullet(lines[index].trim())
+      && !isNumbered(lines[index].trim()) && !isTable(lines[index])) {
       paragraph.push(lines[index].trim()); index += 1;
     }
-    out.push(`<p>${escapeHtml(paragraph.join(' '))}</p>`);
+    out.push(`<p>${inlineMarkdown(paragraph.join(' '))}</p>`);
   }
   return out.join('');
 }

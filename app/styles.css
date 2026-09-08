@@ -340,3 +340,11 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 /* 재무 자동 갱신 실패·지연 알림. 조용히 낡은 값을 보여 주지 않는다. */
 .traj-warn{margin:0 0 10px;padding:7px 11px;border-left:3px solid var(--alert);background:#fdf2f2;color:var(--ink);font-size:12px;line-height:1.6}
 .traj-unit-note{color:var(--muted);font-size:11px;border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+/* 리포트 본문에서 새로 살린 표기들. 표 안의 링크·코드가 셀을 밀지 않게 크기를 맞춘다. */
+.timeline-report-markdown ol.timeline-report-list{margin:8px 0;padding-left:20px}
+.timeline-report-markdown blockquote{margin:10px 0;padding:8px 12px;border-left:3px solid var(--line);background:var(--band);color:var(--muted)}
+.timeline-report-markdown hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+.timeline-report-markdown code{background:var(--band);padding:1px 5px;border-radius:3px;font-size:.92em}
+.timeline-report-markdown h3{margin:16px 0 6px}
+.timeline-report-markdown h4{margin:14px 0 6px;font-size:14px}
+.timeline-report-markdown a{color:var(--blue)}

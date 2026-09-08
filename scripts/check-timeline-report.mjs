@@ -41,6 +41,47 @@ assert.match(app, /HTML로 저장/);
 assert.match(app, /new Blob\(\[.*text\/html;charset=utf-8/s);
 assert.match(app, /function renderTimelineMarkdown/);
 assert.doesNotMatch(app, /<pre class="timeline-report-markdown">/, "리포트 Markdown 원문을 pre에 그대로 표시하면 안 된다");
+
+// Markdown 렌더러가 실제로 무엇을 살리는지 돌려서 확인한다. 문자열 검사만으로는
+// "<br>이 글자로 보인다" 같은 문제를 못 잡는다.
+const renderSource = app.slice(app.indexOf("// 리포트 출력은 제한된 Markdown만"), app.indexOf("function timelineReportParts"));
+assert.ok(renderSource, "Markdown 렌더러를 찾지 못했다");
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+const renderTimelineMarkdown = new Function("escapeHtml", renderSource + "; return renderTimelineMarkdown;")(escapeHtml);
+const rendered = renderTimelineMarkdown([
+  "# 제목",
+  "본문 **굵게** 와 *기울임* 과 `코드`.",
+  "1. 첫째",
+  "2. 둘째",
+  "- 불릿",
+  "| 지표 | 값 |",
+  "| --- | --- |",
+  "| 매출 | **4,237억** |",
+  "> 인용",
+  "---",
+  "[링크](https://example.com/a.pdf) 와 줄바꿈 <br> 태그.",
+  "<script>alert(1)</script>",
+].join("\n"));
+
+// 모델이 표에 <br>을 넣어 보내면 예전에는 글자 "<br>"이 그대로 보였다.
+assert.ok(rendered.includes("<br>"), "<br>은 줄바꿈으로 살려야 한다");
+assert.doesNotMatch(rendered, /&lt;br&gt;/, "<br>이 글자로 보이면 안 된다");
+assert.ok(rendered.includes("<strong>굵게</strong>"), "굵게 표기를 살려야 한다");
+assert.ok(rendered.includes("<em>기울임</em>"), "기울임 표기를 살려야 한다");
+assert.ok(rendered.includes("<code>코드</code>"), "코드 표기를 살려야 한다");
+assert.ok(rendered.includes("<ol"), "번호 목록을 살려야 한다");
+assert.ok(rendered.includes("<ul"), "불릿 목록을 살려야 한다");
+assert.ok(rendered.includes("<td><strong>4,237억</strong></td>"), "표 안의 표기도 살려야 한다");
+assert.ok(rendered.includes("<blockquote>"), "인용을 살려야 한다");
+assert.ok(rendered.includes("<hr>"), "가로줄을 살려야 한다");
+assert.ok(rendered.includes('rel="noreferrer"'), "링크는 새 탭으로 열어야 한다");
+assert.ok(rendered.includes("<h2>제목</h2>"), "제목 단계를 화면 위계에 맞춰 낮춰야 한다");
+// 모델이 태그를 뱉어도 실행되면 안 된다. 아는 표기만 되살린다.
+assert.doesNotMatch(rendered, /<script>/, "모델이 보낸 스크립트가 살아나면 안 된다");
+assert.ok(rendered.includes("&lt;script&gt;"), "모르는 태그는 글자로 남아야 한다");
+
+// 모델이 <br>을 따라 뱉지 않도록 입력 표에서도 그 태그를 쓰지 않는다.
+assert.doesNotMatch(timeline, /join\("<br>"\)/, "입력 표의 셀 구분에 <br>을 쓰면 모델이 그대로 따라한다");
 assert.match(app, /서버 히스토리나 DB에는 저장되지 않습니다/);
 
 console.log("timeline report checks passed");
