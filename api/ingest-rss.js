@@ -11,6 +11,7 @@ import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
 import { extractMetricsFromEvents } from "../lib/report-metrics.js";
+import { fetchCompanyFinancials, securityCodeOf } from "../lib/market-financials.js";
 import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor } from '../lib/ingestion-guard.js';
 
 // Vercel Fluid compute(2025-04 이후 새 프로젝트 기본)에서 Hobby 함수 한도는 기본·최대 300초다.
@@ -306,6 +307,48 @@ async function runMetricBackfill(response, write) {
   }
 }
 
+// 거래소 표준 손익 항목 적재. 회사당 요청 1회, LLM 0회.
+//
+// report_metric(보고서 발췌)과 나란히 둔다. 발췌 경로는 요약이 고른 항목만 있어 영업이익이
+// 72 회사-연 중 3칸뿐이었다. 이 경로는 영업이익·扣非까지 분기 단위로 채우되 원문 발췌가 없다.
+// 두 출처가 같은 칸을 채우면 서로 검증이 된다.
+const FINANCIAL_GAP_MS = 400;
+async function runFinancialBackfill(response, write, only) {
+  const targets = COMPANIES.filter((company) => securityCodeOf(company)).filter((company) => !only || company.id === only);
+  if (!targets.length) return response.status(404).json({ status: "no_target_company", only });
+  const rows = [];
+  const failed = [];
+  for (const company of targets) {
+    try {
+      const result = await fetchCompanyFinancials(company);
+      rows.push(...result.rows);
+    } catch (error) {
+      failed.push({ company_id: company.id, message: String(error.message || error).slice(0, 120) });
+    }
+    // 남의 서버를 몰아치지 않는다. 25개사면 전체 10초 남짓이라 함수 예산 안이다.
+    await new Promise((resolve) => setTimeout(resolve, FINANCIAL_GAP_MS));
+  }
+  const byMetric = {};
+  for (const row of rows) byMetric[row.metric] = (byMetric[row.metric] || 0) + 1;
+  const years = ["2023", "2024", "2025"];
+  const cells = (metric) => new Set(rows.filter((row) => row.metric === metric && years.includes(row.period)).map((row) => `${row.company_id} ${row.period}`)).size;
+  const summary = {
+    companies: targets.length, rows: rows.length, by_metric: byMetric, failed,
+    annual_cells: { revenue_total: cells("revenue_total"), operating_profit: cells("operating_profit"), net_profit_attr: cells("net_profit_attr") },
+    cells_total: targets.length * years.length,
+    sample: rows.filter((row) => row.metric === "operating_profit").slice(0, 6)
+      .map((row) => ({ company_id: row.company_id, period: row.period, value: row.value, item_zh: row.item_zh, currency: row.currency })),
+  };
+  if (!write) return response.status(200).json({ status: "preview", note: "DB에 쓰지 않았습니다. 실제로 채우려면 ?financials=write", ...summary });
+  for (let i = 0; i < rows.length; i += 300) {
+    await supabaseRest("market_financial?on_conflict=company_id,period,metric", {
+      method: "POST", prefer: "return=minimal,resolution=merge-duplicates", body: rows.slice(i, i + 300),
+    });
+  }
+  console.info("[FINANCIAL_BACKFILL_DONE]", JSON.stringify({ companies: targets.length, rows: rows.length, failed: failed.length }));
+  return response.status(200).json({ status: "ok", written: rows.length, ...summary });
+}
+
 // 다음 단계를 같은 함수의 새 호출로 넘긴다.
 //
 // 수집·본문 처리·Daily 생성을 한 호출에 몰아 넣으면 60초에 잘려 Daily가 만들어지지 않았다.
@@ -556,6 +599,10 @@ async function handleRequest(request, response) {
   // 무엇이 들어가는지 먼저 눈으로 보고 쓰기를 하기 위해서다.
   const metricsMode = String(request.query?.metrics || request.body?.metrics || "").trim();
   if (metricsMode) return runMetricBackfill(response, metricsMode === "write");
+  // 거래소 표준 손익 항목(영업이익 포함)을 데이터 제공자에서 받아 market_financial을 채운다.
+  // 역시 LLM을 쓰지 않는다. ?financials=1 미리보기 / ?financials=write 적재.
+  const financialsMode = String(request.query?.financials || request.body?.financials || "").trim();
+  if (financialsMode) return runFinancialBackfill(response, financialsMode === "write", String(request.query?.only || "").trim());
   // 브라우저가 한 홉씩 부르는 수동 백필. 서버가 자기 자신을 재귀 호출하지 않는다.
   if (request.method === "POST" && String(request.query?.curate_step || "") === "1") {
     if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
