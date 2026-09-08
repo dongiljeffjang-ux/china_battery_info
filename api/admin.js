@@ -2,19 +2,31 @@
 //
 // 화면에 보이지 않는 중간 산출물을 그대로 보여 준다: 어느 검색 경로가 무엇을 찾았는지,
 // 본문 처리가 왜 실패했는지, 기사 하나가 몇 개 청크로 어떻게 잘렸는지, 임베딩이 붙었는지,
-// 벡터 검색이 어떤 질문에 무엇을 돌려주는지. 읽기 전용이며 입장 세션으로만 연다.
+// 벡터 검색이 어떤 질문에 무엇을 돌려주는지. 입장 세션으로만 연다.
+//
+// 조회(GET)는 읽기 전용이다. 유일한 쓰기는 POST의 벡터 지식 사람 평가(eval-save/eval-delete)이며,
+// rag_evaluation 테이블에만 쓴다. 파이프라인 데이터(article/event/knowledge_chunk)는 건드리지 않는다.
 import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { requireAccess } from "../lib/access.js";
 import { searchKnowledge } from "../lib/knowledge-search.js";
 import { chunkArticleBody } from "../lib/vector-ingestion.js";
 import { pipelineManifest } from "../lib/pipeline-manifest.js";
 import { buildDataAudit } from "../lib/data-audit.js";
+import {
+  ISSUE_TAGS, VERDICTS, buildEvaluationRow, buildRetrievalSessions, questionKey, summarizeEvaluations,
+} from "../lib/rag-evaluation.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ARTICLE_LIST_LIMIT = 200;
 const AUDIT_PAGE_SIZE = 500;
 const AUDIT_MAX_ROWS = 10000;
+// 평가 화면이 한 번에 훑는 청크 수와 한 번에 돌려주는 수.
+// '미평가만'을 걸면 앞쪽이 전부 평가돼 있을 수 있으므로, 한 페이지를 채울 때까지 뒤로 더 훑는다.
+const EVAL_PAGE_SIZE = 40;
+const EVAL_SCAN_PAGE = 200;
+const EVAL_SCAN_MAX = 1200;
+const EVAL_ROWS_MAX = 20000;
 
 function day(value, fallback) { return DAY.test(value || "") ? value : fallback; }
 function nextDay(value) { const d = new Date(`${value}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); }
@@ -172,12 +184,199 @@ async function audit() {
   return { audit: buildDataAudit({ articles: articleRows, chunks: chunkRows, events: eventRows }) };
 }
 
+// ---------- 벡터 지식(RAG) 사람 평가 ----------
+//
+// 평가 대상은 두 가지다. 청크 자체의 품질과, 질문 하나에 대한 검색 결과의 정밀도.
+// 판정은 rag_evaluation에만 쌓이고 파이프라인은 그것을 읽지 않는다. 자동 삭제·자동 가중치 조정은 없다.
+
+const EVAL_SELECT = "id,subject_type,chunk_id,chunk_source_type,company_id,question,question_key,result_rank,retrieved_by,similarity,filter_company_id,include_unverified,verdict,issue_tags,note,evaluator,created_at,updated_at";
+
+// supabase/rag-evaluation.sql을 아직 실행하지 않은 상태를 502가 아니라 화면 안내로 구분한다.
+// 이 화면은 새 테이블에 의존하므로, 적용 전에 여는 것이 정상적인 경로다.
+function isSchemaMissing(error) {
+  const message = String(error?.message || "");
+  return error?.status === 404 || message.includes("PGRST205") || message.includes("rag_evaluation");
+}
+
+async function allEvaluations(subjectType = null) {
+  const filter = subjectType ? `&subject_type=eq.${enc(subjectType)}` : "";
+  const rows = [];
+  for (let offset = 0; offset < EVAL_ROWS_MAX; offset += AUDIT_PAGE_SIZE) {
+    const batch = await supabaseRest(`rag_evaluation?select=${EVAL_SELECT}${filter}&order=updated_at.desc&limit=${AUDIT_PAGE_SIZE}&offset=${offset}`);
+    rows.push(...(batch || []));
+    if (!batch || batch.length < AUDIT_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+// 화면이 쓰는 판정·사유 목록은 lib에서 그대로 내려보낸다. 화면에 따로 적어 두면 두 곳이 갈린다.
+function evalCatalog() {
+  return { verdicts: VERDICTS, issue_tags: ISSUE_TAGS };
+}
+
+async function evalSummary() {
+  let rows = [];
+  let schemaMissing = false;
+  try { rows = await allEvaluations(); }
+  catch (error) { if (!isSchemaMissing(error)) throw error; schemaMissing = true; }
+  // 진행률의 분모. 코퍼스 전체 건수는 개요 화면이 쓰는 집계 RPC에서 그대로 가져온다.
+  const overviewData = await supabaseRest("rpc/admin_overview", { method: "POST", body: {} }).catch(() => null);
+  const chunkTotals = (overviewData?.chunks_by_type || []).map((entry) => ({ source_type: entry.source_type, count: entry.count }));
+  return {
+    schema_missing: schemaMissing,
+    catalog: evalCatalog(),
+    summary: summarizeEvaluations(rows, { chunkTotals }),
+    sessions: buildRetrievalSessions(rows),
+  };
+}
+
+// 평가할 청크 목록. '미평가만'을 걸면 앞쪽이 이미 평가된 상태일 수 있어
+// 한 페이지가 찰 때까지 뒤로 더 훑는다. 훑은 만큼을 next_offset으로 돌려줘 이어서 볼 수 있게 한다.
+async function evalChunks(query) {
+  let evaluations = [];
+  let schemaMissing = false;
+  try { evaluations = await allEvaluations("chunk"); }
+  catch (error) { if (!isSchemaMissing(error)) throw error; schemaMissing = true; }
+  const byChunk = new Map(evaluations.map((row) => [row.chunk_id, row]));
+
+  const filters = [];
+  const type = safeToken(query.type);
+  if (type) filters.push(`source_type=eq.${enc(type)}`);
+  const company = safeToken(query.company);
+  if (company) filters.push(`company_id=eq.${enc(company)}`);
+  const q = String(query.q || "").trim().slice(0, 80);
+  if (q) filters.push(`or=(content_ko.ilike.*${enc(q)}*,original_excerpt.ilike.*${enc(q)}*)`);
+  const noVector = String(query.novector || "") === "1";
+  if (noVector) filters.push("embedding=is.null");
+
+  const state = ["none", "done", "good", "partial", "bad"].includes(query.state) ? query.state : "";
+  const keep = (chunk) => {
+    const evaluation = byChunk.get(chunk.id);
+    if (state === "none") return !evaluation;
+    if (state === "done") return Boolean(evaluation);
+    if (state) return evaluation?.verdict === state;
+    return true;
+  };
+
+  const limit = Math.min(120, Math.max(1, Number(query.limit) || EVAL_PAGE_SIZE));
+  const startOffset = Math.max(0, Number(query.offset) || 0);
+  const select = "id,source_type,company_id,article_id,event_id,source_name,source_url,published_at,chunk_index,chunk_total,content_ko,content_original,original_excerpt,embedding_model,created_at";
+  const matched = [];
+  let offset = startOffset;
+  let scanned = 0;
+  let exhausted = false;
+  while (matched.length < limit && scanned < EVAL_SCAN_MAX) {
+    const path = `knowledge_chunk?select=${select}${filters.length ? `&${filters.join("&")}` : ""}&order=created_at.desc,id.asc&limit=${EVAL_SCAN_PAGE}&offset=${offset}`;
+    const batch = (await supabaseRest(path)) || [];
+    scanned += batch.length;
+    offset += batch.length;
+    for (const chunk of batch) {
+      if (matched.length >= limit) break;
+      if (keep(chunk)) matched.push(chunk);
+    }
+    if (batch.length < EVAL_SCAN_PAGE) { exhausted = true; break; }
+  }
+
+  return {
+    schema_missing: schemaMissing,
+    catalog: evalCatalog(),
+    chunks: matched.map((chunk) => ({ ...chunk, evaluation: byChunk.get(chunk.id) || null })),
+    limit,
+    scanned,
+    next_offset: exhausted ? null : offset,
+    evaluated_total: byChunk.size,
+  };
+}
+
+// 검색 평가 화면이 쓰는 검색. 벡터 검색 시험과 같은 경로를 그대로 부르되,
+// 이미 이 질문으로 매긴 판정을 근거마다 붙여 돌려준다.
+async function evalSearch(query) {
+  const question = String(query.q || "").trim().slice(0, 300);
+  if (!question) return { error: "question_required" };
+  const company = safeToken(query.company);
+  const includeUnverified = String(query.unverified || "") === "1";
+  const limit = Math.min(20, Math.max(1, Number(query.limit) || 10));
+  const started = Date.now();
+  const rows = await searchKnowledge({ question, companyId: company, limit, includeUnverified });
+
+  let prior = [];
+  let schemaMissing = false;
+  const key = questionKey({ question, companyId: company, includeUnverified });
+  try { prior = await supabaseRest(`rag_evaluation?select=${EVAL_SELECT}&subject_type=eq.retrieval&question_key=eq.${enc(key)}`); }
+  catch (error) { if (!isSchemaMissing(error)) throw error; schemaMissing = true; }
+  const byChunk = new Map((prior || []).map((row) => [row.chunk_id, row]));
+
+  return {
+    schema_missing: schemaMissing,
+    catalog: evalCatalog(),
+    question, question_key: key, company, include_unverified: includeUnverified, ms: Date.now() - started,
+    retrieval: rows.retrieval || null,
+    results: rows.map((row, index) => ({
+      ...row,
+      rank: index + 1,
+      similarity: Math.round((row.similarity || 0) * 1000) / 1000,
+      evaluation: byChunk.get(row.id) || null,
+    })),
+  };
+}
+
+// 판정 저장. 같은 대상을 다시 매기면 새 행을 쌓지 않고 기존 행을 덮어쓴다.
+// 부분 유니크 인덱스는 PostgREST의 on_conflict로 지정할 수 없어, 먼저 찾아보고 갱신/삽입을 나눈다.
+async function evalSave(body) {
+  let row;
+  try { row = buildEvaluationRow(body); }
+  catch (error) { return { error: error.reason || "invalid_input" }; }
+
+  const filter = row.subject_type === "chunk"
+    ? `subject_type=eq.chunk&chunk_id=eq.${enc(row.chunk_id)}&evaluator=eq.${enc(row.evaluator)}`
+    : `subject_type=eq.retrieval&question_key=eq.${enc(row.question_key)}&chunk_id=eq.${enc(row.chunk_id)}&evaluator=eq.${enc(row.evaluator)}`;
+  const existing = await supabaseRest(`rag_evaluation?select=id&${filter}&limit=1`);
+  const now = new Date().toISOString();
+  const saved = existing?.[0]
+    ? await supabaseRest(`rag_evaluation?id=eq.${enc(existing[0].id)}&select=${EVAL_SELECT}`, { method: "PATCH", body: { ...row, updated_at: now } })
+    : await supabaseRest(`rag_evaluation?select=${EVAL_SELECT}`, { method: "POST", body: { ...row, created_at: now, updated_at: now } });
+  return { evaluation: saved?.[0] || null, replaced: Boolean(existing?.[0]) };
+}
+
+// 판정 취소. 평가 행 하나만 지운다. 대상 청크·이벤트·기사는 건드리지 않는다.
+async function evalDelete(body) {
+  const id = safeId(body.id);
+  if (!id) return { error: "invalid_id" };
+  const removed = await supabaseRest(`rag_evaluation?id=eq.${enc(id)}&select=id`, { method: "DELETE" });
+  return { deleted: (removed || []).length };
+}
+
 export default async function handler(request, response) {
-  if (request.method !== "GET") return response.status(405).json({ status: "method_not_allowed" });
   if (!requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
   const view = String(request.query?.view || "overview");
-  const handlers = { overview, audit, runs, articles, article, events, chunks, search, pipeline };
+
+  // 쓰기는 평가 저장·취소 두 가지뿐이다. 나머지 화면은 GET 전용으로 남긴다.
+  if (request.method === "POST") {
+    const writers = { "eval-save": evalSave, "eval-delete": evalDelete };
+    const write = writers[view];
+    if (!write) return response.status(400).json({ status: "unknown_view", view });
+    const body = typeof request.body === "string" ? JSON.parse(request.body || "{}") : (request.body || {});
+    try {
+      const payload = await write(body);
+      response.setHeader("Cache-Control", "no-store, max-age=0");
+      if (payload.error) return response.status(400).json({ status: payload.error });
+      return response.status(200).json({ status: "ok", view, ...payload });
+    } catch (error) {
+      console.error("[ADMIN_WRITE_FAILED]", JSON.stringify({ view, message: error.message }));
+      const missing = isSchemaMissing(error);
+      return response.status(missing ? 409 : 502).json({
+        status: missing ? "eval_schema_missing" : "admin_write_failed", view,
+        message: missing ? "supabase/rag-evaluation.sql을 아직 실행하지 않았습니다." : String(error.message || error).slice(0, 400),
+      });
+    }
+  }
+  if (request.method !== "GET") return response.status(405).json({ status: "method_not_allowed" });
+
+  const handlers = {
+    overview, audit, runs, articles, article, events, chunks, search, pipeline,
+    "eval-summary": evalSummary, "eval-chunks": evalChunks, "eval-search": evalSearch,
+  };
   const run = handlers[view];
   if (!run) return response.status(400).json({ status: "unknown_view", view });
   try {

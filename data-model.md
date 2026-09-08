@@ -67,6 +67,7 @@ erDiagram
 | `manual_metric` | `company_id`, `metric`, `value`, `period`, `source_upload_id` | 캐파·출하량·특허 등 수동 지표 |
 | `user_document` | `organization_id`, `name`, `storage_key`, `access_scope` | 특허 목록 등 사용자 자료 |
 | `pipeline_run` | `source_id`, `started_at`, `status`, `cursor`, `error` | 수집 실행·실패 격리 기록 |
+| `rag_evaluation` | `subject_type`, `chunk_id`, `question_key`, `result_rank`, `verdict`, `issue_tags`, `evaluator` | 벡터 지식의 사람 평가. 청크 품질(`chunk`)과 질문별 검색 정밀도(`retrieval`)를 나눠 기록하며, 파이프라인은 읽지 않는다 |
 
 ## 4. 표준 분류 체계
 

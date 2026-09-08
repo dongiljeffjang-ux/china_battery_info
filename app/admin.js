@@ -1,4 +1,5 @@
-// 관리자 페이지. /api/admin?view=... 를 읽어 파이프라인 중간 산출물을 그대로 그린다. 쓰기 동작은 없다.
+// 관리자 페이지. /api/admin?view=... 를 읽어 파이프라인 중간 산출물을 그대로 그린다.
+// 쓰기는 'RAG 평가' 화면의 판정 저장 하나뿐이며 rag_evaluation 테이블에만 쓴다.
 (function () {
   const $ = (selector) => document.querySelector(selector);
   const esc = (value) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -75,6 +76,17 @@
     if (result.status === 401) { location.reload(); throw new Error('access_required'); }
     const payload = await result.json().catch(() => ({}));
     if (!result.ok) throw new Error(`${payload.status || result.status}${payload.message ? ` · ${payload.message}` : ''}`);
+    return payload;
+  }
+  async function postApi(view, body) {
+    const result = await fetch(`/api/admin?view=${encodeURIComponent(view)}`, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (result.status === 401) { location.reload(); throw new Error('access_required'); }
+    const payload = await result.json().catch(() => ({}));
+    if (!result.ok) throw new Error(payload.message || payload.status || `HTTP ${result.status}`);
     return payload;
   }
   function showError(error) { const box = $('#admin-error'); box.hidden = !error; box.textContent = error ? `조회 실패: ${error.message || error}` : ''; }
@@ -259,6 +271,238 @@
       <p class="muted small" style="margin-top:14px">시계열 레이어 ${p.universe.layers.length}종: ${esc(p.universe.layers.join(', '))}</p>`;
   }
 
+  // ---------- RAG 평가 ----------
+  //
+  // 두 가지를 따로 평가한다.
+  //   청크 품질   — 벡터DB에 들어간 청크 하나가 근거로 쓸 만한가.
+  //   검색 정밀도 — 질문 하나에 검색이 돌려준 근거가 그 질문에 맞는가.
+  // 판정을 누르면 바로 저장한다. 저장 버튼을 따로 두면 라벨링 속도가 절반이 되고, 누른 줄 알았는데
+  // 안 눌린 상태가 생긴다. 사유 태그·메모를 바꾸면 판정이 있는 경우에만 다시 저장한다.
+  let evalCatalog = null;
+  let evalSchemaMissing = false;
+  let ecOffset = 0;
+  let ecNextOffset = null;
+  let ecShown = 0;
+  let retrievalContext = null;
+  const evalSub = { current: 'eval-chunks' };
+
+  function noteSchema(missing) {
+    if (missing) evalSchemaMissing = true;
+    $('#eval-schema').hidden = !evalSchemaMissing;
+  }
+
+  // 판정·사유·메모 줄. 이미 저장된 판정이 있으면 그 상태로 그린다.
+  function evalBar(subject, evaluation) {
+    const tags = evalCatalog?.issue_tags?.[subject] || [];
+    const chosen = new Set(evaluation?.issue_tags || []);
+    const verdicts = (evalCatalog?.verdicts || []).map((verdict) => `<button type="button" data-verdict="${esc(verdict.id)}" class="${evaluation?.verdict === verdict.id ? 'is-on' : ''}">${esc(subject === 'chunk' ? verdict.label_chunk : verdict.label_retrieval)}</button>`).join('');
+    return `<div class="eval-bar">
+      <div class="verdicts">${verdicts}</div>
+      <div class="eval-tags">${tags.map((tag) => `<label class="${chosen.has(tag.id) ? 'is-on' : ''}"><input type="checkbox" data-eval-tag="${esc(tag.id)}" ${chosen.has(tag.id) ? 'checked' : ''} />${esc(tag.label)}</label>`).join('')}</div>
+      <input class="eval-note" type="text" placeholder="메모(선택) · 무엇이 문제인지 한 줄" value="${esc(evaluation?.note || '')}" />
+      ${evaluation?.id ? `<button type="button" class="link small" data-eval-clear="${esc(evaluation.id)}">판정 취소</button>` : ''}
+      <span class="eval-state${evaluation ? ' saved' : ''}">${evaluation ? `저장됨 ${fmtDate(evaluation.updated_at)}` : '미평가'}</span>
+    </div>`;
+  }
+
+  function verdictClass(evaluation) {
+    if (!evaluation) return '';
+    return evaluation.verdict === 'good' ? ' is-done' : evaluation.verdict === 'bad' ? ' is-bad' : ' is-partial';
+  }
+
+  function cardPayload(card) {
+    const subject = card.dataset.evalSubject;
+    const verdict = card.querySelector('.verdicts button.is-on')?.dataset.verdict || '';
+    const issueTags = [...card.querySelectorAll('[data-eval-tag]')].filter((input) => input.checked).map((input) => input.dataset.evalTag);
+    const note = card.querySelector('.eval-note')?.value || '';
+    const base = {
+      subject_type: subject, verdict, issue_tags: issueTags, note,
+      chunk_id: card.dataset.chunkId,
+      chunk_source_type: card.dataset.chunkType || null,
+      company_id: card.dataset.company || null,
+    };
+    if (subject === 'chunk') return base;
+    return {
+      ...base,
+      question: retrievalContext?.question || '',
+      filter_company_id: retrievalContext?.company || null,
+      include_unverified: Boolean(retrievalContext?.include_unverified),
+      result_rank: Number(card.dataset.rank),
+      retrieved_by: (card.dataset.retrievedBy || '').split(',').filter(Boolean),
+      similarity: card.dataset.similarity ? Number(card.dataset.similarity) : null,
+    };
+  }
+
+  async function saveEvaluation(card) {
+    const state = card.querySelector('.eval-state');
+    const payload = cardPayload(card);
+    if (!payload.verdict) return;
+    state.className = 'eval-state';
+    state.textContent = '저장 중…';
+    try {
+      const { evaluation } = await postApi('eval-save', payload);
+      state.className = 'eval-state saved';
+      state.textContent = `저장됨 ${fmtDate(evaluation?.updated_at)}`;
+      card.className = `chunk eval-card${verdictClass(evaluation)}`;
+      const clear = card.querySelector('[data-eval-clear]');
+      if (evaluation?.id && !clear) {
+        state.insertAdjacentHTML('beforebegin', `<button type="button" class="link small" data-eval-clear="${esc(evaluation.id)}">판정 취소</button>`);
+      } else if (evaluation?.id && clear) {
+        clear.dataset.evalClear = evaluation.id;
+      }
+    } catch (error) {
+      state.className = 'eval-state failed';
+      state.textContent = `저장 실패: ${error.message}`;
+    }
+  }
+
+  async function clearEvaluation(card, id) {
+    const state = card.querySelector('.eval-state');
+    state.className = 'eval-state';
+    state.textContent = '취소 중…';
+    try {
+      await postApi('eval-delete', { id });
+      card.querySelectorAll('.verdicts button').forEach((button) => button.classList.remove('is-on'));
+      card.querySelectorAll('[data-eval-tag]').forEach((input) => { input.checked = false; input.closest('label').classList.remove('is-on'); });
+      card.querySelector('.eval-note').value = '';
+      card.className = 'chunk eval-card';
+      card.querySelector('[data-eval-clear]')?.remove();
+      state.className = 'eval-state';
+      state.textContent = '미평가';
+    } catch (error) {
+      state.className = 'eval-state failed';
+      state.textContent = `취소 실패: ${error.message}`;
+    }
+  }
+
+  // --- 청크 품질 ---
+  function chunkCard(chunk) {
+    const evaluation = chunk.evaluation;
+    return `<div class="chunk eval-card${verdictClass(evaluation)}" data-eval-subject="chunk" data-chunk-id="${esc(chunk.id)}" data-chunk-type="${esc(chunk.source_type)}" data-company="${esc(chunk.company_id || '')}">
+      <header>${tag(chunk.source_type)} ${esc(companyName(chunk.company_id))} · ${fmtDay(chunk.published_at)} · ${esc(chunk.source_name || '')} ${chunk.chunk_index != null ? `· ${chunk.chunk_index + 1}/${chunk.chunk_total}` : ''} · ${esc(chunk.embedding_model || '벡터 없음')} ${chunk.article_id ? `· <a class="link" data-article="${esc(chunk.article_id)}">기사</a>` : ''} ${chunk.source_url ? `· <a class="link" href="${esc(chunk.source_url)}" target="_blank" rel="noopener">원문</a>` : ''}</header>
+      <div class="two"><div><div class="small muted">임베딩 입력(content_ko)</div><pre>${esc(chunk.content_ko)}</pre></div>${chunk.content_original || chunk.original_excerpt ? `<div><div class="small muted">${chunk.content_original ? '원문 조각(content_original)' : '원문 발췌(original_excerpt)'}</div><pre>${esc(chunk.content_original || chunk.original_excerpt)}</pre></div>` : ''}</div>
+      ${evalBar('chunk', evaluation)}
+    </div>`;
+  }
+
+  async function loadEvalChunks(append = false) {
+    if (!append) { ecOffset = 0; ecShown = 0; $('#ec-list').innerHTML = ''; }
+    $('#ec-count').textContent = '불러오는 중…';
+    const payload = await api({
+      view: 'eval-chunks', type: $('#ec-type').value, company: $('#ec-company').value,
+      state: $('#ec-state').value, novector: $('#ec-novector').value, q: $('#ec-q').value,
+      offset: ecOffset,
+    });
+    evalCatalog = payload.catalog || evalCatalog;
+    noteSchema(payload.schema_missing);
+    ecNextOffset = payload.next_offset;
+    ecOffset = payload.next_offset ?? ecOffset;
+    ecShown += payload.chunks.length;
+    const html = payload.chunks.map(chunkCard).join('');
+    if (append) $('#ec-list').insertAdjacentHTML('beforeend', html);
+    else $('#ec-list').innerHTML = html || '<p class="muted">조건에 맞는 청크가 없습니다.</p>';
+    $('#ec-more').hidden = ecNextOffset == null;
+    $('#ec-count').textContent = `${ecShown}건 표시 · 지금까지 평가한 청크 ${num(payload.evaluated_total)}건${ecNextOffset == null ? ' · 끝까지 훑었습니다' : ''}`;
+  }
+
+  // --- 검색 정밀도 ---
+  function retrievalCard(row) {
+    const by = row.retrieved_by || [];
+    const byLabel = by.length > 1 ? '의미+단어' : by[0] === 'lexical' ? '단어 검색' : by[0] === 'vector' ? '의미 검색' : '미상';
+    return `<div class="chunk eval-card${verdictClass(row.evaluation)}" data-eval-subject="retrieval" data-chunk-id="${esc(row.id)}" data-chunk-type="${esc(row.source_type)}" data-company="${esc(row.company_id || '')}" data-rank="${esc(row.rank)}" data-retrieved-by="${esc(by.join(','))}" data-similarity="${esc(row.similarity ?? '')}">
+      <header><span class="sim">${Number(row.similarity || 0).toFixed(3)}</span> #${row.rank} <span class="tag">${esc(byLabel)}</span> ${tag(row.source_type)} ${esc(companyName(row.company_id))} · ${fmtDay(row.published_at)} · ${esc(row.source_name || '')} ${row.article_id ? `· <a class="link" data-article="${esc(row.article_id)}">기사</a>` : ''} ${row.source_url ? `· <a class="link" href="${esc(row.source_url)}" target="_blank" rel="noopener">원문</a>` : ''}</header>
+      <pre>${esc(row.content_ko)}</pre>
+      ${row.original_excerpt ? `<details><summary class="small muted">원문 발췌</summary><pre>${esc(row.original_excerpt)}</pre></details>` : ''}
+      ${evalBar('retrieval', row.evaluation)}
+    </div>`;
+  }
+
+  async function loadEvalRetrieval() {
+    const question = $('#er-q').value.trim();
+    if (!question) { $('#er-meta').textContent = '질문을 입력하세요.'; return; }
+    $('#er-meta').textContent = '검색 중…';
+    const payload = await api({
+      view: 'eval-search', q: question, company: $('#er-company').value,
+      unverified: $('#er-unverified').value, limit: $('#er-limit').value,
+    });
+    evalCatalog = payload.catalog || evalCatalog;
+    noteSchema(payload.schema_missing);
+    retrievalContext = { question: payload.question, company: payload.company || null, include_unverified: payload.include_unverified };
+    const stats = payload.retrieval;
+    const done = payload.results.filter((row) => row.evaluation).length;
+    $('#er-meta').textContent = [
+      `${payload.results.length}건 · ${payload.ms}ms`,
+      stats ? `의미 ${stats.vector_matched}건 + 단어 ${stats.lexical_matched}건 → 후보 ${stats.candidates}건(겹침 ${stats.overlapped}건)` : '',
+      stats && !stats.lexical_available ? '단어 검색 미작동' : '',
+      stats && !stats.vector_available ? '의미 검색 미작동' : '',
+      done ? `이미 평가한 근거 ${done}건` : '',
+    ].filter(Boolean).join(' · ');
+    $('#er-list').innerHTML = payload.results.length ? payload.results.map(retrievalCard).join('') : '<p class="muted">근거 없음</p>';
+  }
+
+  // --- 집계 ---
+  function scoreCell(entry) {
+    const score = entry.score == null ? '—' : entry.score.toFixed(2);
+    return `${score}<div class="bar"><span style="width:${entry.score == null ? 0 : Math.round(entry.score * 100)}%"></span></div>`;
+  }
+
+  async function loadEvalSummary() {
+    $('#es-meta').textContent = '집계 중…';
+    const payload = await api({ view: 'eval-summary' });
+    evalCatalog = payload.catalog || evalCatalog;
+    noteSchema(payload.schema_missing);
+    const { chunk, retrieval } = payload.summary;
+    const card = (label, value, sub = '', warn = false) => `<div class="stat${warn ? ' warn' : ''}"><p class="label">${esc(label)}</p><div class="value">${esc(value)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
+    const breakdown = (entry) => `쓸 만함 ${num(entry.good)} · 애매 ${num(entry.partial)} · 못 씀 ${num(entry.bad)}`;
+    const tally = (rows, labelOf) => `<div class="tbl-wrap"><table class="admin"><thead><tr><th>구분</th><th>평가</th><th>쓸 만함</th><th>애매</th><th>못 씀</th><th>점수</th></tr></thead><tbody>${rows.length ? rows.map((row) => `<tr><td>${esc(labelOf ? labelOf(row.key) : row.key)}${row.corpus != null ? `<div class="muted small">코퍼스 ${num(row.corpus)}건 중 ${Math.round((row.total / row.corpus) * 100)}%</div>` : ''}</td><td class="num">${num(row.total)}</td><td class="num">${num(row.good)}</td><td class="num">${num(row.partial)}</td><td class="num">${num(row.bad)}</td><td class="num">${scoreCell(row)}</td></tr>`).join('') : '<tr><td colspan="6" class="muted">없음</td></tr>'}</tbody></table></div>`;
+    const tagList = (tags) => tags.length ? `<div class="tbl-wrap"><table class="admin"><thead><tr><th>사유</th><th>건수</th></tr></thead><tbody>${tags.map((issue) => `<tr><td>${esc(issue.label)}</td><td class="num">${num(issue.count)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted small">기록된 사유가 없습니다.</p>';
+
+    const sessions = payload.sessions || [];
+    $('#es-body').innerHTML = `
+      <div class="cards">
+        ${card('청크 평가', `${num(chunk.evaluated)}건`, chunk.corpus ? `전체 ${num(chunk.corpus)}건의 ${chunk.coverage == null ? '—' : Math.round(chunk.coverage * 100)}%` : '')}
+        ${card('청크 점수', chunk.score == null ? '—' : chunk.score.toFixed(2), breakdown(chunk))}
+        ${card('검색 평가', `${num(retrieval.evaluated)}건`, `질문 ${num(retrieval.questions)}개`)}
+        ${card('검색 정밀도', retrieval.score == null ? '—' : retrieval.score.toFixed(2), breakdown(retrieval))}
+      </div>
+      <p class="muted small" style="margin:0 0 18px">점수는 쓸 만함 1점, 애매 0.5점, 못 씀 0점의 평균입니다. 표본이 적으면 점수보다 원 건수를 봅니다. 평가하지 않은 것은 분모에 넣지 않습니다.</p>
+      <h3 class="sub">청크 품질 · 종류별</h3>${tally(chunk.by_source_type)}
+      <h3 class="sub">청크 품질 · 회사별</h3>${tally(chunk.by_company, companyName)}
+      <h3 class="sub">청크 품질 · 사유</h3>${tagList(chunk.issue_tags)}
+      <h3 class="sub">검색 정밀도 · 어느 검색기가 건졌나</h3>${tally(retrieval.by_retriever)}
+      <p class="muted small" style="margin:6px 0 0">가중치(현재 의미 0.5 / 단어 0.5)를 바꿀 근거는 이 표뿐입니다. 한쪽 점수가 낮으면 그 검색기의 가중치를 내립니다.</p>
+      <h3 class="sub">검색 정밀도 · 순위 구간별</h3>${tally(retrieval.by_rank)}
+      <h3 class="sub">검색 정밀도 · 사유</h3>${tagList(retrieval.issue_tags)}
+      <h3 class="sub">질문별 (${sessions.length})</h3>
+      <div class="tbl-wrap"><table class="admin"><thead><tr><th>질문</th><th>회사 필터</th><th>평가</th><th>관련</th><th>부분</th><th>무관</th><th>정밀도</th><th>상위 5건</th><th>가장 앞선 무관</th><th>최근 평가</th></tr></thead><tbody>${sessions.length ? sessions.map((session) => `<tr>
+        <td>${esc(session.question)}${session.include_unverified ? ' <span class="tag">미검증 포함</span>' : ''}</td>
+        <td class="small">${esc(session.filter_company_id ? companyName(session.filter_company_id) : '전체')}</td>
+        <td class="num">${num(session.evaluated)}</td><td class="num">${num(session.good)}</td><td class="num">${num(session.partial)}</td><td class="num">${num(session.bad)}</td>
+        <td class="num">${session.precision == null ? '—' : session.precision.toFixed(2)}</td>
+        <td class="num">${session.precision_at_5 == null ? '—' : session.precision_at_5.toFixed(2)}</td>
+        <td class="num">${session.top_rank_bad == null ? '—' : `${session.top_rank_bad}위`}</td>
+        <td class="small">${fmtDate(session.last_evaluated_at)}</td></tr>`).join('') : '<tr><td colspan="10" class="muted">아직 검색 평가가 없습니다.</td></tr>'}</tbody></table></div>`;
+    $('#es-meta').textContent = `평가 ${num(chunk.evaluated + retrieval.evaluated)}건 집계`;
+  }
+
+  const evalLoaders = { 'eval-chunks': () => loadEvalChunks(false), 'eval-retrieval': loadEvalRetrieval, 'eval-summary': loadEvalSummary };
+  const evalLoaded = new Set();
+  async function showEvalSub(sub, force = false) {
+    evalSub.current = sub;
+    document.querySelectorAll('.subnav button').forEach((button) => button.classList.toggle('is-active', button.dataset.sub === sub));
+    document.querySelectorAll('.subpanel').forEach((panel) => panel.classList.toggle('is-visible', panel.id === `sub-${sub}`));
+    // 검색 평가는 질문을 받아야 돌아가므로 화면을 열었다고 자동 실행하지 않는다.
+    if (sub === 'eval-retrieval') return;
+    if (!evalLoaded.has(sub) || force) {
+      showError(null);
+      try { await evalLoaders[sub](); evalLoaded.add(sub); } catch (error) { showError(error); }
+    }
+  }
+  async function loadEval() {
+    evalLoaded.delete(evalSub.current);
+    await showEvalSub(evalSub.current, true);
+  }
+
   // ---------- 공통 ----------
   async function loadCompanies() {
     try {
@@ -267,10 +511,10 @@
       const list = payload.companies || [];
       for (const c of list) companies.set(c.id, c.name_ko);
       const options = `<option value="">전체</option>${list.map((c) => `<option value="${esc(c.id)}">${esc(c.name_ko)}</option>`).join('')}`;
-      for (const id of ['#art-company', '#ev-company', '#ch-company', '#se-company', '#audit-company']) $(id).innerHTML = options;
+      for (const id of ['#art-company', '#ev-company', '#ch-company', '#se-company', '#audit-company', '#ec-company', '#er-company']) $(id).innerHTML = options;
     } catch {}
   }
-  const loaders = { overview: loadOverview, audit: loadAudit, runs: loadRuns, articles: loadArticles, events: loadEvents, chunks: loadChunks, search: loadSearch, pipeline: loadPipeline };
+  const loaders = { overview: loadOverview, audit: loadAudit, runs: loadRuns, articles: loadArticles, events: loadEvents, chunks: loadChunks, search: loadSearch, pipeline: loadPipeline, eval: loadEval };
   const loaded = new Set();
   let current = 'overview';
   async function show(panel, force = false) {
@@ -287,6 +531,41 @@
   $('#admin-refresh').addEventListener('click', () => show(current, true));
   const reload = (id, panel) => $(id).addEventListener('click', async () => { showError(null); try { await loaders[panel](); } catch (error) { showError(error); } });
   reload('#audit-load', 'audit'); reload('#runs-load', 'runs'); reload('#art-load', 'articles'); reload('#ev-load', 'events'); reload('#ch-load', 'chunks'); reload('#se-load', 'search');
+
+  // 평가 화면 배선
+  document.querySelectorAll('.subnav button').forEach((button) => button.addEventListener('click', () => showEvalSub(button.dataset.sub)));
+  const runEval = async (fn) => { showError(null); try { await fn(); } catch (error) { showError(error); } };
+  $('#ec-load').addEventListener('click', () => runEval(() => loadEvalChunks(false)));
+  $('#ec-more').addEventListener('click', () => runEval(() => loadEvalChunks(true)));
+  $('#er-load').addEventListener('click', () => runEval(loadEvalRetrieval));
+  $('#es-load').addEventListener('click', () => runEval(loadEvalSummary));
+  for (const id of ['#ec-type', '#ec-company', '#ec-state', '#ec-novector']) $(id).addEventListener('change', () => runEval(() => loadEvalChunks(false)));
+  $('#ec-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#ec-load').click(); });
+  $('#er-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#er-load').click(); });
+
+  // 판정은 누르는 즉시 저장한다. 사유 태그·메모는 판정이 있을 때만 다시 저장한다.
+  document.addEventListener('click', (e) => {
+    const verdictButton = e.target.closest('.verdicts button');
+    if (verdictButton) {
+      const card = verdictButton.closest('.eval-card');
+      const on = verdictButton.classList.contains('is-on');
+      card.querySelectorAll('.verdicts button').forEach((button) => button.classList.remove('is-on'));
+      if (!on) { verdictButton.classList.add('is-on'); saveEvaluation(card); }
+      return;
+    }
+    const clearButton = e.target.closest('[data-eval-clear]');
+    if (clearButton) clearEvaluation(clearButton.closest('.eval-card'), clearButton.dataset.evalClear);
+  });
+  document.addEventListener('change', (e) => {
+    const tagInput = e.target.closest('[data-eval-tag]');
+    if (!tagInput) return;
+    tagInput.closest('label').classList.toggle('is-on', tagInput.checked);
+    saveEvaluation(tagInput.closest('.eval-card'));
+  });
+  document.addEventListener('blur', (e) => {
+    const note = e.target.closest && e.target.closest('.eval-note');
+    if (note) saveEvaluation(note.closest('.eval-card'));
+  }, true);
   for (const id of ['#audit-severity', '#audit-kind', '#audit-company']) $(id).addEventListener('change', renderAudit);
   $('#audit-q').addEventListener('input', renderAudit);
   $('#audit-export').addEventListener('click', exportAudit);

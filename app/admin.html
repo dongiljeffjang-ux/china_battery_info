@@ -57,6 +57,28 @@
       .error{background:#fde8e8;border:1px solid #f3b5b5;border-radius:8px;padding:10px 12px;font-size:13px;margin:0 0 16px}
       .sim{display:inline-block;min-width:44px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
       h3.sub{margin:22px 0 8px;font-size:15px}
+      .subnav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:10px}
+      .subnav button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:6px 12px;color:var(--muted);cursor:pointer;font-weight:600;font-size:12.5px}
+      .subnav button.is-active{background:#eef4ff;border-color:var(--blue);color:var(--blue)}
+      .subpanel{display:none}.subpanel.is-visible{display:block}
+      .eval-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+      .verdicts{display:flex;gap:4px}
+      .verdicts button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:5px 11px;font-size:12.5px;font-weight:650;color:var(--muted);cursor:pointer}
+      .verdicts button[data-verdict=good].is-on{background:var(--good-bg);border-color:var(--good);color:var(--good)}
+      .verdicts button[data-verdict=partial].is-on{background:#fff3d9;border-color:#c9922b;color:#8b5a10}
+      .verdicts button[data-verdict=bad].is-on{background:#fde8e8;border-color:#d97070;color:#9b1c1c}
+      .eval-tags{display:flex;gap:4px;flex-wrap:wrap}
+      .eval-tags label{border:1px solid var(--line);border-radius:999px;padding:3px 9px;font-size:11.5px;color:var(--muted);cursor:pointer;background:#fff;user-select:none}
+      .eval-tags label.is-on{background:#f1f5fb;border-color:var(--blue);color:var(--blue);font-weight:650}
+      .eval-tags input{display:none}
+      .eval-note{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;min-width:220px;flex:1 1 220px}
+      .eval-state{font-size:11.5px;color:var(--muted);white-space:nowrap}
+      .eval-state.saved{color:var(--good)}.eval-state.failed{color:#9b1c1c}
+      .eval-card.is-done{border-left:3px solid var(--good)}
+      .eval-card.is-bad{border-left:3px solid #d97070}
+      .eval-card.is-partial{border-left:3px solid #c9922b}
+      .bar{height:6px;border-radius:3px;background:#eef2f6;overflow:hidden;margin-top:6px}
+      .bar span{display:block;height:100%;background:var(--blue)}
     </style>
   </head>
   <body>
@@ -106,6 +128,7 @@
           <button data-panel="events">이벤트</button>
           <button data-panel="chunks">청크 · 임베딩</button>
           <button data-panel="search">벡터 검색 시험</button>
+          <button data-panel="eval">RAG 평가</button>
           <button data-panel="pipeline">파이프라인 · 소스와 프롬프트</button>
         </nav>
 
@@ -208,10 +231,54 @@
           <p class="muted small">비교·질의응답이 근거로 쓰는 벡터 검색을 답변 생성 없이 그대로 봅니다. 유사도는 코사인 기준이며 1에 가까울수록 가깝습니다.</p>
           <div id="se-list"></div>
         </section>
+        <section id="panel-eval" class="panel">
+          <div id="eval-schema" class="notice" hidden><b>평가 저장소가 아직 없습니다.</b> <code>supabase/rag-evaluation.sql</code>을 Supabase SQL Editor에서 실행하면 판정을 저장할 수 있습니다. 실행 전에도 목록과 검색은 볼 수 있지만 저장은 실패합니다.</div>
+          <nav class="subnav" aria-label="평가 화면">
+            <button data-sub="eval-chunks" class="is-active">청크 품질</button>
+            <button data-sub="eval-retrieval">검색 정밀도</button>
+            <button data-sub="eval-summary">집계</button>
+          </nav>
+
+          <section id="sub-eval-chunks" class="subpanel is-visible">
+            <p class="muted small" style="margin:0 0 12px">벡터DB에 들어간 청크를 하나씩 보고 <b>근거로 쓸 만한지</b> 판정합니다. 판정을 누르면 바로 저장되고, 사유 태그와 메모를 바꾸면 다시 저장됩니다. 이 판정으로 청크를 자동 삭제하지 않습니다.</p>
+            <div class="filters">
+              <label>종류<select id="ec-type"><option value="">전체</option><option value="article_chunk">article_chunk · 기사 본문</option><option value="event_fact">event_fact · 이벤트</option><option value="headline">headline · 미검증 헤드라인</option><option value="daily_report">daily_report</option><option value="report_chunk">report_chunk · 공시 PDF</option></select></label>
+              <label>회사<select id="ec-company"><option value="">전체</option></select></label>
+              <label>평가 상태<select id="ec-state"><option value="none">미평가만</option><option value="">전체</option><option value="done">평가됨</option><option value="good">근거로 쓸 만함</option><option value="partial">애매함</option><option value="bad">못 씀</option></select></label>
+              <label>벡터<select id="ec-novector"><option value="">전체</option><option value="1">벡터 없는 것만</option></select></label>
+              <label>검색<input id="ec-q" type="search" placeholder="본문·발췌" /></label>
+              <button id="ec-load" class="secondary-button" type="button">처음부터</button>
+              <button id="ec-more" class="secondary-button" type="button" hidden>다음 묶음</button>
+              <span id="ec-count" class="muted small"></span>
+            </div>
+            <div id="ec-list"></div>
+          </section>
+
+          <section id="sub-eval-retrieval" class="subpanel">
+            <p class="muted small" style="margin:0 0 12px">질문을 던져 하이브리드 검색이 돌려준 근거를 순위째로 놓고 <b>그 질문에 맞는 근거인지</b> 판정합니다. 청크 품질과는 다른 실패를 봅니다 — 청크는 멀쩡한데 질문에 안 맞는 것이 올라오는 경우입니다.</p>
+            <div class="filters">
+              <label>질문<input id="er-q" type="text" placeholder="예: CATL 나트륨 배터리 양산 시점" /></label>
+              <label>회사<select id="er-company"><option value="">전체</option></select></label>
+              <label>미검증 헤드라인<select id="er-unverified"><option value="0">제외(기본)</option><option value="1">포함</option></select></label>
+              <label>근거 수<select id="er-limit"><option value="10">10건(실제 답변과 동일)</option><option value="20">20건</option></select></label>
+              <button id="er-load" class="secondary-button" type="button">검색</button>
+              <span id="er-meta" class="muted small"></span>
+            </div>
+            <div id="er-list"></div>
+          </section>
+
+          <section id="sub-eval-summary" class="subpanel">
+            <div class="filters">
+              <button id="es-load" class="secondary-button" type="button">다시 집계</button>
+              <span id="es-meta" class="muted small"></span>
+            </div>
+            <div id="es-body"></div>
+          </section>
+        </section>
       </main>
       <aside id="drawer" class="drawer" hidden aria-label="기사 상세"></aside>
     </div>
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./admin.js?v=20260908-audit"></script>
+    <script src="./admin.js?v=20260908-eval"></script>
   </body>
 </html>
