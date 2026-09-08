@@ -11,7 +11,7 @@ assert.ok(!hopBody.includes("log.digest = await digestCompany"), "digest must no
 assert.ok(!hopBody.includes("log.web = await webBackfillCompany"), "web backfill must not run as a second heavy task in the same hop");
 assert.ok(!hopBody.includes("log.enrich = [await enrichReport"), "report enrichment must not run as a second heavy task in the same hop");
 assert.ok(api.includes("runManualCurateStep(response, hop)"), "manual curation must expose one non-recursive hop");
-assert.ok(app.includes("curate_step=1&hop=${hop}"), "browser must orchestrate independent curation hops");
+assert.ok(app.includes("curate_step=1&task=renew&hop=${hop}"), "browser must orchestrate independent report-renewal hops");
 const manualBody = app.slice(app.indexOf("async function runTimelineBackfill"), app.indexOf("async function runEmbedBackfill"));
 assert.ok(!manualBody.includes("curate_run=1"), "manual backfill must not start a recursive server chain");
 

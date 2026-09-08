@@ -4,7 +4,7 @@ import { requireAccess } from "../lib/access.js";
 import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { waitUntil } from "@vercel/functions";
-import { runCurationHop } from "../lib/curation.js";
+import { runCurationHop, runReportRenewal } from "../lib/curation.js";
 import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats, plannedSearchRequests } from "../lib/china-sources.js";
 import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
@@ -618,6 +618,20 @@ async function runManualCurateStep(response, hop) {
   }
 }
 
+async function runManualRenewStep(response) {
+  const started = Date.now();
+  try {
+    const result = await runReportRenewal();
+    await logPipeline("curate", { hop_task: "renew", renew: result, manual_step: true }, { durationMs: Date.now() - started });
+    await flushTraces();
+    return response.status(200).json({ status: "ok", task: "renew", result, more: result.status !== "idle" });
+  } catch (error) {
+    await logPipeline("curate", { hop_task: "renew", message: error.message, manual_step: true }, { status: "failed", durationMs: Date.now() - started });
+    await flushTraces();
+    return response.status(500).json({ status: "failed", task: "renew", message: error.message, more: true });
+  }
+}
+
 // 이미 저장된 연차보고서 이벤트의 시점을 다시 확인한다.
 // 기간 집계는 보고 기간 말일이 맞으므로 그대로 두고, 시점 사건만 실제 시기를 찾아 고친다.
 async function runRedate(response, companyId) {
@@ -707,6 +721,7 @@ async function handleRequest(request, response) {
   // 브라우저가 한 홉씩 부르는 수동 백필. 서버가 자기 자신을 재귀 호출하지 않는다.
   if (request.method === "POST" && String(request.query?.curate_step || "") === "1") {
     if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
+    if (String(request.query?.task || "") === "renew") return runManualRenewStep(response);
     const hop = Math.min(MAX_CURATE_HOPS, Math.max(1, Number(request.query?.hop) || 1));
     return runManualCurateStep(response, hop);
   }
