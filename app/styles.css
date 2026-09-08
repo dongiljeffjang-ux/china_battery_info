@@ -334,3 +334,6 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .traj-line.link{stroke-dasharray:4 4;opacity:.45}
 /* 툴팁이 줄 단위로 정리돼 오므로 폭을 조금 넓히고 줄 간격을 준다. */
 .hover-tip{max-width:380px;line-height:1.6}
+/* 연도 구간 띠. 연간 값이 12/31에 찍혀 구간 오른쪽 끝에 서므로, 어느 해에 속한 점인지
+   경계선 하나로 판단하지 않아도 되게 한 해씩 걸러 옅게 칠한다. */
+.traj-band{fill:var(--band);opacity:.5}

@@ -1135,8 +1135,15 @@ function renderTrajectory(timeline){
     .map(event => ({ event, time: Date.UTC(Number(event.date.slice(0, 4)), Number(event.date.slice(5, 7)) - 1, Number(event.date.slice(8, 10))) }))
     .sort((a, b) => a.time - b.time);
 
+  // 연간 값을 12월 31일에 찍으면 그 해 구간의 오른쪽 끝, 즉 다음 해 경계에 붙어 선다.
+  // 2025년 매출이 2026 칸에 걸쳐 보이는 것이 그래서다. 연간 실적은 12월 31일 하루가 아니라
+  // 그 해 전체의 값이므로 연간 모드에서는 그 해 가운데에 찍는다.
+  // 분기 모드에서는 그대로 기간 끝에 둔다 — Q1·H1·Q3가 누적으로 쌓이는 순서가 흐트러지면 안 된다.
+  const pointTime = (row) => (!trajectoryQuarterly && !row.at.interim)
+    ? Date.UTC(Number(row.at.year), 6, 1)
+    : row.at.time;
   // 시간축은 지표와 사건을 모두 담는다. 한쪽만 담으면 두 층의 x가 어긋난다.
-  const times = [...rows.map(row => row.at.time), ...flags.map(flag => flag.time)];
+  const times = [...rows.map(pointTime), ...flags.map(flag => flag.time)];
   const minTime = Math.min(...times), maxTime = Math.max(...times);
   const span = Math.max(1, maxTime - minTime);
   const plotWidth = TRAJ.width - TRAJ.padX * 2;
@@ -1163,12 +1170,12 @@ function renderTrajectory(timeline){
   // 2025 연말에서 2026 분기 누적으로 넘어가는 구간은 점선으로 이어 확정 전임을 표시한다.
   const annualPoints = rows.filter(row => !row.at.interim);
   const tailPoints = rows.filter(row => row.at.interim);
-  const path = (list) => list.map((row, index) => `${index ? 'L' : 'M'}${x(row.at.time).toFixed(1)} ${y(valueOf(row)).toFixed(1)}`).join(' ');
+  const path = (list) => list.map((row, index) => `${index ? 'L' : 'M'}${x(pointTime(row)).toFixed(1)} ${y(valueOf(row)).toFixed(1)}`).join(' ');
 
   const point = (row, showLabel) => {
     const value = valueOf(row);
     if (value === null) return '';
-    const cx = x(row.at.time), cy = y(value);
+    const cx = x(pointTime(row)), cy = y(value);
     const shape = row.at.interim
       ? `<rect x="${(cx - 3).toFixed(1)}" y="${(cy - 3).toFixed(1)}" width="6" height="6" transform="rotate(45 ${cx.toFixed(1)} ${cy.toFixed(1)})" class="traj-dot interim"/>`
       : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" class="traj-dot${row.verified ? ' verified' : ''}"/>`;
@@ -1219,11 +1226,30 @@ function renderTrajectory(timeline){
   const marketBase = TRAJ.axisY + 12;
   const techBase = marketBase + laneRows * TRAJ.laneGap + 8;
 
+  // 선은 그 해가 시작되는 1월 1일에, 라벨은 그 해 구간의 가운데에 둔다.
+  // 둘을 같은 자리에 두면 12월 31일에 찍히는 연간 값 바로 오른쪽에 다음 해 라벨이 서서,
+  // 2025년 연간 매출 아래에 '2026'이 적히는 것처럼 보인다.
   const yearTicks = [];
-  for (let year = new Date(minTime).getUTCFullYear(); year <= new Date(maxTime).getUTCFullYear(); year += 1) {
-    const time = Date.UTC(year, 0, 1);
-    if (time < minTime || time > maxTime) continue;
-    yearTicks.push(`<g class="traj-tick"><line x1="${x(time).toFixed(1)}" y1="${TRAJ.plotTop}" x2="${x(time).toFixed(1)}" y2="${TRAJ.height - 14}"/><text x="${x(time).toFixed(1)}" y="${TRAJ.height - 3}">${year}</text></g>`);
+  const firstYear = new Date(minTime).getUTCFullYear(), lastYear = new Date(maxTime).getUTCFullYear();
+  for (let year = firstYear; year <= lastYear; year += 1) {
+    const boundary = Date.UTC(year, 0, 1);
+    if (boundary > minTime && boundary < maxTime) {
+      yearTicks.push(`<g class="traj-tick"><line x1="${x(boundary).toFixed(1)}" y1="${TRAJ.plotTop}" x2="${x(boundary).toFixed(1)}" y2="${TRAJ.height - 14}"/></g>`);
+    }
+    const bandStart = Math.max(minTime, boundary);
+    const bandEnd = Math.min(maxTime, Date.UTC(year + 1, 0, 1));
+    if (bandEnd <= bandStart) continue;
+    const left = x(bandStart), right = x(bandEnd);
+    // 연간 값은 12월 31일에 찍혀 그 해 구간의 오른쪽 끝에 선다. 구간을 한 해씩 걸러 옅게 칠해
+    // 그 점이 어느 해에 속하는지 선 하나로 판단하지 않아도 되게 한다.
+    if (year % 2 === 0) yearTicks.push(`<rect class="traj-band" x="${left.toFixed(1)}" y="${TRAJ.plotTop}" width="${(right - left).toFixed(1)}" height="${TRAJ.height - 14 - TRAJ.plotTop}"/>`);
+    // 구간이 좁으면 라벨이 옆 라벨과 겹친다. 그런 해는 적지 않는다.
+    if (right - left < 34) continue;
+    // 그 해의 값이 화면에 있으면 라벨을 그 값 바로 아래에 둔다. 축 양 끝의 해는 구간이 잘려
+    // 가운데가 밀리는데, 그러면 값과 연도가 어긋나 보인다.
+    const anchorRow = rows.find(row => row.at.year === String(year) && !row.at.interim) || rows.find(row => row.at.year === String(year));
+    const labelX = anchorRow ? x(pointTime(anchorRow)) : (left + right) / 2;
+    yearTicks.push(`<g class="traj-tick"><text x="${Math.min(Math.max(labelX, left + 12), right - 12).toFixed(1)}" y="${TRAJ.height - 3}">${year}</text></g>`);
   }
 
   const chips = available.map(metric => `<button type="button" class="traj-chip${metric === trajectoryMetric ? ' active' : ''}" data-metric="${escapeHtml(metric)}">${escapeHtml(METRIC_LABELS[metric] || metric)}</button>`).join('');
