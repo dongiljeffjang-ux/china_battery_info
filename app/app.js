@@ -1076,6 +1076,7 @@ async function askKnowledge(event){
   const question = input.value.trim();
   if (question.length < 2) return;
   const scoped = document.querySelector('#ask-scope-company').checked && currentCompany;
+  // 검증된 기사·이벤트·Daily는 기본 검색 대상이다. 이 옵션은 본문 검증 전 헤드라인까지 넓힌다.
   const includeUnverified = document.querySelector('#ask-include-unverified').checked;
   button.disabled = true; button.textContent = '찾는 중…';
   target.innerHTML = '<p class="ask-empty">근거를 검색하고 있습니다…</p>';

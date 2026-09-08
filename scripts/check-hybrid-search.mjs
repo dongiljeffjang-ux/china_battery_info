@@ -11,7 +11,7 @@ process.env.OPENAI_API_KEY = "test-key";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test";
 
-const { buildLexicalQuery, fuseByRrf, searchKnowledge } = await import("../lib/knowledge-search.js");
+const { buildLexicalQuery, expandDomainQuestion, fuseByRrf, searchKnowledge } = await import("../lib/knowledge-search.js");
 
 // --- 1) 질의 조립 -----------------------------------------------------------
 
@@ -37,6 +37,26 @@ assert.ok(!/[()~:\\]/.test(injected), `질의 연산자 문자가 새어 나가�
 // 뽑을 것이 없으면 빈 문자열. 호출자는 이때 단어 검색을 건너뛴다.
 assert.equal(buildLexicalQuery("무엇"), "", "불용어만 남으면 질의를 만들지 않는다");
 assert.equal(buildLexicalQuery(""), "", "빈 질문이면 질의를 만들지 않는다");
+
+const sodiumQuery = expandDomainQuestion("소금 배터리 양산 회사는?");
+for (const term of ["소금", "소듐", "나트륨", "sodium-ion", "钠电", "钠离子"]) {
+  assert.ok(sodiumQuery.includes(term), `소금 배터리 질문에 ${term} 동의어가 포함돼야 한다`);
+}
+assert.equal(expandDomainQuestion("업황 흐름"), "업황 흐름", "사전에 없는 질문은 바꾸지 않는다");
+
+const industryQueries = [
+  ["전고체 양산", ["固态电池", "mass production", "量产"]],
+  ["LFP 양극재 증설", ["磷酸铁锂", "cathode material", "扩产"]],
+  ["인조흑연 출하량", ["artificial graphite", "人造石墨", "shipments", "出货量"]],
+  ["ESS 급속충전", ["energy storage system", "储能", "fast charging", "快充"]],
+  ["CATL 점유율", ["宁德时代", "Contemporary Amperex Technology", "market share", "市场份额"]],
+  ["비야디 공급망", ["BYD", "比亚迪", "supply chain", "供应链"]],
+  ["영업이익과 해외매출", ["operating profit", "营业利润", "overseas revenue", "境外收入"]],
+];
+for (const [question, expected] of industryQueries) {
+  const expanded = expandDomainQuestion(question);
+  for (const term of expected) assert.ok(expanded.includes(term), `${question}에 ${term} 동의어가 포함돼야 한다`);
+}
 
 // --- 2) RRF 융합 ------------------------------------------------------------
 
