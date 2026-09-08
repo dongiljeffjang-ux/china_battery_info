@@ -12,6 +12,8 @@ import { searchKnowledge } from "../lib/knowledge-search.js";
 import { chunkArticleBody } from "../lib/vector-ingestion.js";
 import { pipelineManifest } from "../lib/pipeline-manifest.js";
 import { buildDataAudit } from "../lib/data-audit.js";
+import { COMPANIES } from "../lib/china-sources.js";
+import { digestReport } from "../lib/event-backfill.js";
 import {
   ISSUE_TAGS, VERDICTS, buildEvaluationRow, buildRetrievalSessions, questionKey, summarizeEvaluations,
 } from "../lib/rag-evaluation.js";
@@ -27,6 +29,15 @@ const EVAL_PAGE_SIZE = 40;
 const EVAL_SCAN_PAGE = 200;
 const EVAL_SCAN_MAX = 1200;
 const EVAL_ROWS_MAX = 20000;
+const PROBE_REPORTS = {
+  "wanrun-2026h1": {
+    company_id: "wanrun-new-energy",
+    kind: "semiannual",
+    url: "https://static.cninfo.com.cn/finalpage/2026-08-29/1225524978.PDF",
+  },
+};
+
+export const config = { maxDuration: 300 };
 
 function day(value, fallback) { return DAY.test(value || "") ? value : fallback; }
 function nextDay(value) { const d = new Date(`${value}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); }
@@ -155,6 +166,32 @@ async function search(query) {
   return {
     question, company, include_unverified: includeUnverified, ms: Date.now() - started,
     results: rows.map((row) => ({ ...row, similarity: Math.round((row.similarity || 0) * 1000) / 1000 })),
+  };
+}
+
+// 고정된 보고서 한 건만 현재 추출 경로로 dry-run 한다. DB·파일·LLM/추적 로그에 쓰지 않는다.
+// URL을 요청값으로 받지 않아 관리자 API가 임의 URL을 내려받는 통로가 되지 않게 한다.
+async function probeDigest(query) {
+  const preset = PROBE_REPORTS[String(query.report || "wanrun-2026h1")];
+  if (!preset) return { error: "unknown_probe_report" };
+  const company = COMPANIES.find((item) => item.id === preset.company_id);
+  if (!company) throw new Error("PROBE_COMPANY_NOT_FOUND");
+  const started = Date.now();
+  const result = await digestReport({
+    company, kind: preset.kind, knownUrl: preset.url, maxEvents: 30, timeoutMs: 120000, diagnostic: true,
+  });
+  const precision = {};
+  for (const row of result.rows) precision[row.occurred_precision] = (precision[row.occurred_precision] || 0) + 1;
+  const datedEvents = result.rows.filter((row) => row.occurred_precision === "day" || row.occurred_precision === "month").length;
+  const verdict = result.rows.length <= 5 ? "현재 코드가 저장된 결과를 재현한다 → T1(추출 수정) 필수"
+    : result.rows.length >= 20 ? "현재 코드는 훨씬 많이 낸다 → 저장된 행은 옛 코드 산출물. T3(재처리)로 직행"
+    : "중간. 조각별 산출 건수와 dropped를 보고 판단";
+  return {
+    report: preset, ms: Date.now() - started,
+    diagnostics: result.diagnostics, per_chunk_returned: result.per_chunk_returned, chunk_errors: result.chunk_errors,
+    returned: result.returned, dropped: result.dropped, rows: result.rows.length, precision, dated_events: datedEvents,
+    verdict,
+    events: result.rows.map((row) => ({ occurred_at: row.occurred_at, occurred_precision: row.occurred_precision, layer_key: row.layer_key, title_ko: row.title_ko })),
   };
 }
 
@@ -374,7 +411,7 @@ export default async function handler(request, response) {
   if (request.method !== "GET") return response.status(405).json({ status: "method_not_allowed" });
 
   const handlers = {
-    overview, audit, runs, articles, article, events, chunks, search, pipeline,
+    overview, audit, runs, articles, article, events, chunks, search, pipeline, "probe-digest": probeDigest,
     "eval-summary": evalSummary, "eval-chunks": evalChunks, "eval-search": evalSearch,
   };
   const run = handlers[view];

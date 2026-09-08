@@ -14,7 +14,7 @@ import { supabaseRest } from "../lib/supabase.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
 import { fetchEmbeddableEvents } from "../lib/curation.js";
 
-const EVENT_SELECT = "id,company_id,article_id,occurred_at,title_ko,fact_ko,trajectory_track,layer_key,entity_names,source_url,source_name,original_excerpt,original_excerpt_ko,evidence_kind,company(name_ko)";
+const EVENT_SELECT = "id,company_id,article_id,occurred_at,occurred_precision,occurred_basis,title_ko,fact_ko,trajectory_track,layer_key,entity_names,source_url,source_name,original_excerpt,original_excerpt_ko,evidence_kind,event_fact(counterparty),company(name_ko)";
 // 한 번에 되살릴 상한. 이보다 많으면 삭제 사고가 아니라 다른 문제이므로 멈추고 사람이 본다.
 const SAFETY_LIMIT = 50;
 
