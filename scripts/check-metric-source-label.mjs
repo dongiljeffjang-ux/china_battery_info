@@ -33,15 +33,34 @@ assert.ok(/report_at: row\.occurred_at/.test(merge), "발췌 전용 행은 그 �
 const helper = source.slice(source.indexOf("const REPORT_KIND_LABEL"), source.indexOf("function metricTip"));
 const label = new Function(`${helper} return sourceReportLabel;`)();
 
-assert.equal(label({ report_at: "2024-12-31", report_kind: "annual" }), "2024년 연차보고서");
-assert.equal(label({ report_at: "2026-06-30", report_kind: "semiannual" }), "2026년 반기보고서");
-assert.equal(label({ report_at: "2025-03-31", report_kind: "quarterly" }), "2025년 분기보고서");
+// 실제 값은 이벤트의 evidence_kind 그대로다: annual_report / periodic_report (2026-09-08 운영 DB).
+// 2026-09-08 감사에서 사전이 annual/semiannual/quarterly만 알아 전부 '정기보고서'로 떨어지는
+// 버그를 잡았다. 실제 값으로 검사한다.
+assert.equal(label({ period: "2024", report_kind: "annual_report" }), "2024년 연차보고서");
+assert.equal(label({ period: "2026H1", report_kind: "periodic_report" }), "2026년 반기보고서");
+assert.equal(label({ period: "2025Q3", report_kind: "periodic_report" }), "2025년 분기보고서");
+assert.equal(label({ period: "2025H2", report_kind: "periodic_report" }), "2025년 반기보고서");
+// period에 반기·분기 표기가 없는 periodic_report는 종류를 지어내지 않는다.
+assert.equal(label({ period: "2025", report_kind: "periodic_report" }), "2025년 정기보고서");
+// 연도는 occurred_at이 아니라 period에서 읽는다. 연차보고서의 사건일이 이듬해 1월로 찍힌 행이 있다.
+assert.equal(label({ period: "2023", report_at: "2024-01-05", report_kind: "annual_report" }), "2023년 연차보고서");
+// period가 없으면 occurred_at의 해로 물러난다.
+assert.equal(label({ period: null, report_at: "2024-12-31", report_kind: "annual_report" }), "2024년 연차보고서");
+// 옛 표기도 받는다.
+assert.equal(label({ period: "2024", report_kind: "annual" }), "2024년 연차보고서");
+assert.equal(label({ period: "2026H1", report_kind: "semiannual" }), "2026년 반기보고서");
 // 종류를 모르면 연도라도 남긴다. 값은 있는데 출처가 통째로 사라지면 안 된다.
-assert.equal(label({ report_at: "2024-12-31", report_kind: null }), "2024년 정기보고서");
-assert.equal(label({ report_at: "2024-12-31", report_kind: "unknown_kind" }), "2024년 정기보고서");
+assert.equal(label({ period: "2024", report_kind: null }), "2024년 정기보고서");
+assert.equal(label({ period: "2024", report_kind: "unknown_kind" }), "2024년 정기보고서");
 // 아무것도 모르면 빈 문자열. 호출자가 옛 문구로 물러난다.
-assert.equal(label({ report_at: null, report_kind: null }), "");
-assert.equal(label({ report_at: "bogus", report_kind: null }), "");
+assert.equal(label({ period: null, report_at: null, report_kind: null }), "");
+assert.equal(label({ period: "bogus", report_at: "bogus", report_kind: null }), "");
+// 사전 조회가 프로토타입 키를 타면 Object의 함수가 문자열로 찍힌다. 자기 키만 봐야 한다.
+assert.equal(label({ period: "2024", report_kind: "constructor" }), "2024년 정기보고서");
+assert.equal(label({ period: null, report_kind: "__proto__" }), "");
+// 실제 DB 값 두 가지가 '정기보고서'로 뭉개지지 않는지 — 감사에서 잡은 그 버그.
+assert.notEqual(label({ period: "2024", report_kind: "annual_report" }), "2024년 정기보고서");
+assert.notEqual(label({ period: "2026H1", report_kind: "periodic_report" }), "2026년 정기보고서");
 
 // --- 4) 툴팁이 그 문구를 쓰고, 계획·누적을 실적과 구분한다 ----------------------
 

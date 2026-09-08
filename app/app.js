@@ -1220,14 +1220,27 @@ function convertedValue(row, currency, rate){
   return rate && rate > 0 ? value / rate : null;
 }
 // 툴팁을 한 줄로 이어 붙이면 읽히지 않는다. 머리줄과 항목줄로 나눈다.
-const REPORT_KIND_LABEL = { annual: '연차보고서', semiannual: '반기보고서', quarterly: '분기보고서' };
 // 어느 보고서에서 나온 값인지. 특히 계획값은 '언제 세운 계획인지'가 값 자체만큼 중요하다.
 // 2026년 보고서가 밝힌 계획과 2022년 보고서가 밝힌 같은 문장은 전혀 다른 정보다.
+//
+// report_kind는 이벤트의 evidence_kind를 그대로 받아 'annual_report' / 'periodic_report' 두 값이다
+// (2026-09-08 운영 DB 확인: 173행 / 139행). 반기·분기는 거기 없고 period('2026H1', '2025Q3')에
+// 있다. 연도도 occurred_at이 아니라 period에서 읽는다 — 연차보고서의 사건일이 이듬해 1월로
+// 찍힌 행이 있어(1건) occurred_at의 해는 회계연도와 어긋날 수 있다.
+const REPORT_KIND_LABEL = { annual_report: '연차보고서', annual: '연차보고서', semiannual: '반기보고서', quarterly: '분기보고서' };
 function sourceReportLabel(row){
-  const year = String(row.report_at || '').slice(0, 4);
-  const kind = REPORT_KIND_LABEL[row.report_kind] || '';
-  if (!/^\d{4}$/.test(year) && !kind) return '';
-  return `${/^\d{4}$/.test(year) ? `${year}년 ` : ''}${kind || '정기보고서'}`;
+  const period = String(row.period || '').match(/^(\d{4})(H[12]|Q[1-4])?$/);
+  const year = period ? period[1] : String(row.report_at || '').slice(0, 4);
+  const hasYear = /^\d{4}$/.test(year);
+  const kindKey = String(row.report_kind || '');
+  // 사전 조회는 자기 키만 본다. 'constructor' 같은 값이 오면 Object의 함수가 문자열로 찍힌다.
+  let kind = Object.hasOwn(REPORT_KIND_LABEL, kindKey) ? REPORT_KIND_LABEL[kindKey] : '';
+  if (!kind && kindKey === 'periodic_report') {
+    const part = period?.[2] || '';
+    kind = part.startsWith('H') ? '반기보고서' : part.startsWith('Q') ? '분기보고서' : '정기보고서';
+  }
+  if (!hasYear && !kind) return '';
+  return `${hasYear ? `${year}년 ` : ''}${kind || '정기보고서'}`;
 }
 function metricTip(row, currency, rate){
   const lines = [`${periodLabel(row)}  ${metricValueText(row, currency, rate)}`, ''];
