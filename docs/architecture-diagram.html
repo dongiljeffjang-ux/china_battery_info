@@ -1,0 +1,207 @@
+<title>China Battery Lens 구조도</title>
+<style>
+  :root{
+    --ink:#16232f; --muted:#5c6b7a; --faint:#93a1ae;
+    --paper:#f7f8f9; --card:#ffffff; --line:#dde3e8;
+    --accent:#2f6f5e; --accent-soft:#e4efe9;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#e8edf1; --muted:#a3b1bd; --faint:#6b7885;
+      --paper:#12181d; --card:#181f26; --line:#2a343d;
+      --accent:#6fbfa4; --accent-soft:#1c2b26;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#e8edf1; --muted:#a3b1bd; --faint:#6b7885;
+    --paper:#12181d; --card:#181f26; --line:#2a343d;
+    --accent:#6fbfa4; --accent-soft:#1c2b26;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:"Pretendard Variable","Noto Sans KR","Inter",system-ui,sans-serif;
+    line-height:1.55;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:40px 28px 64px}
+  header{margin-bottom:28px}
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 10px;
+  }
+  h1{
+    font-size:clamp(24px,3.4vw,34px); margin:0 0 8px; letter-spacing:-.01em;
+    text-wrap:balance;
+  }
+  .sub{color:var(--muted); font-size:14.5px; margin:0; max-width:70ch}
+  .meta{
+    display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;
+  }
+  .chip{
+    font-family:var(--mono); font-size:11.5px; padding:4px 10px; border-radius:999px;
+    border:1px solid var(--line); color:var(--muted); background:var(--card);
+  }
+  .chip.llm{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+
+  .board{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:22px; margin:24px 0; overflow-x:auto;
+  }
+  .board .mermaid{min-width:1040px}
+
+  .legend{
+    display:flex; flex-wrap:wrap; gap:10px 22px; align-items:center;
+    font-size:12.5px; color:var(--muted); margin:14px 2px 0;
+  }
+  .legend b{color:var(--ink); font-weight:600}
+  .legend .dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle}
+  .dot.llm{background:var(--accent)}
+  .dot.zero{background:var(--faint)}
+
+  .grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:14px; margin-top:28px;
+  }
+  .panel{
+    background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px;
+  }
+  .panel h2{
+    font-size:13px; margin:0 0 12px; text-transform:uppercase; letter-spacing:.08em;
+    color:var(--muted); font-weight:600;
+  }
+  .panel ul{margin:0; padding:0; list-style:none; display:grid; gap:9px}
+  .panel li{
+    font-size:13.5px; display:flex; gap:8px; align-items:baseline; color:var(--ink);
+  }
+  .panel li .tag{
+    font-family:var(--mono); font-size:10.5px; color:var(--faint); flex:0 0 auto;
+    padding-top:1px;
+  }
+  .panel.done .tag{color:var(--accent)}
+  .panel.pending li{color:var(--muted)}
+
+  footer{margin-top:32px; font-size:12px; color:var(--faint)}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">China Battery Lens · 내부 아키텍처</p>
+    <h1>수집부터 화면까지, 2026-09-08 시점 구조</h1>
+    <p class="sub">Vercel 서버리스 + Supabase. LangGraph는 쓰지 않고 표기 참고용으로만 문서에 남아 있다.
+      아래 그림에서 초록 점이 있는 상자만 LLM을 호출하고, 나머지는 정규식·거래소 API·SQL로 끝난다.</p>
+    <div class="meta">
+      <span class="chip llm">🤖 LLM 5곳</span>
+      <span class="chip">추출 3모듈 · LLM 0회</span>
+      <span class="chip">테이블 7개</span>
+      <span class="chip">화면 6개</span>
+    </div>
+  </header>
+
+  <div class="board">
+    <pre class="mermaid">
+flowchart LR
+  subgraph SRC["외부 원천"]
+    PDF["정기보고서 PDF<br/>cninfo · HKEX"]
+    NEWS["뉴스<br/>웹 검색"]
+    EM["거래소 손익 표<br/>datacenter API"]
+    ECB["USD/CNY 일별<br/>ECB · Frankfurter"]
+  end
+
+  subgraph CRON["야간 크론 23:00 KST · api/ingest-rss.js"]
+    C["collect<br/>수집"]
+    P["process 🤖<br/>본문 대조 · 이벤트"]
+    D["daily 🤖<br/>Daily 리포트"]
+    K["curate 🤖<br/>보고서 정독 digestReport<br/>웹 백필 · 임베딩"]
+    F["refreshFinancialsIfDue<br/>7일 주기 · LLM 0"]
+    C --> P --> D --> K
+    C -.-> F
+  end
+
+  subgraph ADMIN["관리자 URL · 로그인 쿠키 필요"]
+    M1["?metrics=write"]
+    M2["?financials=write"]
+    M3["?fx=write"]
+  end
+
+  subgraph X["추출 · LLM 0"]
+    RM["report-metrics.js<br/>중문 발췌 → 계정 판정<br/>금액 + 물량(품목 태그)"]
+    MF["market-financials.js<br/>A주 · 홍콩 · 북경 매핑"]
+    FX["fx-rates.js<br/>누적 구간 평균"]
+  end
+
+  subgraph DB["Supabase"]
+    A[("article")]
+    E[("event<br/>original_excerpt")]
+    V[("knowledge_chunk<br/>벡터 · pgroonga")]
+    R[("report_metric<br/>312행 · 원문 발췌 보유")]
+    T[("market_financial<br/>6,098행 · 영업이익 75/75")]
+    Q[("fx_rate_period<br/>60행")]
+    L[("pipeline_log")]
+  end
+
+  NEWS --> C --> A
+  P --> E --> V
+  PDF --> K --> E
+  E --> RM --> R
+  M1 --> RM
+  EM --> MF --> T
+  ECB --> FX --> Q
+  F --> MF
+  F --> FX
+  M2 --> MF
+  M3 --> FX
+  F --> L
+
+  subgraph UI["화면 · app/app.js"]
+    U1["Daily"]
+    U2["기업 분석<br/>정량 궤적 + 월별 사건 플래그<br/>연간 · 분기 · CNY/USD<br/>사실 카드(접힘)"]
+    U3["시계열 리포트 🤖<br/>정량 표 → 방향 → 사건"]
+    U4["근거 질의응답 🤖<br/>의미 + 단어 하이브리드"]
+    U5["비교 🤖"]
+    U6["관리자 · 데이터 감사"]
+  end
+
+  D --> U1
+  R --> U2
+  T --> U2
+  Q --> U2
+  E --> U2
+  L -->|"갱신 실패 배너"| U2
+  R --> U3
+  T --> U3
+  E --> U3
+  V --> U4
+  E --> U5
+    </pre>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot llm"></span>🤖 = LLM 호출 (process · daily · curate · 시계열 리포트 · 질의응답 · 비교)</span>
+    <span><span class="dot zero"></span>나머지 전부 LLM 0회 — 정규식 · 거래소 API · SQL</span>
+  </div>
+
+  <div class="grid">
+    <div class="panel done">
+      <h2>오늘 붙은 것</h2>
+      <ul>
+        <li><span class="tag">추출</span>report-metrics.js — 중문 발췌 계정 판정, 물량 품목 태그(누적·계획 분리)</li>
+        <li><span class="tag">수집</span>market-financials.js — 거래소 표준 손익, 25개사 분기 단위 2011~</li>
+        <li><span class="tag">수집</span>fx-rates.js — 회계 기간 평균 환율</li>
+        <li><span class="tag">자동화</span>크론 내 refreshFinancialsIfDue, 실패 시 pipeline_log → 화면 배너</li>
+        <li><span class="tag">화면</span>정량 궤적(연간 실선·당해 누적 점선·분기 토글·USD) + 월별 플래그</li>
+        <li><span class="tag">리포트</span>정량 표 선행, 사건 시간순, UUID 제거</li>
+      </ul>
+    </div>
+    <div class="panel pending">
+      <h2>아직 안 붙은 것</h2>
+      <ul>
+        <li>정량 표는 벡터DB에 없음 — 질의응답은 사건 문장(event_fact)만 봄</li>
+        <li>출하량·생산능력은 요약이 담은 만큼만(음극재 17건이 최다). 본문 재정독은 P1.5</li>
+        <li>비상장 7사는 정기보고서가 없어 궤적이 뜨지 않음(사실 카드만)</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>China Battery Lens 내부 문서 · docs/architecture-2026-09-08.md 기반</footer>
+</div>

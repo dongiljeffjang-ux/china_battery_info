@@ -9,8 +9,12 @@
 --
 -- 왜 형태소 분석기가 아니라 PGroonga인가.
 --   1. knowledge_chunk.content_ko는 '[한국어 팩트 요약] + [원문 근거 청크]' 구조라
---      한국어와 중국어가 한 필드에 섞여 있다(content_original은 1699행 중 37행만 채워져 있다).
---      한국어 전용 형태소 분석기는 중국어 절반을 처리하지 못한다.
+--      한국어와 중국어가 한 필드에 섞여 있다. 한국어 전용 형태소 분석기는 중국어 쪽을 처리하지 못한다.
+--      원문을 따로 담는 content_original은 거의 비어 있다(2026-09-08 확인: 1,701행 중 37행, 2.2%).
+--      수집이 덜 된 것이 아니라 보관 정책의 결과다. 이 컬럼은 원문을 남기는 거래소 공시 경로에서만
+--      채워지고, 언론 기사 경로는 저작권 때문에 null을 넣는다. report_chunk는 아직 0행이다
+--      (REPORT_TEXT_ONLY_EMBEDDING=0). 즉 단어 검색이 실제로 훑는 중국어 원문은 이 컬럼이 아니라
+--      original_excerpt다(1,701행 중 1,064행, 62.6%).
 --   2. 이 검색이 건져야 하는 것은 형태소가 아니라 부서지지 않은 코드·고유명사다.
 --   3. PGroonga는 Postgres 안에서 끝나므로 Vercel 함수에 모델을 싣지 않는다(kiwi 모델은 58.7MB다).
 
@@ -20,6 +24,10 @@ create extension if not exists pgroonga;
 -- 2) 검색 대상 텍스트를 한 컬럼으로 모은다.
 --    본문(content_ko)만 색인하면 original_excerpt에만 있는 원문 표기를 놓친다.
 --    생성 컬럼이라 적재 코드는 손대지 않아도 항상 최신이다.
+--    다만 원문 표기의 분포는 등급마다 다르다(2026-09-08 확인). event_fact는 751행 중 724행,
+--    headline은 340행 전부에 original_excerpt가 있지만, article_chunk 598행은 0행이다.
+--    기사 청크의 단어 검색은 사실상 한국어 번역문만 대상으로 돈다. 코드·모델명은 번역문에도
+--    그대로 남아 걸리지만, 한자 표기로만 나오는 표현은 기사 청크에서 걸리지 않는다.
 alter table public.knowledge_chunk
   add column if not exists search_text text
   generated always as (
