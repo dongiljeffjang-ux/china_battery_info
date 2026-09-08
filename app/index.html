@@ -122,7 +122,7 @@
             <p>최소 최근 3년부터 현재까지, 출처가 확인된 주요 사실을 시간순으로 추적합니다.</p>
           </div>
           <div class="company-actions">
-            <button id="run-backfill-button" class="secondary-button" type="button" data-tip="서버가 20~30분 동안 유지 작업을 이어서 돌립니다. 사업 관계 추출(회사↔고객·공급사), 정기보고서(심천·상해·홍콩) 읽기와 원문 임베딩, 얇게 읽힌 보고서 보강, 비상장사 웹 백필, 사건 시점 재확인, 개념 관계 추출, 남은 임베딩 채우기입니다. 뉴스 수집과는 별개입니다.">시계열 백필 1회 실행</button>
+            <button id="run-backfill-button" class="secondary-button" type="button" data-tip="정기보고서만 한 건씩 다시 읽어 회사 시계열 이벤트와 벡터 임베딩을 갱신합니다. 다른 유지 작업은 실행하지 않습니다.">정기보고서 재처리</button>
             <button id="run-embed-button" class="secondary-button" type="button" data-tip="시계열 사실(event) 중 벡터DB(지식 검색)에 아직 들어가지 않은 항목을 임베딩합니다. LLM 사실 추출이 아니라 이미 확정된 텍스트를 임베딩 API로 색인만 합니다.">벡터DB 임베딩 채우기</button>
             <button id="export-company-timeline" class="secondary-button" type="button">Excel 내보내기</button>
           </div>
