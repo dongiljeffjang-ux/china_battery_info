@@ -166,7 +166,7 @@ async function allRows(resource, select, order = "id.asc") {
 async function audit() {
   const [articleRows, chunkRows, eventRows] = await Promise.all([
     allRows("article", "id,title_original,title_ko,summary_ko,keywords_ko,canonical_url,source_name,source_tier,discovered_via,published_at,article_company(company_id)"),
-    allRows("knowledge_chunk", "id,source_type,company_id,article_id,event_id,source_name,source_url,published_at"),
+    allRows("knowledge_chunk", "id,source_type,company_id,article_id,event_id,source_name,source_url,published_at,content_ko,content_original,original_excerpt"),
     allRows("event", "id,company_id,article_id,source_name,source_url,occurred_at"),
   ]);
   return { audit: buildDataAudit({ articles: articleRows, chunks: chunkRows, events: eventRows }) };

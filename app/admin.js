@@ -35,11 +35,11 @@
   function renderAudit() {
     const rows = filteredAuditIssues();
     $('#audit-count').textContent = `${rows.length}건 / 전체 후보 ${auditIssues.length}건`;
-    table($('#audit-table'), ['우선도', '문제 유형', '발행일·매체', '기사', '저장된 회사', '제목·요약에서 찾은 회사', '판정 이유', '영향 행'], rows.map((issue) => `<tr>
+    table($('#audit-table'), ['우선도', '문제 유형', '발행일·매체', '기사', '검사 대상 회사', '본문에서 찾은 회사', '판정 이유', '영향 행'], rows.map((issue) => `<tr>
       <td>${issue.severity === 'high' ? '<span class="tag audit-high">높음</span>' : '<span class="tag audit-review">확인 필요</span>'}</td>
       <td>${esc(auditKindLabel(issue.kind))}</td><td class="small">${fmtDay(issue.published_at)}<br>${esc(issue.source_name || '—')}</td>
       <td>${issue.article_id ? `<a class="link" data-article="${esc(issue.article_id)}">${esc(issue.title)}</a>` : esc(issue.title)}${issue.source_url ? `<div><a class="link small" href="${esc(issue.source_url)}" target="_blank" rel="noopener">원문 열기</a></div>` : ''}</td>
-      <td class="small">${esc((issue.linked_company_ids || []).map(companyName).join(', ') || (issue.record_company_id ? companyName(issue.record_company_id) : '—'))}</td>
+      <td class="small">${esc(issue.record_company_id ? companyName(issue.record_company_id) : (issue.linked_company_ids || []).map(companyName).join(', ') || '—')}${issue.record_company_id && (issue.linked_company_ids || []).length > 1 ? `<div class="muted">전체 연결: ${esc(issue.linked_company_ids.map(companyName).join(', '))}</div>` : ''}</td>
       <td class="small">${esc((issue.detected_company_ids || []).map(companyName).join(', ') || '—')}</td><td class="small">${esc(issue.reason)}</td><td class="num">${num(issue.affected_count)}</td></tr>`));
   }
 
@@ -60,9 +60,9 @@
   }
 
   function exportAudit() {
-    const header = ['우선도', '문제 유형', '발행일', '매체', '제목', '저장된 회사', '제목·요약에서 찾은 회사', '판정 이유', '영향 행', '원문 URL'];
+    const header = ['우선도', '문제 유형', '발행일', '매체', '제목', '검사 대상 회사', '본문에서 찾은 회사', '판정 이유', '영향 행', '원문 URL'];
     const csvCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const rows = filteredAuditIssues().map((issue) => [issue.severity === 'high' ? '높음' : '확인 필요', auditKindLabel(issue.kind), fmtDay(issue.published_at), issue.source_name, issue.title, (issue.linked_company_ids || []).map(companyName).join(', ') || companyName(issue.record_company_id), (issue.detected_company_ids || []).map(companyName).join(', '), issue.reason, issue.affected_count, issue.source_url].map(csvCell).join(','));
+    const rows = filteredAuditIssues().map((issue) => [issue.severity === 'high' ? '높음' : '확인 필요', auditKindLabel(issue.kind), fmtDay(issue.published_at), issue.source_name, issue.title, issue.record_company_id ? companyName(issue.record_company_id) : (issue.linked_company_ids || []).map(companyName).join(', '), (issue.detected_company_ids || []).map(companyName).join(', '), issue.reason, issue.affected_count, issue.source_url].map(csvCell).join(','));
     const blob = new Blob([`\uFEFF${[header.map(csvCell).join(','), ...rows].join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `china-battery-data-audit-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
   }

@@ -19,4 +19,20 @@ const aligned = buildDataAudit({
 assert.equal(aligned.issues.find((issue) => issue.kind === "chunk_company_mismatch")?.affected_count, 2);
 assert.ok(aligned.issues.some((issue) => issue.kind === "event_orphan_article"));
 
+// 제목에는 CATL·BYD만 보이지만 본문에는 EVE까지 등장하는 다중 회사 기사다.
+// 본문을 읽지 않고 제목·요약만 보면 EVE 연결을 오분류로 잘못 올린다.
+const multiCompany = buildDataAudit({
+  articles: [{
+    id: "a2", title_ko: "세계 동력배터리 대회에서 CATL·BYD 기술 논의", discovered_via: "web_search_openai",
+    article_company: [{ company_id: "byd" }, { company_id: "catl" }, { company_id: "eve-energy" }],
+  }],
+  chunks: [{ article_id: "a2", company_id: "eve-energy", source_type: "article_chunk", content_ko: "본문에서 EVE Energy의 차세대 배터리 기술도 함께 다뤘다." }],
+  companies: [
+    ...companies,
+    { id: "catl", name_ko: "닝더스다이(CATL)", name_zh: "宁德时代", name_en: "CATL", aliases: ["宁德时代", "CATL"] },
+    { id: "eve-energy", name_ko: "이브에너지(EVE Energy)", name_zh: "亿纬锂能", name_en: "EVE Energy", aliases: ["亿纬锂能", "EVE Energy"] },
+  ],
+});
+assert.equal(multiCompany.issues.length, 0, "본문에 EVE가 있으면 회사 불일치 후보가 아니어야 한다");
+
 console.log("data audit checks passed");
