@@ -1188,6 +1188,7 @@ function compareReportParts(payload){
   const A = escapeHtml(payload.company_a), B = escapeHtml(payload.company_b);
   const traj = r.trajectory || {};
   const cmp = r.comparison || {};
+  const pairLite = r.pair_lite || {};
   // 1단계: 각 회사의 시장·기술 궤적을 회사별로 보여준다. 2단계 비교는 그 아래에 축별로 묶는다.
   const trajCard = (who, node) => `
     <div class="col"><p class="who">${who}</p>
@@ -1217,6 +1218,12 @@ header{border-bottom:2px solid #10365f;padding-bottom:6px;margin-bottom:9px}
 h1{margin:2px 0 3px;font-size:16px;letter-spacing:-.3px}
 .meta{margin:0;font-size:8.2px;color:#617187}
 .headline{margin:0 0 8px;padding:7px 10px;border-left:3px solid #10365f;background:#f3f6fa;font-size:10.2px;font-weight:700}
+.pair-lite-report{margin:0 0 8px;padding:7px 9px;border:1px solid #cbdceb;border-radius:6px;background:#f8fbfe}
+.pair-lite-report h2{margin:0 0 5px}
+.pair-lite-report dl{display:grid;grid-template-columns:1fr 1fr;margin:0;border-top:1px solid #dbe6ef;border-left:1px solid #dbe6ef}
+.pair-lite-row{display:grid;grid-template-columns:72px minmax(0,1fr);border-right:1px solid #dbe6ef;border-bottom:1px solid #dbe6ef}
+.pair-lite-row dt{padding:4px 5px;background:#edf4fa;font-size:8px;font-weight:800;color:#10365f}
+.pair-lite-row dd{margin:0;padding:4px 5px;font-size:8.4px;word-break:keep-all}
 .axis-tag{display:inline-block;margin-right:5px;padding:0 5px;border-radius:8px;font-size:7.6px;font-weight:800;vertical-align:1px;color:#fff}
 .axis-tag.market{background:#236aa6}.axis-tag.tech{background:#8b5a10}
 .col .txt{margin:0 0 4px}
@@ -1241,10 +1248,22 @@ footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8
 @media screen{body{max-width:186mm;margin:18px auto;padding:0 14px}}
 `;
   const pairNote = pair ? `<p class="coverage-note">비교 관계 · ${escapeHtml(pair.mode || 'X')} / ${escapeHtml(pair.label_ko || '')}<br>A 근거 ${pair.coverage_a?.total || 0}건(시장 ${pair.coverage_a?.market || 0} · 기술 ${pair.coverage_a?.tech || 0}, ${escapeHtml(pair.coverage_a?.earliest || '미상')}~${escapeHtml(pair.coverage_a?.latest || '미상')}) · B 근거 ${pair.coverage_b?.total || 0}건(시장 ${pair.coverage_b?.market || 0} · 기술 ${pair.coverage_b?.tech || 0}, ${escapeHtml(pair.coverage_b?.earliest || '미상')}~${escapeHtml(pair.coverage_b?.latest || '미상')})<br>${escapeHtml(pair.note_ko || '')}</p>` : '';
+  const pairLiteRows = [
+    ['비교 범위', pairLite.scope_ko],
+    ['비교 가능성', pairLite.comparability_ko],
+    ['반대 가설', pairLite.counter_hypothesis_ko],
+    ['데이터 공백', pairLite.data_gaps_ko],
+    ['한국 소재사 시나리오', pairLite.korea_scenarios_ko],
+  ].filter(([, text]) => text).map(([label, text]) =>
+    `<div class="pair-lite-row"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(text)}</dd></div>`).join('');
+  const pairLiteSection = pairLiteRows
+    ? `<section class="pair-lite-report"><h2>0. 비교 범위·판정 기준</h2><dl>${pairLiteRows}</dl></section>`
+    : '';
   const body = `<header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
 <h1>${A} vs ${B}</h1>
 <p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 근거 범위: ${payload.include_supporting ? '공시·핵심 + 보조(참고) 데이터' : '공시·핵심 데이터만'} · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
 ${pairNote}
+${pairLiteSection}
 ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
 <h2>1. 회사별 궤적 분석</h2><div class="pair">${trajCard(A, traj.a)}${trajCard(B, traj.b)}</div>
 <h2>2. 궤적 비교</h2>${cmpRow('시장', 'market_ko')}${cmpRow('기술', 'technology_ko')}${cmpRow('갈린 지점', 'divergence_ko')}
