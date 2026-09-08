@@ -8,10 +8,13 @@ import { requireAccess } from "../lib/access.js";
 import { searchKnowledge } from "../lib/knowledge-search.js";
 import { chunkArticleBody } from "../lib/vector-ingestion.js";
 import { pipelineManifest } from "../lib/pipeline-manifest.js";
+import { buildDataAudit } from "../lib/data-audit.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ARTICLE_LIST_LIMIT = 200;
+const AUDIT_PAGE_SIZE = 500;
+const AUDIT_MAX_ROWS = 10000;
 
 function day(value, fallback) { return DAY.test(value || "") ? value : fallback; }
 function nextDay(value) { const d = new Date(`${value}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); }
@@ -149,12 +152,32 @@ async function pipeline() {
   return { pipeline: pipelineManifest() };
 }
 
+async function allRows(resource, select, order = "id.asc") {
+  const rows = [];
+  for (let offset = 0; offset < AUDIT_MAX_ROWS; offset += AUDIT_PAGE_SIZE) {
+    const batch = await supabaseRest(`${resource}?select=${select}&order=${order}&limit=${AUDIT_PAGE_SIZE}&offset=${offset}`);
+    rows.push(...(batch || []));
+    if (!batch || batch.length < AUDIT_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+// 전수 관계 검사는 서버에서 집계하고, 화면에는 수정 기능 없이 검토 후보만 돌려준다.
+async function audit() {
+  const [articleRows, chunkRows, eventRows] = await Promise.all([
+    allRows("article", "id,title_original,title_ko,summary_ko,keywords_ko,canonical_url,source_name,source_tier,discovered_via,published_at,article_company(company_id)"),
+    allRows("knowledge_chunk", "id,source_type,company_id,article_id,event_id,source_name,source_url,published_at"),
+    allRows("event", "id,company_id,article_id,source_name,source_url,occurred_at"),
+  ]);
+  return { audit: buildDataAudit({ articles: articleRows, chunks: chunkRows, events: eventRows }) };
+}
+
 export default async function handler(request, response) {
   if (request.method !== "GET") return response.status(405).json({ status: "method_not_allowed" });
   if (!requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
   const view = String(request.query?.view || "overview");
-  const handlers = { overview, runs, articles, article, events, chunks, search, pipeline };
+  const handlers = { overview, audit, runs, articles, article, events, chunks, search, pipeline };
   const run = handlers[view];
   if (!run) return response.status(400).json({ status: "unknown_view", view });
   try {

@@ -6,12 +6,65 @@
   const fmtDay = (value) => value ? String(value).slice(0, 10) : '—';
   const num = (value) => Number(value || 0).toLocaleString('ko-KR');
   const companies = new Map();
+  let auditIssues = [];
 
   function viaTag(via) {
     if (!via) return '<span class="tag none">미기록</span>';
     const cls = via.includes('openai') && via.includes('deepseek') ? 'both' : via.includes('deepseek') ? 'deepseek' : via.includes('openai') ? 'openai' : via;
     const label = { web_search_openai: 'OpenAI', web_search_deepseek: 'DeepSeek', 'web_search_deepseek+openai': 'OpenAI+DeepSeek', cninfo: 'CNINFO', catl_newsroom: 'CATL', google_news_rss: 'RSS(구)', web_search_discovered: '검색(제공자 미상)' }[via] || via;
     return `<span class="tag ${esc(cls)}">${esc(label)}</span>`;
+  }
+
+  // ---------- 데이터 감사 ----------
+  const auditKindLabel = (kind) => ({
+    company_subject_mismatch: '다른 회사명 발견', company_not_mentioned: '연결 회사명 없음', article_without_company: '기사 회사 미연결',
+    chunk_company_mismatch: '청크 회사 불일치', chunk_orphan_article: '청크 기사 누락', event_company_mismatch: '이벤트 회사 불일치', event_orphan_article: '이벤트 기사 누락',
+  })[kind] || kind;
+
+  function filteredAuditIssues() {
+    const severity = $('#audit-severity').value;
+    const kind = $('#audit-kind').value;
+    const company = $('#audit-company').value;
+    const q = $('#audit-q').value.trim().toLowerCase();
+    return auditIssues.filter((issue) => (!severity || issue.severity === severity)
+      && (!kind || issue.kind === kind)
+      && (!company || (issue.linked_company_ids || []).includes(company) || issue.record_company_id === company || (issue.detected_company_ids || []).includes(company))
+      && (!q || [issue.title, issue.source_name, issue.reason].some((value) => String(value || '').toLowerCase().includes(q))));
+  }
+
+  function renderAudit() {
+    const rows = filteredAuditIssues();
+    $('#audit-count').textContent = `${rows.length}건 / 전체 후보 ${auditIssues.length}건`;
+    table($('#audit-table'), ['우선도', '문제 유형', '발행일·매체', '기사', '저장된 회사', '제목·요약에서 찾은 회사', '판정 이유', '영향 행'], rows.map((issue) => `<tr>
+      <td>${issue.severity === 'high' ? '<span class="tag audit-high">높음</span>' : '<span class="tag audit-review">확인 필요</span>'}</td>
+      <td>${esc(auditKindLabel(issue.kind))}</td><td class="small">${fmtDay(issue.published_at)}<br>${esc(issue.source_name || '—')}</td>
+      <td>${issue.article_id ? `<a class="link" data-article="${esc(issue.article_id)}">${esc(issue.title)}</a>` : esc(issue.title)}${issue.source_url ? `<div><a class="link small" href="${esc(issue.source_url)}" target="_blank" rel="noopener">원문 열기</a></div>` : ''}</td>
+      <td class="small">${esc((issue.linked_company_ids || []).map(companyName).join(', ') || (issue.record_company_id ? companyName(issue.record_company_id) : '—'))}</td>
+      <td class="small">${esc((issue.detected_company_ids || []).map(companyName).join(', ') || '—')}</td><td class="small">${esc(issue.reason)}</td><td class="num">${num(issue.affected_count)}</td></tr>`));
+  }
+
+  async function loadAudit() {
+    $('#audit-count').textContent = '전체 데이터를 검사하는 중…';
+    const { audit } = await api({ view: 'audit' });
+    auditIssues = audit.issues || [];
+    const card = (label, value, sub = '', warn = false) => `<div class="stat${warn ? ' warn' : ''}"><p class="label">${esc(label)}</p><div class="value">${num(value)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>`;
+    $('#audit-cards').innerHTML = [
+      card('검사 기사', audit.scanned.articles, `이벤트 ${num(audit.scanned.events)} · 청크 ${num(audit.scanned.chunks)}`),
+      card('높은 우선도', audit.counts.high, '다른 회사명 또는 관계 불일치', audit.counts.high > 0),
+      card('확인 필요', audit.counts.review, '회사명이 없어 원문 판단 필요'),
+      card('전체 후보', audit.counts.total, `검사 ${fmtDate(audit.generated_at)} UTC`),
+    ].join('');
+    const kinds = [...new Set(auditIssues.map((issue) => issue.kind))].sort();
+    $('#audit-kind').innerHTML = `<option value="">전체</option>${kinds.map((kind) => `<option value="${esc(kind)}">${esc(auditKindLabel(kind))}</option>`).join('')}`;
+    renderAudit();
+  }
+
+  function exportAudit() {
+    const header = ['우선도', '문제 유형', '발행일', '매체', '제목', '저장된 회사', '제목·요약에서 찾은 회사', '판정 이유', '영향 행', '원문 URL'];
+    const csvCell = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = filteredAuditIssues().map((issue) => [issue.severity === 'high' ? '높음' : '확인 필요', auditKindLabel(issue.kind), fmtDay(issue.published_at), issue.source_name, issue.title, (issue.linked_company_ids || []).map(companyName).join(', ') || companyName(issue.record_company_id), (issue.detected_company_ids || []).map(companyName).join(', '), issue.reason, issue.affected_count, issue.source_url].map(csvCell).join(','));
+    const blob = new Blob([`\uFEFF${[header.map(csvCell).join(','), ...rows].join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `china-battery-data-audit-${new Date().toISOString().slice(0, 10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
   }
   const tag = (value) => value ? `<span class="tag ${esc(value)}">${esc(value)}</span>` : '<span class="tag none">—</span>';
   const companyName = (id) => companies.get(id) || id || '—';
@@ -214,10 +267,10 @@
       const list = payload.companies || [];
       for (const c of list) companies.set(c.id, c.name_ko);
       const options = `<option value="">전체</option>${list.map((c) => `<option value="${esc(c.id)}">${esc(c.name_ko)}</option>`).join('')}`;
-      for (const id of ['#art-company', '#ev-company', '#ch-company', '#se-company']) $(id).innerHTML = options;
+      for (const id of ['#art-company', '#ev-company', '#ch-company', '#se-company', '#audit-company']) $(id).innerHTML = options;
     } catch {}
   }
-  const loaders = { overview: loadOverview, runs: loadRuns, articles: loadArticles, events: loadEvents, chunks: loadChunks, search: loadSearch, pipeline: loadPipeline };
+  const loaders = { overview: loadOverview, audit: loadAudit, runs: loadRuns, articles: loadArticles, events: loadEvents, chunks: loadChunks, search: loadSearch, pipeline: loadPipeline };
   const loaded = new Set();
   let current = 'overview';
   async function show(panel, force = false) {
@@ -233,7 +286,10 @@
   document.querySelectorAll('.admin-nav button').forEach((b) => b.addEventListener('click', () => show(b.dataset.panel)));
   $('#admin-refresh').addEventListener('click', () => show(current, true));
   const reload = (id, panel) => $(id).addEventListener('click', async () => { showError(null); try { await loaders[panel](); } catch (error) { showError(error); } });
-  reload('#runs-load', 'runs'); reload('#art-load', 'articles'); reload('#ev-load', 'events'); reload('#ch-load', 'chunks'); reload('#se-load', 'search');
+  reload('#audit-load', 'audit'); reload('#runs-load', 'runs'); reload('#art-load', 'articles'); reload('#ev-load', 'events'); reload('#ch-load', 'chunks'); reload('#se-load', 'search');
+  for (const id of ['#audit-severity', '#audit-kind', '#audit-company']) $(id).addEventListener('change', renderAudit);
+  $('#audit-q').addEventListener('input', renderAudit);
+  $('#audit-export').addEventListener('click', exportAudit);
   $('#se-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#se-load').click(); });
   $('#art-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#art-load').click(); });
   document.addEventListener('click', (e) => {
