@@ -12,6 +12,7 @@ import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/
 import { embedEvents } from "../lib/vector-ingestion.js";
 import { extractMetricsFromEvents } from "../lib/report-metrics.js";
 import { fetchCompanyFinancials, securityCodeOf } from "../lib/market-financials.js";
+import { fetchPeriodRates } from "../lib/fx-rates.js";
 import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor } from '../lib/ingestion-guard.js';
 
 // Vercel Fluid compute(2025-04 이후 새 프로젝트 기본)에서 Hobby 함수 한도는 기본·최대 300초다.
@@ -349,6 +350,38 @@ async function runFinancialBackfill(response, write, only) {
   return response.status(200).json({ status: "ok", written: rows.length, ...summary });
 }
 
+// 기간별 평균 환율 적재. 외부 요청 1회, LLM 0회.
+//
+// 재무 표에 실제로 있는 기간만 만든다. 쓰지도 않을 기간의 환율을 미리 채우지 않는다.
+async function runFxBackfill(response, write) {
+  try {
+    const periods = new Set();
+    for (let offset = 0; ; offset += 1000) {
+      const page = await supabaseRest(`market_financial?select=period&limit=1000&offset=${offset}`);
+      for (const row of page) periods.add(row.period);
+      if (page.length < 1000) break;
+    }
+    const wanted = [...periods].sort();
+    const rows = await fetchPeriodRates(wanted);
+    const summary = {
+      periods_wanted: wanted.length, rows: rows.length,
+      missing: wanted.filter((period) => !rows.some((row) => row.period === period)),
+      sample: rows.slice(-6).map((row) => ({ period: row.period, rate_avg: Number(row.rate_avg.toFixed(4)), sample_days: row.sample_days })),
+    };
+    if (!write) return response.status(200).json({ status: "preview", note: "DB에 쓰지 않았습니다. 실제로 채우려면 ?fx=write", ...summary });
+    for (let i = 0; i < rows.length; i += 300) {
+      await supabaseRest("fx_rate_period?on_conflict=period,base,quote", {
+        method: "POST", prefer: "return=minimal,resolution=merge-duplicates", body: rows.slice(i, i + 300),
+      });
+    }
+    console.info("[FX_BACKFILL_DONE]", JSON.stringify({ rows: rows.length }));
+    return response.status(200).json({ status: "ok", written: rows.length, ...summary });
+  } catch (error) {
+    console.error("[FX_BACKFILL_FAILED]", JSON.stringify({ message: error.message }));
+    return response.status(502).json({ status: "fx_backfill_failed", message: String(error.message || error).slice(0, 400) });
+  }
+}
+
 // 다음 단계를 같은 함수의 새 호출로 넘긴다.
 //
 // 수집·본문 처리·Daily 생성을 한 호출에 몰아 넣으면 60초에 잘려 Daily가 만들어지지 않았다.
@@ -603,6 +636,9 @@ async function handleRequest(request, response) {
   // 역시 LLM을 쓰지 않는다. ?financials=1 미리보기 / ?financials=write 적재.
   const financialsMode = String(request.query?.financials || request.body?.financials || "").trim();
   if (financialsMode) return runFinancialBackfill(response, financialsMode === "write", String(request.query?.only || "").trim());
+  // 기간별 평균 환율. 재무 표에 실제로 있는 기간만 채운다. ?fx=1 미리보기 / ?fx=write 적재.
+  const fxMode = String(request.query?.fx || request.body?.fx || "").trim();
+  if (fxMode) return runFxBackfill(response, fxMode === "write");
   // 브라우저가 한 홉씩 부르는 수동 백필. 서버가 자기 자신을 재귀 호출하지 않는다.
   if (request.method === "POST" && String(request.query?.curate_step || "") === "1") {
     if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });

@@ -56,6 +56,11 @@ const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,
 
 // 정량 궤적용 지표. line_item_zh와 원문 표기를 함께 보내 화면이 계정을 밝히고 검산할 수 있게 한다.
 const METRIC_SELECT = "period,metric,value,unit,currency,line_item_zh,quantity_text,yoy_pct_stated,excerpt,report_kind,source_url,occurred_at";
+// 거래소 표준 손익 항목. 발췌는 없지만 영업이익까지 분기 단위로 있다. 두 출처를 함께 보내
+// 화면이 같은 칸을 대조하고 출처를 밝힌다.
+const FINANCIAL_SELECT = "period,metric,value,unit,currency,item_zh,raw_amount,yoy_pct,report_type,report_date,account_standard,source";
+// 기간별 평균 환율. 화면의 USD 전환에만 쓰는 표시용 계수라 회사와 무관하게 전체를 보낸다.
+const FX_SELECT = "period,base,quote,rate_avg,sample_days,window_start,window_end,source";
 
 // 근거 인용 질의응답. 새 함수 파일을 만들지 않으려고 기업 API에 붙였다.
 async function runAsk(request, response) {
@@ -326,15 +331,20 @@ async function handleRequest(request, response) {
 
   try {
     // 정량 궤적은 정기보고서에서만 온다. 지표가 없는 회사(비상장)는 빈 배열이 오고 화면이 기존 카드만 그린다.
-    const [events, metrics] = await Promise.all([
+    const [events, metrics, financials, fx] = await Promise.all([
       supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&timeline_eligibility=neq.exclude&order=occurred_at.asc`),
       supabaseRest(`report_metric?select=${METRIC_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&order=period.asc`).catch((error) => {
         console.error("[COMPANY_METRICS_FAILED]", JSON.stringify({ companyId, message: error.message }));
         return [];
       }),
+      supabaseRest(`market_financial?select=${FINANCIAL_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&order=report_date.asc`).catch((error) => {
+        console.error("[COMPANY_FINANCIALS_FAILED]", JSON.stringify({ companyId, message: error.message }));
+        return [];
+      }),
+      supabaseRest(`fx_rate_period?select=${FX_SELECT}&base=eq.USD&quote=eq.CNY&order=period.asc`).catch(() => []),
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
-    return response.status(200).json({ status: "ok", company, events, metrics });
+    return response.status(200).json({ status: "ok", company, events, metrics, financials, fx });
   } catch (error) {
     console.error("[COMPANY_QUERY_FAILED]", JSON.stringify({ companyId, message: error.message }));
     return response.status(502).json({ status: error.code || "db_error", company, events: [] });

@@ -321,3 +321,12 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .traj-detail-count{margin:0 0 8px;font-size:12px;color:var(--muted);font-weight:700}
 .traj-detail-item + .traj-detail-item{margin-top:12px;border-top:1px dotted var(--line);padding-top:10px}
 .traj-detail-item h4{margin:0 0 4px;font-size:14px}
+.traj-point-caption{font-size:9.5px;fill:var(--faint)}
+.traj-toggles{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.traj-switch{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.traj-switch button{border:0;background:#fff;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer}
+.traj-switch button.on{background:var(--pale);color:var(--blue);font-weight:700}
+.traj-range{border:1px solid var(--line);background:#fff;color:var(--muted);font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer}
+.traj-range:hover{border-color:var(--blue);color:var(--blue)}
+/* 거래소 데이터와 보고서 원문 발췌가 일치한 점. 두 출처가 서로를 검증했다는 표시다. */
+.traj-dot.verified{stroke:var(--good);stroke-width:2}

@@ -724,8 +724,10 @@ async function loadCompanyTimeline(companyId){
     // 화면 전역의 '현재 회사'로는 제목에서 걷어낼 주어를 정할 수 없다.
     companyId,
     events: (payload?.events || []).map(normalizeEvent).filter(event => /^\d{4}-\d{2}-\d{2}$/.test(event.date)),
-    // 정기보고서에서 뽑은 정량 지표. 비상장사는 빈 배열이라 궤적 영역이 통째로 숨는다.
-    metrics: payload?.metrics || []
+    // 정량 궤적의 재료. 비상장사는 셋 다 비어 궤적 영역이 통째로 숨는다.
+    metrics: payload?.metrics || [],
+    financials: payload?.financials || [],
+    fx: payload?.fx || []
   };
   if (timeline.status === 'ok') companyTimelineCache.set(companyId, timeline);
   return timeline;
@@ -989,18 +991,24 @@ function digestItemText(event, companyId){
   return combined.length > DIGEST_ITEM_CHARS ? `${combined.slice(0, DIGEST_ITEM_CHARS - 1).trimEnd()}…` : combined;
 }
 // ── 정량 궤적 ───────────────────────────────────────────────────────────────
-// 하나의 연속 시간축을 지표 선(정기보고서 수치)과 사건 플래그가 나눠 쓴다.
-// 축은 연도 칸이 아니라 날짜다 — 사건은 실제 '월' 위치에 꽂히고, 플래그에 마우스를 올리면
-// 그 사실이 툴팁으로 뜬다. 재료는 정기보고서뿐이다(뉴스 제외).
+// 하나의 연속 시간축을 지표 선과 사건 플래그가 나눠 쓴다. 축은 연도 칸이 아니라 날짜라
+// 사건이 실제 '월' 위치에 꽂히고, 플래그에 마우스를 올리면 그 사실이 툴팁으로 뜬다.
+// 재료는 정기보고서와 거래소 표준 손익 항목뿐이다(뉴스 제외).
 const METRIC_LABELS = {
-  revenue_total: '매출', net_profit_attr: '지배주주 순이익', net_profit: '순이익',
-  net_profit_excl: '扣非 순이익', operating_profit: '영업이익',
+  revenue_total: '매출', operating_profit: '영업이익', net_profit_attr: '지배주주 순이익',
+  net_profit_excl: '扣非 순이익', net_profit: '순이익', total_profit: '이익총액',
+  operating_cost: '영업비용', gross_profit: '매출총이익', rnd_expense: '연구개발비',
   ocf: '영업활동 현금흐름', overseas_revenue: '해외 매출',
 };
-const METRIC_ORDER = ['revenue_total', 'net_profit_attr', 'net_profit', 'operating_profit', 'net_profit_excl', 'ocf', 'overseas_revenue'];
-// SVG 좌표계. 화면 폭에 맞춰 늘어나되 비율은 유지한다.
+const METRIC_ORDER = ['revenue_total', 'operating_profit', 'net_profit_attr', 'net_profit_excl', 'net_profit', 'total_profit', 'operating_cost', 'gross_profit', 'rnd_expense', 'ocf', 'overseas_revenue'];
 const TRAJ = { width: 1000, plotTop: 26, plotHeight: 108, axisY: 146, laneGap: 14, height: 232, padX: 46 };
+// 축에 기본으로 담는 연도 수. 재무 데이터는 2011년치까지 있으나 사건 플래그는 2023년부터라,
+// 전부 펼치면 최근 흐름이 왼쪽 빈 구간에 눌린다. 전체 보기는 버튼으로 연다.
+const TRAJ_RECENT_YEARS = 4;
 let trajectoryMetric = null;
+let trajectoryQuarterly = true;
+let trajectoryCurrency = 'CNY';
+let trajectoryFullRange = false;
 
 // 기간 표기를 그 구간의 마지막 날로 바꾼다. 연간 값을 1월에 찍으면 시간축에서 앞당겨진다.
 function periodEndDate(period){
@@ -1008,19 +1016,32 @@ function periodEndDate(period){
   if (!match) return null;
   const year = Number(match[1]);
   const month = match[2] ? (match[2] === 'H1' ? 6 : 12) : match[3] ? Number(match[3][1]) * 3 : 12;
-  return { time: Date.UTC(year, month, 0), year: match[1], interim: Boolean(match[2] || match[3]) };
+  return { time: Date.UTC(year, month, 0), year: match[1], part: match[2] || match[3] || null, interim: Boolean(match[2] || match[3]) };
 }
-function metricValueText(row){
-  const value = Number(row.value);
-  if (!Number.isFinite(value)) return '';
+const PERIOD_CAPTION = { Q1: '1분기', H1: '상반기', Q3: '3분기', Q4: '4분기', H2: '하반기', Q2: '2분기' };
+function periodLabel(row){
+  return row.at.part ? `${row.at.year} ${PERIOD_CAPTION[row.at.part] || row.at.part} 누적` : `${row.at.year} 연간`;
+}
+function metricValueText(row, currency, rate){
+  const value = convertedValue(row, currency, rate);
+  if (value === null) return '';
   const digits = Math.abs(value) >= 1000 ? 0 : Math.abs(value) >= 10 ? 1 : 2;
   const shown = value.toLocaleString('ko-KR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
-  return row.unit === 'CNY_100M' ? `${shown}억 위안` : `${shown} ${row.unit || ''}`.trim();
+  return currency === 'USD' ? `$${shown}억` : `${shown}억 위안`;
 }
-function metricTip(row){
-  const parts = [`${row.period} · ${metricValueText(row)}`, `원문 계정 ${row.line_item_zh}`, `원문 표기 ${row.quantity_text}`];
-  if (row.yoy_pct_stated !== null && row.yoy_pct_stated !== undefined) parts.push(`원문에 적힌 전년비 ${row.yoy_pct_stated}%`);
-  parts.push(row.report_kind === 'annual_report' ? '연차보고서' : '반기·분기보고서');
+// 환산은 표시용이다. 원래 통화 값과 쓰인 환율을 툴팁에 같이 남겨 검산할 수 있게 한다.
+function convertedValue(row, currency, rate){
+  const value = Number(row.value);
+  if (!Number.isFinite(value)) return null;
+  if (currency !== 'USD') return value;
+  return rate && rate > 0 ? value / rate : null;
+}
+function metricTip(row, currency, rate){
+  const parts = [`${periodLabel(row)} · ${metricValueText(row, currency, rate)}`, `원문 계정 ${row.line_item_zh}`];
+  if (currency === 'USD' && rate) parts.push(`원래 값 ${Number(row.value).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}억 위안 · 기간 평균 환율 ${rate.toFixed(4)} CNY/USD`);
+  if (row.quantity_text) parts.push(`원문 표기 ${row.quantity_text}`);
+  if (row.yoy_pct_stated !== null && row.yoy_pct_stated !== undefined) parts.push(`전년 동기 대비 ${row.yoy_pct_stated}%`);
+  parts.push(row.verified ? '거래소 데이터와 보고서 원문 발췌가 일치' : row.source_kind === 'market' ? '거래소 표준 손익 항목' : '보고서 원문 발췌');
   return parts.join(' · ');
 }
 function trajectoryFlagTip(event, companyId){
@@ -1028,66 +1049,120 @@ function trajectoryFlagTip(event, companyId){
   const fact = String(event.fact || '').trim();
   return [`${event.date} · ${evidenceLabels[event.kind] || ''}`, title, fact].filter(Boolean).join('\n').slice(0, 420);
 }
+// 두 출처를 한 줄로 합친다. 거래소 표준 항목이 기본이고(전 기간·전 계정), 같은 칸에 보고서
+// 발췌값이 있으면 대조해 '원문 확인' 표시를 단다. 값이 어긋나면 그 사실을 툴팁에 남긴다.
+function mergeMetricSources(timeline){
+  const excerpts = new Map();
+  for (const row of timeline.metrics || []) excerpts.set(`${row.period} ${row.metric}`, row);
+  const rows = [];
+  const used = new Set();
+  for (const row of timeline.financials || []) {
+    const key = `${row.period} ${row.metric}`;
+    const excerpt = excerpts.get(key);
+    used.add(key);
+    const value = Number(row.value);
+    const matched = excerpt && Math.abs(Number(excerpt.value) - value) / Math.max(1e-9, Math.abs(value)) < 0.001;
+    rows.push({
+      period: row.period, metric: row.metric, value, unit: row.unit, currency: row.currency,
+      line_item_zh: row.item_zh, quantity_text: excerpt?.quantity_text || null,
+      yoy_pct_stated: row.yoy_pct ?? null, source_kind: 'market', verified: Boolean(matched),
+    });
+  }
+  // 거래소 데이터에 없는 항목(해외 매출·영업활동 현금흐름 등)은 발췌 쪽에만 있다. 그것도 싣는다.
+  for (const [key, row] of excerpts.entries()) {
+    if (used.has(key)) continue;
+    rows.push({
+      period: row.period, metric: row.metric, value: Number(row.value), unit: row.unit, currency: row.currency,
+      line_item_zh: row.line_item_zh, quantity_text: row.quantity_text,
+      yoy_pct_stated: row.yoy_pct_stated ?? null, source_kind: 'excerpt', verified: false,
+    });
+  }
+  return rows;
+}
 function renderTrajectory(timeline){
   const section = document.querySelector('#trajectory-block');
   const target = document.querySelector('#trajectory');
   if (!section || !target) return;
-  const metrics = (timeline.metrics || [])
+  const all = mergeMetricSources(timeline)
     .map(row => ({ ...row, at: periodEndDate(row.period) }))
     .filter(row => row.at && Number.isFinite(Number(row.value)));
-  if (!metrics.length) {
-    // 정기보고서가 수집되지 않는 회사(비상장)는 아래 사실 카드만 쓴다. 빈 차트를 두지 않는다.
+  if (!all.length) {
+    // 정기보고서도 거래소 데이터도 없는 회사(비상장)는 아래 사실 카드만 쓴다. 빈 차트를 두지 않는다.
     section.hidden = true;
     target.innerHTML = '';
     return;
   }
   section.hidden = false;
-  const available = METRIC_ORDER.filter(metric => metrics.some(row => row.metric === metric));
+  const rates = new Map((timeline.fx || []).map(row => [row.period, Number(row.rate_avg)]));
+  const available = METRIC_ORDER.filter(metric => all.some(row => row.metric === metric));
   if (!available.includes(trajectoryMetric)) trajectoryMetric = available[0];
-  const rows = metrics.filter(row => row.metric === trajectoryMetric).sort((a, b) => a.at.time - b.at.time);
+
+  let rows = all.filter(row => row.metric === trajectoryMetric).sort((a, b) => a.at.time - b.at.time);
+  if (!trajectoryQuarterly) rows = rows.filter(row => !row.at.interim || Number(row.at.year) > Math.max(...rows.filter(item => !item.at.interim).map(item => Number(item.at.year)), -Infinity));
+  // USD로 볼 때 그 기간 환율이 없으면 점을 만들지 않는다. 환산 못 한 값을 위안화로 섞으면
+  // 축이 뒤섞여 크기를 오독한다.
+  if (trajectoryCurrency === 'USD') rows = rows.filter(row => rates.get(row.period) > 0);
+  const years = [...new Set(all.map(row => row.at.year))].sort();
+  const cutoff = trajectoryFullRange ? years[0] : years.slice(-TRAJ_RECENT_YEARS)[0];
+  rows = rows.filter(row => row.at.year >= cutoff);
+  if (!rows.length) {
+    target.innerHTML = `<p class="traj-note">선택한 조건에 표시할 값이 없습니다.</p>`;
+    return;
+  }
+
   const flags = (timeline.events || [])
-    .filter(event => (event.kind === 'annual_report' || event.kind === 'periodic_report') && /^\d{4}-\d{2}-\d{2}$/.test(event.date))
+    .filter(event => (event.kind === 'annual_report' || event.kind === 'periodic_report') && /^\d{4}-\d{2}-\d{2}$/.test(event.date) && event.date.slice(0, 4) >= cutoff)
     .map(event => ({ event, time: Date.UTC(Number(event.date.slice(0, 4)), Number(event.date.slice(5, 7)) - 1, Number(event.date.slice(8, 10))) }))
     .sort((a, b) => a.time - b.time);
 
   // 시간축은 지표와 사건을 모두 담는다. 한쪽만 담으면 두 층의 x가 어긋난다.
-  const times = [...metrics.map(row => row.at.time), ...flags.map(flag => flag.time)];
+  const times = [...rows.map(row => row.at.time), ...flags.map(flag => flag.time)];
   const minTime = Math.min(...times), maxTime = Math.max(...times);
   const span = Math.max(1, maxTime - minTime);
   const plotWidth = TRAJ.width - TRAJ.padX * 2;
   const x = (time) => TRAJ.padX + ((time - minTime) / span) * plotWidth;
 
-  const values = rows.map(row => Number(row.value));
+  const valueOf = (row) => convertedValue(row, trajectoryCurrency, rates.get(row.period));
+  const values = rows.map(valueOf).filter(value => value !== null);
   const top = Math.max(0, ...values), bottom = Math.min(0, ...values);
   const range = (top - bottom) || 1;
   const y = (value) => TRAJ.plotTop + TRAJ.plotHeight - ((value - bottom) / range) * TRAJ.plotHeight;
   const zeroY = y(0);
 
-  // 연간과 반기·분기는 성격이 달라 한 선으로 잇지 않는다. 반기 누적을 연간과 같은 실선에
-  // 이으면 급락으로 오독된다. 연간은 실선, 반기·분기는 점선으로 나눠 그린다.
-  const series = (interim) => rows.filter(row => row.at.interim === interim);
-  const path = (list) => list.map((row, index) => `${index ? 'L' : 'M'}${x(row.at.time).toFixed(1)} ${y(Number(row.value)).toFixed(1)}`).join(' ');
-  const point = (row) => {
-    const cx = x(row.at.time), cy = y(Number(row.value));
+  // 분기 값은 누적(YTD)이라 해가 바뀌면 1분기부터 다시 쌓인다. 한 줄로 이으면 매년 초에
+  // 뚝 떨어지는 톱니가 된다. 단일분기로 바꾸려면 뺄셈이 필요한데 그것은 우리가 만든 값이라
+  // 하지 않는다. 대신 연도 경계에서 선을 끊어 해마다 자기 곡선을 갖게 한다.
+  const segments = [];
+  for (const row of rows) {
+    const last = segments[segments.length - 1];
+    if (last && last.year === row.at.year) last.rows.push(row);
+    else segments.push({ year: row.at.year, rows: [row] });
+  }
+  // 연간만 볼 때는 해마다 점이 하나라 끊으면 선이 사라진다. 그때는 한 줄로 잇는다.
+  const annualOnlyPath = !trajectoryQuarterly ? rows.map((row, index) => `${index ? 'L' : 'M'}${x(row.at.time).toFixed(1)} ${y(valueOf(row)).toFixed(1)}`).join(' ') : '';
+  const path = (list) => list.map((row, index) => `${index ? 'L' : 'M'}${x(row.at.time).toFixed(1)} ${y(valueOf(row)).toFixed(1)}`).join(' ');
+
+  const point = (row, showLabel) => {
+    const value = valueOf(row);
+    if (value === null) return '';
+    const cx = x(row.at.time), cy = y(value);
     const shape = row.at.interim
-      ? `<rect x="${(cx - 3.4).toFixed(1)}" y="${(cy - 3.4).toFixed(1)}" width="6.8" height="6.8" transform="rotate(45 ${cx.toFixed(1)} ${cy.toFixed(1)})" class="traj-dot interim"/>`
-      : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" class="traj-dot"/>`;
-    return `<g class="traj-point" data-tip="${escapeHtml(metricTip(row))}"><rect x="${(cx - 12).toFixed(1)}" y="${(cy - 12).toFixed(1)}" width="24" height="24" fill="transparent"/>${shape}<text x="${cx.toFixed(1)}" y="${(cy - 9).toFixed(1)}" class="traj-point-label">${escapeHtml(metricValueText(row))}${row.at.interim ? ' 누적' : ''}</text></g>`;
+      ? `<rect x="${(cx - 3).toFixed(1)}" y="${(cy - 3).toFixed(1)}" width="6" height="6" transform="rotate(45 ${cx.toFixed(1)} ${cy.toFixed(1)})" class="traj-dot interim"/>`
+      : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" class="traj-dot${row.verified ? ' verified' : ''}"/>`;
+    const anchor = cx > TRAJ.width - TRAJ.padX - 30 ? 'end' : cx < TRAJ.padX + 30 ? 'start' : 'middle';
+    return `<g class="traj-point" data-tip="${escapeHtml(metricTip(row, trajectoryCurrency, rates.get(row.period)))}"><rect x="${(cx - 13).toFixed(1)}" y="${(cy - 13).toFixed(1)}" width="26" height="26" fill="transparent"/>${shape}${showLabel ? `<text x="${cx.toFixed(1)}" y="${(cy - 9).toFixed(1)}" class="traj-point-label" text-anchor="${anchor}">${escapeHtml(metricValueText(row, trajectoryCurrency, rates.get(row.period)))}</text>` : ''}</g>`;
   };
 
-  // 정기보고서 사건은 같은 날짜(보고서 결산일)에 여러 건이 몰린다. 같은 날·같은 트랙이면
-  // 점 하나로 묶고 건수를 적는다. 점을 흩뿌리면 날짜가 어긋나 보이고, 겹쳐 두면 못 누른다.
+  // 정기보고서 사건은 결산일에 몰린다. 같은 날·같은 트랙이면 점 하나로 묶고 건수를 적는다.
   const laneRows = 2;
   const cluster = (list) => {
     const byDate = new Map();
     for (const item of list) {
-      const key = item.event.date;
-      if (!byDate.has(key)) byDate.set(key, { time: item.time, date: key, events: [] });
-      byDate.get(key).events.push(item.event);
+      if (!byDate.has(item.event.date)) byDate.set(item.event.date, { time: item.time, date: item.event.date, events: [] });
+      byDate.get(item.event.date).events.push(item.event);
     }
-    const groups = [...byDate.values()].sort((a, b) => a.time - b.time);
     const lastX = new Array(laneRows).fill(-Infinity);
-    return groups.map(group => {
+    return [...byDate.values()].sort((a, b) => a.time - b.time).map(group => {
       const px = x(group.time);
       let row = lastX.findIndex(previous => px - previous > 22);
       if (row < 0) row = lastX.indexOf(Math.min(...lastX));
@@ -1113,7 +1188,6 @@ function renderTrajectory(timeline){
   const marketBase = TRAJ.axisY + 12;
   const techBase = marketBase + laneRows * TRAJ.laneGap + 8;
 
-  // 눈금은 연 단위로만 둔다. 월 눈금까지 그리면 3~4년 폭에서 축이 지저분해진다.
   const yearTicks = [];
   for (let year = new Date(minTime).getUTCFullYear(); year <= new Date(maxTime).getUTCFullYear(); year += 1) {
     const time = Date.UTC(year, 0, 1);
@@ -1122,24 +1196,45 @@ function renderTrajectory(timeline){
   }
 
   const chips = available.map(metric => `<button type="button" class="traj-chip${metric === trajectoryMetric ? ' active' : ''}" data-metric="${escapeHtml(metric)}">${escapeHtml(METRIC_LABELS[metric] || metric)}</button>`).join('');
-  const annual = series(false), interim = series(true);
   const label = METRIC_LABELS[trajectoryMetric] || trajectoryMetric;
-  target.innerHTML = `<div class="traj-head"><div class="traj-chips">${chips}</div><div class="traj-legend"><span><i class="dot market"></i>시장</span><span><i class="dot tech"></i>기술</span><span class="traj-legend-line">연차보고서</span><span class="traj-legend-line interim">반기·분기(누적)</span></div></div>
+  const missingRate = trajectoryCurrency === 'USD' && all.filter(row => row.metric === trajectoryMetric && row.at.year >= cutoff).length > rows.length;
+  target.innerHTML = `<div class="traj-head"><div class="traj-chips">${chips}</div>
+    <div class="traj-toggles">
+      <div class="traj-switch" role="group" aria-label="표시 단위"><button type="button" data-toggle="quarterly" class="${trajectoryQuarterly ? 'on' : ''}">분기</button><button type="button" data-toggle="annual" class="${trajectoryQuarterly ? '' : 'on'}">연간</button></div>
+      <div class="traj-switch" role="group" aria-label="통화"><button type="button" data-currency="CNY" class="${trajectoryCurrency === 'CNY' ? 'on' : ''}">CNY</button><button type="button" data-currency="USD" class="${trajectoryCurrency === 'USD' ? 'on' : ''}">USD</button></div>
+      ${years.length > TRAJ_RECENT_YEARS ? `<button type="button" class="traj-range" data-toggle="range">${trajectoryFullRange ? `최근 ${TRAJ_RECENT_YEARS}년만` : `전체 기간(${years[0]}~)`}</button>` : ''}
+    </div></div>
     <svg class="traj-svg" viewBox="0 0 ${TRAJ.width} ${TRAJ.height}" role="img" aria-label="${escapeHtml(label)} 시계열과 정기보고서 사건 플래그">
       ${yearTicks.join('')}
       ${bottom < 0 ? `<line class="traj-zero" x1="${TRAJ.padX}" y1="${zeroY.toFixed(1)}" x2="${TRAJ.width - TRAJ.padX}" y2="${zeroY.toFixed(1)}"/>` : ''}
       <line class="traj-axis-line" x1="${TRAJ.padX - 12}" y1="${TRAJ.axisY}" x2="${TRAJ.width - TRAJ.padX + 12}" y2="${TRAJ.axisY}"/>
-      ${annual.length > 1 ? `<path class="traj-line" d="${path(annual)}"/>` : ''}
-      ${interim.length > 1 ? `<path class="traj-line interim" d="${path(interim)}"/>` : ''}
-      ${rows.map(point).join('')}
+      ${trajectoryQuarterly
+        ? segments.filter(segment => segment.rows.length > 1).map(segment => `<path class="traj-line" d="${path(segment.rows)}"/>`).join('')
+        : (rows.length > 1 ? `<path class="traj-line" d="${annualOnlyPath}"/>` : '')}
+      ${rows.map((row, index) => point(row, !trajectoryQuarterly || !row.at.interim || index === rows.length - 1)).join('')}
       ${marketFlags.map(item => flagMark(item, 'market', marketBase)).join('')}
       ${techFlags.map(item => flagMark(item, 'tech', techBase)).join('')}
     </svg>
-    <p class="traj-note">가로축은 날짜입니다. 위쪽 선이 <strong>${escapeHtml(label)}</strong>, 축 아래 점이 그 달에 공시된 사건입니다(위 줄 시장 · 아래 줄 기술). 점에 마우스를 올리면 내용과 원문 계정이 보이고, 누르면 근거가 아래에 열립니다. 선이 끊긴 구간은 그 기간 값이 보고서 요약에 담기지 않았다는 뜻이며 실적이 없었다는 뜻이 아닙니다.</p>
+    <p class="traj-note">가로축은 날짜, 선은 <strong>${escapeHtml(label)}</strong>입니다. ${trajectoryQuarterly
+      ? '중국 공시의 분기 실적은 <strong>연초부터의 누적</strong>이라 해가 바뀌면 1분기부터 다시 쌓입니다. 한 줄로 이으면 매년 초 급락으로 보이므로 <strong>연도마다 선을 끊어</strong> 그립니다. 단일 분기 값은 우리가 빼서 만들지 않습니다.'
+      : '연간 확정치만 표시하며, 아직 연간이 나오지 않은 당해는 누적치를 선 끝에 잇습니다.'}
+      축 아래 점은 그 달에 공시된 사건입니다(위 줄 시장 · 아래 줄 기술). 점에 마우스를 올리면 내용과 원문 계정이 보이고, 누르면 근거가 아래에 열립니다.
+      ${trajectoryCurrency === 'USD' ? '달러 값은 <strong>그 기간의 평균 환율</strong>(유럽중앙은행 기준)로 환산한 표시용 값이며, 원래 위안화 값과 적용 환율은 각 점의 툴팁에 있습니다.' : ''}
+      ${missingRate ? '환율이 없는 기간은 표시하지 않았습니다.' : ''}</p>
     <div id="traj-detail" class="traj-detail" hidden></div>`;
 
   target.querySelectorAll('.traj-chip').forEach(button => button.addEventListener('click', () => {
     trajectoryMetric = button.dataset.metric;
+    renderTrajectory(timeline);
+  }));
+  target.querySelectorAll('[data-toggle]').forEach(button => button.addEventListener('click', () => {
+    const mode = button.dataset.toggle;
+    if (mode === 'quarterly' || mode === 'annual') trajectoryQuarterly = mode === 'quarterly';
+    if (mode === 'range') trajectoryFullRange = !trajectoryFullRange;
+    renderTrajectory(timeline);
+  }));
+  target.querySelectorAll('[data-currency]').forEach(button => button.addEventListener('click', () => {
+    trajectoryCurrency = button.dataset.currency;
     renderTrajectory(timeline);
   }));
   const detail = target.querySelector('#traj-detail');
