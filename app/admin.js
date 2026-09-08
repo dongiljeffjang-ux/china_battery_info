@@ -280,11 +280,14 @@
     const precision = Object.entries(payload.precision || {}).map(([kind, count]) => `${kind} ${num(count)}건`).join(' · ') || '—';
     const perChunk = (payload.per_chunk_returned || []).map((count, index) => `${index + 1}조각 ${count == null ? '실패' : `${num(count)}건`}`).join(' · ');
     const titles = (payload.events || []).slice(0, 12).map((event) => `<li>${esc(event.occurred_at)} · ${esc(event.occurred_precision)} · ${esc(event.title_ko)}</li>`).join('');
+    const visual = (payload.visual_pages || []).length
+      ? `이미지 큰 페이지 ${num(payload.visual_pages.length)}쪽 · 텍스트 밖 수치는 저장 안 함`
+      : '큰 이미지 페이지 감지 없음';
     $('#probe-body').innerHTML = `
       <div class="cards">
-        <div class="stat"><p class="label">저장 가능 이벤트</p><div class="value">${num(payload.rows)}</div><div class="sub">반환 ${num(payload.returned)} · 날짜 탈락 ${num(payload.dropped?.badDate)} · 빈값 ${num(payload.dropped?.empty)}</div></div>
+        <div class="stat"><p class="label">저장 가능 이벤트</p><div class="value">${num(payload.rows)}</div><div class="sub">반환 ${num(payload.returned)} · 날짜 탈락 ${num(payload.dropped?.badDate)} · 빈값 ${num(payload.dropped?.empty)} · 근거 불일치 ${num(payload.dropped?.ungroundedExcerpt)}</div></div>
         <div class="stat"><p class="label">시점 정밀도</p><div class="value">${num(payload.dated_events)}</div><div class="sub">일·월 단위 · 전체: ${esc(precision)}</div></div>
-        <div class="stat"><p class="label">추출 조각</p><div class="value">${num(d.digest_chunks)}</div><div class="sub">실패 ${num(d.digest_chunks_failed)} · ${num(d.section_chars)}자</div></div>
+        <div class="stat"><p class="label">추출 조각</p><div class="value">${num(d.digest_chunks)}</div><div class="sub">실패 ${num(d.digest_chunks_failed)} · ${num(d.section_chars)}자<br>${esc(visual)}</div></div>
       </div>
       <div class="chunk"><header><b>판정</b> · ${num(payload.ms)}ms</header><p style="margin:0 0 8px">${esc(payload.verdict)}</p><p class="small muted" style="margin:0">조각별 반환: ${esc(perChunk || '—')}</p>${titles ? `<details><summary class="small muted">이벤트 앞 12건 보기</summary><ol class="small">${titles}</ol></details>` : ''}</div>`;
     $('#probe-meta').textContent = `${num(payload.rows)}건 · ${num(payload.ms)}ms · DB 쓰기 없음`;

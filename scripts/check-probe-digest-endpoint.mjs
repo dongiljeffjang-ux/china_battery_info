@@ -20,4 +20,6 @@ assert.ok(provider.includes("if (options.skipTelemetry) return callJsonResponse(
 assert.ok(provider.includes("const log = (...args) => skipTelemetry ? Promise.resolve() : logPipeline(...args);"), "진단 호출은 pipeline_log에 쓰면 안 된다");
 assert.ok(adminHtml.includes('id="probe-load"') && adminHtml.includes('id="probe-report"'), "관리자 화면에서 고정 dry-run을 실행할 수 있어야 한다");
 assert.ok(adminApp.includes("async function loadProbeDigest()") && adminApp.includes("view: 'probe-digest'"), "관리자 화면은 보호된 진단 API만 호출해야 한다");
+assert.ok(adminApp.includes("근거 불일치") && adminApp.includes("텍스트 밖 수치는 저장 안 함"), "관리자 화면은 근거 차단과 이미지 한계를 보여야 한다");
+assert.ok(probe.includes("parse_quality") && probe.includes("visual_pages"), "dry-run이 이미지 검토 상태를 돌려줘야 한다");
 console.log("probe digest endpoint checks passed");

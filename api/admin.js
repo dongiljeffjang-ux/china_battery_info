@@ -210,6 +210,7 @@ async function probeDigest(query) {
     report: preset, ms: Date.now() - started,
     diagnostics: result.diagnostics, per_chunk_returned: result.per_chunk_returned, chunk_errors: result.chunk_errors,
     returned: result.returned, dropped: result.dropped, rows: result.rows.length, precision, dated_events: datedEvents,
+    parse_quality: result.report.parse_quality, visual_pages: result.report.visual_pages || [],
     verdict,
     events: result.rows.map((row) => ({ occurred_at: row.occurred_at, occurred_precision: row.occurred_precision, layer_key: row.layer_key, title_ko: row.title_ko })),
   };
