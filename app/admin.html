@@ -217,6 +217,19 @@
 
         <section id="panel-pipeline" class="panel">
           <p class="muted small" style="margin:0 0 14px">이 화면의 숫자와 프롬프트는 실제 실행 코드에서 직접 읽습니다. 화면용으로 따로 적어 둔 값이 아니므로 코드가 바뀌면 여기도 함께 바뀝니다.</p>
+          <div class="notice"><b>보고서 추출 dry-run</b> · 고정된 표본 보고서를 현재 추출기에서 다시 읽어 반환·탈락·시점 정밀도를 확인합니다. 이벤트·청크·장부와 LLM 실행 로그에는 쓰지 않지만, 보고서당 LLM 호출 비용은 발생합니다.</div>
+          <div class="filters">
+            <label>표본 보고서<select id="probe-report">
+              <option value="wanrun-2026h1">완룬신에너지 · 2026 반기</option>
+              <option value="xtc-2024h1">XTC New Energy · 2024 반기</option>
+              <option value="farasis-2026h1">Farasis Energy · 2026 반기</option>
+              <option value="minmetals-2024h1">우쾅신넝 · 2024 반기</option>
+              <option value="zhenhua-2024h1">전화신재료 · 2024 반기</option>
+            </select></label>
+            <button id="probe-load" class="secondary-button" type="button">dry-run 실행</button>
+            <span id="probe-meta" class="muted small"></span>
+          </div>
+          <div id="probe-body"></div>
           <div id="pipe-body"></div>
         </section>
 
@@ -279,6 +292,6 @@
       <aside id="drawer" class="drawer" hidden aria-label="기사 상세"></aside>
     </div>
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./admin.js?v=20260908-eval"></script>
+    <script src="./admin.js?v=20260908-probe"></script>
   </body>
 </html>
