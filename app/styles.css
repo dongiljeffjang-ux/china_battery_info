@@ -283,9 +283,12 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
    위에 가로로 늘어놓으면 매출과 매출원가가 서로 다른 줄에 감겨 뺄셈 관계가 화면에서 사라지고,
    그래프를 볼 때마다 눈이 위아래로 왕복한다. */
 .traj-stage{display:grid;grid-template-columns:minmax(140px,178px) minmax(0,1fr) minmax(130px,168px);
-  gap:14px;align-items:start;margin-top:6px}
-.traj-plot{min-width:0}
-.traj-col{min-width:0;border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:#fcfdfe}
+  gap:14px;align-items:stretch;margin-top:6px}
+/* 세 칸의 위아래를 맞춘다. 높이는 가장 긴 칸(대개 재무 사다리)이 정한다. 그래프는 세로 가운데에
+   놓아 위나 아래로 치우쳐 보이지 않게 한다. */
+.traj-plot{min-width:0;display:flex;flex-direction:column;justify-content:center}
+.traj-col{min-width:0;border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:#fcfdfe;
+  display:flex;flex-direction:column}
 .traj-col-title{margin:0 0 7px;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.02em}
 .traj-col-title.sub{margin-top:11px}
 .traj-pl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
@@ -298,14 +301,22 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .traj-col-note .traj-rel{display:inline-block;flex:none;line-height:1}
 .traj-col-note b{color:var(--ink);font-weight:600}
 .traj-empty{margin:0;font-size:11px;color:var(--muted)}
-.traj-group + .traj-group{margin-top:9px}
+/* 오른쪽 열은 항목이 적어 아래가 비는데, 그 여백을 버튼에 나눠 준다.
+   빈 상자를 남겨 두는 것보다 버튼이 조금 두꺼워지는 편이 눌러야 할 것으로 읽힌다. */
+.traj-groups{flex:1;display:flex;flex-direction:column;gap:9px;min-height:0}
+.traj-group{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
 .traj-group-title{margin:0 0 4px;font-size:10.5px;font-weight:700;color:var(--ink);opacity:.7}
-.traj-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.traj-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;flex:1;justify-content:space-evenly}
+.traj-list li{display:flex;flex:0 0 auto}
 .traj-current{margin:0;font-size:12px;color:var(--muted)}
 .traj-current strong{color:var(--ink)}
 /* 세로 목록에서는 알약이 글자 길이만큼만 커져 들쭉날쭉하다. 왼쪽을 맞추고 줄바꿈을 허용한다. */
 .traj-col .traj-chip{display:block;width:100%;text-align:left;border-radius:6px;padding:3px 7px;
   font-size:11.5px;line-height:1.35;white-space:normal;word-break:keep-all}
+/* 늘어나되 한없이 두꺼워지지는 않게 상·하한을 둔다. */
+.traj-list .traj-chip{display:flex;align-items:center;min-height:38px}
+/* 재무 사다리는 관계 기호와 줄을 맞춰야 하므로 늘리지 않는다. */
+.traj-pl .traj-chip{min-height:0}
 /* 좁은 화면에서는 그래프를 가로로 눌러 봐야 읽히지 않는다. 메뉴를 위아래로 돌린다. */
 @media (max-width:900px){
   .traj-stage{grid-template-columns:1fr 1fr;grid-template-areas:"plot plot" "left right"}
@@ -313,7 +324,8 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 }
 .traj-chips{display:flex;flex-wrap:wrap;gap:6px}
 /* 세로 목록에서는 알약이 글자 길이만큼만 커져 들쭉날쭉해 보인다. 왼쪽을 맞춘다. */
-.traj-pl .traj-chip,.traj-list .traj-chip{text-align:left;border-radius:7px;padding:4px 9px}
+.traj-pl .traj-chip{padding:4px 9px}
+.traj-list .traj-chip{padding:4px 10px}
 @media (max-width:720px){.traj-picker{grid-template-columns:1fr;gap:14px}}
 .traj-chip{border:1px solid var(--line);background:#fff;color:var(--muted);font-size:12px;padding:4px 11px;border-radius:999px;cursor:pointer}
 .traj-chip:hover{border-color:var(--blue);color:var(--blue)}

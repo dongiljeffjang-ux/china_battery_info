@@ -133,4 +133,19 @@ assert.ok(!sparse.includes('data-metric="operating_cost"'), "없는 계정을 �
 assert.ok(sparse.includes("이 회사는 물량 지표가 없습니다"), "물량이 없으면 그렇다고 적어야 한다");
 assert.ok(!sparse.includes('<span class="traj-rel exact">=</span> 는'), "'=' 자리가 없으면 그 범례도 띄우지 않는다");
 
+// --- 5) 좌우 칸과 그래프의 위아래를 맞춘다 -------------------------------------
+
+// CSS는 노드에서 그려 볼 수 없으므로 의도만 고정한다. stretch가 start로 돌아가면 칸마다
+// 높이가 달라져 화면이 어긋난다(2026-09-08 사용자 지적).
+const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8");
+const stageCss = css.slice(css.indexOf(".traj-stage{"), css.indexOf(".traj-plot{"));
+assert.ok(/align-items:stretch/.test(stageCss), "세 칸의 위아래를 맞추려면 stretch여야 한다");
+assert.ok(/\.traj-plot\{[^}]*justify-content:center/.test(css), "그래프는 늘어난 칸의 세로 가운데에 놓는다");
+assert.ok(/\.traj-groups\{[^}]*flex:1/.test(css), "오른쪽 묶음 상자가 남는 세로 공간을 받아야 한다");
+// 버튼은 크기를 고정하고 남는 세로 공간은 버튼 사이에 나눈다. 버튼이 늘어나게 두면
+// 한 묶음에 항목이 하나뿐일 때 138px짜리 덩어리가 된다(2026-09-08 실측).
+assert.ok(/\.traj-list li\{[^}]*flex:0 0 auto/.test(css), "목록 항목이 늘어나면 버튼이 덩어리가 된다");
+assert.ok(/\.traj-list\{[^}]*justify-content:space-evenly/.test(css), "남는 공간은 버튼 사이에 고르게 나눈다");
+assert.ok(/\.traj-list \.traj-chip\{[^}]*min-height/.test(css), "버튼에 최소 높이가 있어야 눌러야 할 것으로 읽힌다");
+
 console.log("ok  metric-picker");

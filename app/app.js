@@ -1142,6 +1142,7 @@ function metricPickerMarkup(available, current){
         text: `${entry.parts.basis ? `(${VOLUME_BASIS_LABEL[entry.parts.basis]}) ` : ''}${entry.parts.itemLabel}`,
       })}</li>`).join('')}</ul></div>`;
   }).filter(Boolean).join('');
+  const groupBox = groups ? `<div class="traj-groups">${groups}</div>` : '';
 
   // 두 열을 하나로 묶어 돌려주지 않는다. 호출자가 차트 좌우에 하나씩 놓기 때문이다.
   // 재무는 왼쪽, 그 외는 오른쪽. 사이에 그래프가 들어간다.
@@ -1150,11 +1151,16 @@ function metricPickerMarkup(available, current){
       <p class="traj-col-title">재무 · 손익계산서 순</p>
       ${plRows.length ? `<ul class="traj-pl">${ladder(plRows)}</ul>` : '<p class="traj-empty">이 회사는 손익 항목이 없습니다.</p>'}
       ${cashRows.length ? `<p class="traj-col-title sub">현금흐름표</p><ul class="traj-pl">${ladder(cashRows)}</ul>` : ''}
-      ${plRows.some(row => row.rel === 'eq') ? '<p class="traj-col-note"><b><span class="traj-rel exact">=</span> 정확히 성립</b><br><b><span class="traj-rel">↓</span> 중간 계정 생략</b><br>영업외손익·법인세처럼 우리가 갖고 있지 않은 계정이 사이에 있습니다. 화면은 값을 계산하지 않습니다.</p>' : ''}
+      ${(() => {
+        const hasExact = plRows.some(row => row.rel === 'eq');
+        const hasGap = plRows.some(row => row.rel === 'next');
+        if (!hasExact && !hasGap) return '';
+        return `<p class="traj-col-note">${hasExact ? '<b><span class="traj-rel exact">=</span> 정확히 성립</b><br>' : ''}${hasGap ? '<b><span class="traj-rel">↓</span> 중간 계정 생략</b><br>영업외손익·법인세처럼 우리가 갖고 있지 않은 계정이 사이에 있습니다. ' : ''}화면은 값을 계산하지 않고 공시에 적힌 값만 보여 줍니다.</p>`;
+      })()}
     </section>`,
     other: `<section class="traj-col traj-col-right" aria-label="물량과 생산능력">
       <p class="traj-col-title">물량 · 생산능력</p>
-      ${groups || '<p class="traj-empty">이 회사는 물량 지표가 없습니다.</p>'}
+      ${groupBox || '<p class="traj-empty">이 회사는 물량 지표가 없습니다.</p>'}
     </section>`,
   };
 }
@@ -1179,8 +1185,13 @@ function periodEndDate(period){
   return { time: Date.UTC(year, month, 0), year: match[1], part: match[2] || match[3] || null, interim: Boolean(match[2] || match[3]) };
 }
 const PERIOD_CAPTION = { Q1: '1분기', H1: '상반기', Q3: '3분기', Q4: '4분기', H2: '하반기', Q2: '2분기' };
+// 중국 공시의 분기·반기 실적은 연초부터의 누적이라 '누적'을 붙인다. 다만 계획값은 누적이 아니라
+// 그 보고서 시점에 밝힌 목표라, 같은 말을 붙이면 첫 줄부터 실적으로 읽힌다.
 function periodLabel(row){
-  return row.at.part ? `${row.at.year} ${PERIOD_CAPTION[row.at.part] || row.at.part} 누적` : `${row.at.year} 연간`;
+  const plan = /_plan_/.test(String(row.metric || ''));
+  if (!row.at.part) return `${row.at.year} ${plan ? '시점' : '연간'}`;
+  const part = PERIOD_CAPTION[row.at.part] || row.at.part;
+  return `${row.at.year} ${part} ${plan ? '시점' : '누적'}`;
 }
 const isMoney = (row) => row.unit === 'CNY_100M';
 function metricValueText(row, currency, rate){
@@ -1209,6 +1220,15 @@ function convertedValue(row, currency, rate){
   return rate && rate > 0 ? value / rate : null;
 }
 // 툴팁을 한 줄로 이어 붙이면 읽히지 않는다. 머리줄과 항목줄로 나눈다.
+const REPORT_KIND_LABEL = { annual: '연차보고서', semiannual: '반기보고서', quarterly: '분기보고서' };
+// 어느 보고서에서 나온 값인지. 특히 계획값은 '언제 세운 계획인지'가 값 자체만큼 중요하다.
+// 2026년 보고서가 밝힌 계획과 2022년 보고서가 밝힌 같은 문장은 전혀 다른 정보다.
+function sourceReportLabel(row){
+  const year = String(row.report_at || '').slice(0, 4);
+  const kind = REPORT_KIND_LABEL[row.report_kind] || '';
+  if (!/^\d{4}$/.test(year) && !kind) return '';
+  return `${/^\d{4}$/.test(year) ? `${year}년 ` : ''}${kind || '정기보고서'}`;
+}
 function metricTip(row, currency, rate){
   const lines = [`${periodLabel(row)}  ${metricValueText(row, currency, rate)}`, ''];
   if (currency === 'USD' && rate) {
@@ -1221,7 +1241,15 @@ function metricTip(row, currency, rate){
     const yoy = Number(row.yoy_pct_stated);
     lines.push(`전년 동기  ${yoy > 0 ? '+' : ''}${yoy}%`);
   }
-  lines.push(`출처      ${row.verified ? '거래소 데이터 · 보고서 원문과 일치' : row.source_kind === 'market' ? '거래소 표준 손익 항목' : '보고서 원문 발췌'}`);
+  const report = sourceReportLabel(row);
+  lines.push(`출처      ${row.verified ? `거래소 데이터 · ${report || '보고서'} 원문과 일치`
+    : row.source_kind === 'market' ? '거래소 표준 손익 항목'
+    : report ? `${report} 원문 발췌` : '보고서 원문 발췌'}`);
+  // 계획·누적은 그 기간의 실적이 아니다. 어느 시점에 밝힌 것인지 붙이지 않으면 실적과 같은
+  // 축에 찍힌 점이 무엇인지 구분되지 않는다.
+  const basis = String(row.metric).match(/_(cum|plan)_/)?.[1];
+  if (basis === 'plan') lines.push(`계획값     ${report ? `${report}가 밝힌 계획` : '보고서가 밝힌 계획'}입니다. 그 기간의 실적이 아닙니다.`);
+  if (basis === 'cum') lines.push(`누적값     ${report ? `${report} 기준` : '보고서 기준'} 누적치입니다. 그 기간의 실적이 아닙니다.`);
   return lines.join('\n');
 }
 function clipText(text, limit){
@@ -1254,6 +1282,10 @@ function mergeMetricSources(timeline){
       period: row.period, metric: row.metric, value, unit: row.unit, currency: row.currency,
       line_item_zh: row.item_zh, quantity_text: excerpt?.quantity_text || null,
       yoy_pct_stated: row.yoy_pct ?? null, source_kind: 'market', verified: Boolean(matched),
+      // 대조에 쓴 발췌가 어느 보고서에서 왔는지도 남긴다. '원문과 일치'가 어느 원문인지
+      // 밝히지 않으면 확인했다는 말만 남고 확인할 방법이 없다.
+      report_kind: excerpt?.report_kind || null, report_at: excerpt?.occurred_at || null,
+      source_url: excerpt?.source_url || null,
     });
   }
   // 거래소 데이터에 없는 항목(해외 매출·영업활동 현금흐름 등)은 발췌 쪽에만 있다. 그것도 싣는다.
@@ -1263,6 +1295,7 @@ function mergeMetricSources(timeline){
       period: row.period, metric: row.metric, value: Number(row.value), unit: row.unit, currency: row.currency,
       line_item_zh: row.line_item_zh, quantity_text: row.quantity_text,
       yoy_pct_stated: row.yoy_pct_stated ?? null, source_kind: 'excerpt', verified: false,
+      report_kind: row.report_kind || null, report_at: row.occurred_at || null, source_url: row.source_url || null,
     });
   }
   return rows;
