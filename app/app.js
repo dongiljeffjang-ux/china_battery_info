@@ -1189,15 +1189,21 @@ function compareReportParts(payload){
   const traj = r.trajectory || {};
   const cmp = r.comparison || {};
   const pairLite = r.pair_lite || {};
+  const bulletText = value => {
+    const lines = String(value || '').split(/\r?\n/).map(line => line.trim().replace(/^[•*-]\s*/, '')).filter(Boolean);
+    return lines.length > 1
+      ? `<ul class="report-bullets">${lines.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+      : `<span>${escapeHtml(lines[0] || '')}</span>`;
+  };
   // 1단계: 각 회사의 시장·기술 궤적을 회사별로 보여준다. 2단계 비교는 그 아래에 축별로 묶는다.
   const trajCard = (who, node) => `
     <div class="col"><p class="who">${who}</p>
-    <p class="txt"><span class="axis-tag market">시장</span>${escapeHtml(node?.market_ko || '')}</p>
-    <p class="txt"><span class="axis-tag tech">기술</span>${escapeHtml(node?.technology_ko || '')}</p></div>`;
-  const cmpRow = (label, key) => cmp?.[key] ? `<p class="contrast"><span class="tag">${label}</span>${escapeHtml(cmp[key])}</p>` : '';
+    <div class="txt"><span class="axis-tag market">시장</span>${bulletText(node?.market_ko)}</div>
+    <div class="txt"><span class="axis-tag tech">기술</span>${bulletText(node?.technology_ko)}</div></div>`;
+  const cmpRow = (label, key) => cmp?.[key] ? `<div class="contrast"><span class="tag">${label}</span>${bulletText(cmp[key])}</div>` : '';
   const points = (insight.points || []).map(item => `
-    <div class="point"><p class="lead"><span class="seg">${escapeHtml(item.segment || '')}</span>${escapeHtml(item.implication_ko || '')}</p>
-    <p class="txt">${escapeHtml(item.point_ko || '')}</p><p class="basis">근거 · ${escapeHtml(item.basis_ko || '')}</p></div>`).join('');
+    <div class="point"><div class="lead"><span class="seg">${escapeHtml(item.segment || '')}</span>${bulletText(item.implication_ko)}</div>
+    <div class="txt">${bulletText(item.point_ko)}</div><div class="basis">근거 · ${bulletText(item.basis_ko)}</div></div>`).join('');
   const fixes = (check.corrections || []).map(item => {
     // DB에 실제로 되돌리는 것은 날짜(시점) 교정뿐이다. 그 밖의 교정은 리포트 본문만 고친 것이라 라벨을 구분한다.
     const dbNote = item.field === 'occurred_at' && item.event_id ? ' · DB 이벤트 시점 수정 반영' : ' · 리포트 본문만 수정(DB 미반영)';
@@ -1224,6 +1230,8 @@ h1{margin:2px 0 3px;font-size:16px;letter-spacing:-.3px}
 .pair-lite-row{display:grid;grid-template-columns:72px minmax(0,1fr);border-right:1px solid #dbe6ef;border-bottom:1px solid #dbe6ef}
 .pair-lite-row dt{padding:4px 5px;background:#edf4fa;font-size:8px;font-weight:800;color:#10365f}
 .pair-lite-row dd{margin:0;padding:4px 5px;font-size:8.4px;word-break:keep-all}
+.report-bullets{display:inline-block;margin:1px 0 1px 14px;padding-left:8px;vertical-align:top}
+.report-bullets li{margin:0 0 2px}
 .axis-tag{display:inline-block;margin-right:5px;padding:0 5px;border-radius:8px;font-size:7.6px;font-weight:800;vertical-align:1px;color:#fff}
 .axis-tag.market{background:#236aa6}.axis-tag.tech{background:#8b5a10}
 .col .txt{margin:0 0 4px}
@@ -1255,7 +1263,7 @@ footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8
     ['데이터 공백', pairLite.data_gaps_ko],
     ['한국 소재사 시나리오', pairLite.korea_scenarios_ko],
   ].filter(([, text]) => text).map(([label, text]) =>
-    `<div class="pair-lite-row"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(text)}</dd></div>`).join('');
+    `<div class="pair-lite-row"><dt>${escapeHtml(label)}</dt><dd>${bulletText(text)}</dd></div>`).join('');
   const pairLiteSection = pairLiteRows
     ? `<section class="pair-lite-report"><h2>0. 비교 범위·판정 기준</h2><dl>${pairLiteRows}</dl></section>`
     : '';
