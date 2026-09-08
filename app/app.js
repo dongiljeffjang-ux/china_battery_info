@@ -1070,7 +1070,7 @@ function renderLayerMatrix(timeline){
     const cells = MATRIX_GROUPS.map(group => `<td class="matrix-cell ${group.track}">${cell(group, period)}</td>`);
     return `<tr>${cells[0]}${cells[1]}<th class="matrix-period">${period}</th>${cells[2]}${cells[3]}</tr>`;
   }).join('');
-  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 자세한 사실과 원래 레이어는 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
+  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><colgroup><col class="matrix-layer-col"><col class="matrix-layer-col"><col class="matrix-time-col"><col class="matrix-layer-col"><col class="matrix-layer-col"></colgroup><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 자세한 사실과 원래 레이어는 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
 
 // 벡터 지식에 질문한다. 근거가 없으면 답을 만들지 않고 무엇을 확인할지 안내받는다.
