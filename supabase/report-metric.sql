@@ -32,9 +32,12 @@ create table if not exists report_metric (
 );
 
 -- Supabase는 새 테이블에 service_role 쓰기 권한을 자동으로 주지 않는다. 이걸 빼면 API가
--- 42501 permission denied로 막힌다. 기존 표(event 등)와 같은 권한 모양으로 맞춘다.
+-- 42501 permission denied로 막힌다.
+--
+-- anon·authenticated가 갖는 REFERENCES/TRIGGER/TRUNCATE는 Supabase가 모든 테이블에 주는
+-- 기본값이라 건드리지 않는다. RLS가 켜져 있고 프런트는 anon 키를 쓰지 않는다(모든 조회가
+-- /api/*를 거친다). 불필요한 revoke를 넣으면 이 파일을 돌릴 때마다 파괴적 작업 경고만 뜬다.
 grant select, insert, update, delete on public.report_metric to service_role;
-revoke all on public.report_metric from anon, authenticated;
 
 create unique index if not exists report_metric_cell
   on report_metric (company_id, period, metric);
