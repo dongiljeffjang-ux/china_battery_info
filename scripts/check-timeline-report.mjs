@@ -84,4 +84,53 @@ assert.ok(rendered.includes("&lt;script&gt;"), "모르는 태그는 글자로 �
 assert.doesNotMatch(timeline, /join\("<br>"\)/, "입력 표의 셀 구분에 <br>을 쓰면 모델이 그대로 따라한다");
 assert.match(app, /서버 히스토리나 DB에는 저장되지 않습니다/);
 
+// 모델이 실제로 받는 입력을 조립해 본다. 리포트가 "이 회사가 어디로 가는지"를 못 읽던 원인은
+// 정량 시계열을 아예 안 주고 사건 조각만 최신순으로 준 데 있었다. 그 구조를 여기서 고정한다.
+const { buildTimelineInput, metricTable } = await import("../lib/timeline-report.js");
+const sampleMetrics = [
+  { period: "2023", metric: "revenue_total", value: 4009.17, unit: "CNY_100M", yoy_pct: 22.01 },
+  { period: "2024", metric: "revenue_total", value: 3620.13, unit: "CNY_100M", yoy_pct: -9.7 },
+  { period: "2025", metric: "revenue_total", value: 4237.02, unit: "CNY_100M", yoy_pct: 17.04 },
+  { period: "2025H1", metric: "revenue_total", value: 1788.86, unit: "CNY_100M", yoy_pct: 7.27 },
+  { period: "2026Q1", metric: "revenue_total", value: 1291.31, unit: "CNY_100M", yoy_pct: 52.45 },
+  { period: "2026H1", metric: "revenue_total", value: 2769.17, unit: "CNY_100M", yoy_pct: 54.8 },
+  { period: "2024", metric: "operating_profit", value: 640.52, unit: "CNY_100M", yoy_pct: 19.24 },
+  { period: "2025", metric: "shipment_power", value: 541, unit: "GWh", yoy_pct_stated: 41.85 },
+  { period: "2025", metric: "capacity_plan_cell", value: 321, unit: "GWh" },
+  { period: "2025", metric: "shipment_anode", value: 363500, unit: "t", yoy_pct_stated: 55.66 },
+];
+const sampleEvents = [
+  { id: "a45f53f5-9ca7-4859-96ce-8199b495cb7b", date: "2025-12-31", period: "2025 하반기", layer: "supply-performance", title: "판매 661GWh", fact: "2025년 판매량 661GWh.", sourceName: "연차보고서", sourceUrl: "https://static.cninfo.com.cn/x.PDF" },
+  { id: "b", date: "2023-12-31", period: "2023 하반기", layer: "technology-development", title: "응집태 전지 발표", fact: "발표.", sourceName: "연차보고서", sourceUrl: "" },
+  { id: "c", date: "2026-06-30", period: "2026 Q2", layer: "regional-overseas", title: "해외 매출 871억", fact: "매출의 31.46%.", sourceName: "반기보고서", sourceUrl: "https://static.cninfo.com.cn/y.PDF" },
+];
+const input = buildTimelineInput({ companyName: "CATL", events: sampleEvents, metrics: sampleMetrics });
+
+// 이벤트 UUID가 입력에 들어가면 지시문의 "ID 보존" 조항 때문에 본문에 [a45f53f5-…]가 박힌다.
+assert.ok(!input.includes("a45f53f5"), "이벤트 UUID를 모델 입력에 넣으면 안 된다");
+assert.match(input, /이벤트 식별자는 제공하지 않았으므로/, "식별자를 만들어 넣지 말라고 적어야 한다");
+assert.ok(!input.includes("<br>"), "입력에 <br>이 있으면 모델이 따라 뱉는다");
+// 방향은 숫자에서 먼저 읽는다. 정량 표가 사건 표보다 앞에 온다.
+assert.ok(input.indexOf("정량 시계열") < input.indexOf("원시 시계열 이벤트"), "정량 표가 사건 표보다 앞이어야 한다");
+assert.match(input, /읽는 순서: 먼저 정량 시계열에서/);
+// 사건은 과거 → 최근. 최신순이면 흐름을 거꾸로 읽는다.
+assert.ok(input.indexOf("2023 하반기") < input.indexOf("2025 하반기") && input.indexOf("2025 하반기") < input.indexOf("2026 Q2"), "사건 표는 과거 → 최근 순이어야 한다");
+// 열: 연간 + 아직 연간이 안 나온 당해의 최신 누적 하나. 지난 해 반기는 연간이 있으니 뺀다.
+assert.ok(input.includes("| 지표 | 2023 연간 | 2024 연간 | 2025 연간 | 2026 H1 누적 |"), "열은 연간 + 당해 최신 누적이어야 한다");
+assert.ok(!input.includes("2025 H1 누적"), "연간이 있는 해의 반기값은 열에 넣지 않는다");
+// "2026H1" < "2026Q1" 문자열 정렬 때문에 3월이 6월보다 최신으로 뽑히던 버그.
+assert.ok(!input.includes("2026 Q1 누적"), "당해 최신 누적은 결산월이 가장 늦은 것이어야 한다(Q1이 H1을 이기면 안 된다)");
+assert.ok(input.includes("| 매출(억 위안) | 4,009 (+22.0%) | 3,620 (-9.7%) | 4,237 (+17.0%) | 2,769 (+54.8%) |"), "매출 행에 원자료 전년비를 붙여야 한다");
+assert.ok(input.includes("| 영업이익(억 위안) | 자료 없음 | 641 (+19.2%) | 자료 없음 | 자료 없음 |"), "없는 칸은 '자료 없음'이지 0이 아니다");
+assert.ok(input.includes("출하량 · 동력전지(GWh)"), "물량 라벨에 품목과 단위가 붙어야 한다");
+assert.ok(input.includes("생산능력(계획) · 리튬이온전지(GWh)"), "계획 생산능력은 실제와 다른 행이어야 한다");
+assert.ok(input.includes("| 출하량 · 음극재(만 톤) | 자료 없음 | 자료 없음 | 36.35 (+55.7%) | 자료 없음 |"), "톤은 만 톤으로 줄여 적는다");
+assert.equal(metricTable([]), "", "지표가 없으면 표를 만들지 않는다");
+assert.match(buildTimelineInput({ companyName: "x", events: sampleEvents, metrics: [] }), /정량 시계열: 없음/, "지표가 없으면 없다고 적는다");
+// 기업 API가 실제로 두 표를 읽어 넘기는지.
+assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
+assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
+assert.match(api, /report_metric\?select=period,metric,value,unit,yoy_pct_stated/, "보고서 물량을 읽어야 한다");
+assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, events, metrics \}\)/, "정량 행을 리포트에 넘겨야 한다");
+
 console.log("timeline report checks passed");

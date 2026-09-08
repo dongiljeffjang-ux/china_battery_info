@@ -129,6 +129,18 @@ function pairContext(a, b, eventsA, eventsB) {
   return { mode, label_ko: label, note_ko: "밸류체인 태그만으로 한 잠정 분류이며 고객·거래·화학계 중복은 입력에 없으면 미확보로 둡니다.", coverage_a: coverage(eventsA), coverage_b: coverage(eventsB) };
 }
 
+// 시계열 리포트에 넣을 정량 행. 금액은 거래소 표준 항목(영업이익까지 있다), 물량은 보고서 원문
+// 발췌(품목 태그가 붙어 있다). 둘 다 못 읽으면 빈 배열을 돌려 리포트 생성을 막지 않는다.
+const REPORT_MONEY_METRICS = "revenue_total,operating_profit,net_profit_attr,net_profit_excl";
+async function loadReportMetrics(companyId) {
+  const id = encodeURIComponent(companyId);
+  const [money, volumes] = await Promise.all([
+    supabaseRest(`market_financial?select=period,metric,value,unit,yoy_pct&company_id=eq.${id}&metric=in.(${REPORT_MONEY_METRICS})&order=report_date.asc`).catch(() => []),
+    supabaseRest(`report_metric?select=period,metric,value,unit,yoy_pct_stated&company_id=eq.${id}&unit=in.(GWh,t)&order=period.asc`).catch(() => []),
+  ]);
+  return [...(money || []), ...(volumes || [])];
+}
+
 async function runTimelineReport(request, response) {
   const companyId = String(request.body?.companyId || "").trim();
   const company = COMPANIES.find(item => item.id === companyId);
@@ -136,7 +148,11 @@ async function runTimelineReport(request, response) {
   const events = cleanTimelineEvents(request.body?.events);
   if (!events.length) return response.status(400).json({ status: "no_evidence", message: "현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다." });
   try {
-    const result = await buildTimelineReport({ companyName: company.name_ko, events });
+    // 리포트가 사건 조각만 받으면 나열에 머문다. 방향은 숫자에서 먼저 읽히므로 정량 시계열을
+    // 함께 준다. 거래소 표준 손익(연간·당해 누적)과 보고서 원문에서 뽑은 물량(출하·장착·생산능력).
+    // 실패해도 리포트는 사건만으로 낸다 — 숫자가 빠진 채 나오는 쪽이 아예 안 나오는 것보다 낫다.
+    const metrics = await loadReportMetrics(companyId);
+    const result = await buildTimelineReport({ companyName: company.name_ko, events, metrics });
     console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, events: events.length, reportChars: result.report.markdown_ko.length }));
     return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, events, generated_at: new Date().toISOString(), ...result });
   } catch (error) {
