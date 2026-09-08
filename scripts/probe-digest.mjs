@@ -45,6 +45,10 @@ const summary = {
   report: { title: result.report.title, published_at: result.report.published_at, pages: result.report.pages,
     text_chars: result.report.text?.length ?? null, section_chars: result.report.section?.length ?? null,
     parse_quality: result.report.parse_quality, visual_pages: result.report.visual_pages?.length ?? 0 },
+  // 조각별 산출 건수. 앞 조각에만 쏠려 있으면 조각이 커서 뒤쪽을 놓치고 있다는 신호다.
+  per_chunk_returned: result.per_chunk_returned,
+  chunk_errors: result.chunk_errors,
+  diagnostics: result.diagnostics,
   returned: result.returned,
   dropped: result.dropped,
   rows: result.rows.length,
@@ -53,6 +57,12 @@ const summary = {
   dated_events: dated.length,
   provider: result.provider,
 };
+
+// 판정을 사람이 다시 세지 않아도 되게 여기서 한 줄로 낸다(docs/PLAN-embedding-recovery.md T0.1).
+const verdict = result.rows.length <= 5 ? "현재 코드가 저장된 결과를 재현한다 → T1(추출 수정) 필수"
+  : result.rows.length >= 20 ? "현재 코드는 훨씬 많이 낸다 → 저장된 행은 옛 코드 산출물. T3(재처리)로 직행"
+  : "중간. 조각별 산출 건수와 dropped를 보고 판단";
+summary.verdict = verdict;
 console.log(JSON.stringify(summary, null, 2));
 console.log("\n--- 저장 가능 행 (시점 · 정밀도 · 레이어 · 제목) ---");
 for (const row of result.rows.sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))) {
