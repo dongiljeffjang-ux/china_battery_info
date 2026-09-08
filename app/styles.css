@@ -218,6 +218,11 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 
 .ask-grade{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:700;background:#fbe9e9;color:#bc5b5b}
 
+/* 하이브리드 검색 경로 표시. 근거 등급(.ask-grade)과 헷갈리면 안 되므로 테두리만 있는 옅은 칩으로 둔다.
+   양쪽에 다 걸린 근거만 진하게 채워 눈에 먼저 들어오게 한다. */
+.ask-route{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;border:1px solid var(--line);color:var(--muted);background:transparent}
+.ask-route.both{border-color:var(--ink);background:var(--ink);color:#fff}
+
 .compare-history-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 6px}.compare-history-toolbar .secondary-button{padding:6px 11px;font-size:12px}.compare-history-toolbar .secondary-button:disabled{opacity:.5;cursor:default}.compare-history-note{font-size:11px;color:var(--muted)}.compare-report-history li{display:flex;align-items:flex-start;gap:8px}.compare-report-history li input[type=checkbox]{margin:4px 0 0;flex:0 0 auto;cursor:pointer}.compare-report-history li .link-button{flex:1;min-width:0}.hist-kind{display:inline-block;margin-right:6px;padding:0 6px;border-radius:9px;font-size:10px;font-weight:800;background:var(--tech-bg);color:var(--tech);vertical-align:1px}.hist-ref{display:inline-block;margin-right:4px;padding:0 5px;border-radius:9px;font-size:9.5px;font-weight:800;background:#eef2f6;color:var(--muted);vertical-align:1px}.hist-more{margin:8px 0 0;padding:6px 11px;font-size:12px}
 
 /* 비교 화면 컨트롤 — 기업 A·B 선택을 좌우로 꽉 채우고, 실행 버튼과 옵션은 그 아래 줄로 내린다.

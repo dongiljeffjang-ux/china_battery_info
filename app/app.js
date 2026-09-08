@@ -1098,7 +1098,14 @@ function renderAskResult(payload, scoped){
   const parts = [];
   const unverified = payload.unverified_matched || 0;
   const gradeNote = unverified ? ` (그중 미검증 헤드라인 ${unverified}건)` : '';
-  const scopeNote = (scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`) + gradeNote;
+  // 하이브리드 검색이 무엇을 얼마나 건졌는지 밝힌다. 단어 검색이 없었으면 근거가 얇은 이유가
+  // 질문 탓인지 색인 탓인지 사용자가 구분할 수 없다.
+  const r = payload.retrieval;
+  const hybridNote = !r ? ''
+    : r.lexical_available === false ? ` 단어 검색은 색인이 준비되지 않아 건너뛰었고 의미 검색 결과만 씁니다.`
+    : r.vector_available === false ? ` 의미 검색(임베딩)이 응답하지 않아 단어 검색 ${r.lexical_matched}건만 씁니다. 뜻이 비슷한 표현은 이번 결과에서 빠져 있습니다.`
+    : ` 의미 검색 ${r.vector_matched}건 + 단어 검색 ${r.lexical_matched}건을 합쳐 후보 ${r.candidates}건, 그중 ${r.overlapped}건은 양쪽에 모두 걸렸습니다.`;
+  const scopeNote = (scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`) + gradeNote + hybridNote;
   if (payload.sufficient && payload.answer_ko) {
     parts.push(`<p class="ask-answer">${escapeHtml(payload.answer_ko)}</p>`);
   }
@@ -1117,7 +1124,13 @@ function renderAskResult(payload, scoped){
       const link = source.source_url ? ` <a href="${escapeHtml(source.source_url)}" target="_blank" rel="noreferrer">원문</a>` : '';
       // 본문 대조를 거치지 않은 근거는 눈에 띄게 구분한다. 사실과 헤드라인이 섞여 읽히면 안 된다.
       const grade = source.verified === false ? ' <span class="ask-grade">미검증 헤드라인</span>' : '';
-      return `<li><span class="n">${source.n}</span>${escapeHtml(head)}${grade}${link}<br>${escapeHtml(source.excerpt)}</li>`;
+      // 어느 검색기가 찾았는지. 양쪽에 걸린 근거가 가장 믿을 만하고, 단어 검색만 찾은 근거는
+      // 의미 검색으로는 못 건졌을 것이라 하이브리드가 무슨 일을 했는지 그대로 드러난다.
+      const by = source.retrieved_by || [];
+      const route = by.length > 1 ? ' <span class="ask-route both">의미+단어</span>'
+        : by[0] === 'lexical' ? ' <span class="ask-route lex">단어 검색</span>'
+        : by[0] === 'vector' ? ' <span class="ask-route vec">의미 검색</span>' : '';
+      return `<li><span class="n">${source.n}</span>${escapeHtml(head)}${grade}${route}${link}<br>${escapeHtml(source.excerpt)}</li>`;
     }).join('');
     parts.push(`<div class="ask-block"><p class="ask-label">근거 ${payload.sources.length}건</p><ul class="ask-sources">${items}</ul></div>`);
   }

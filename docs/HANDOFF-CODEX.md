@@ -1,5 +1,51 @@
 # Codex → Claude Code 인수인계
 
+> **2026-09-08 갱신 — 기업 질의응답에 하이브리드 검색 도입. SQL 적용 대기 중.**
+>
+> 기업 페이지의 근거 인용 질의응답이 코사인 단일 경로였다. `SW-2413` 같은 코드·모델명·정확한
+> 수치는 임베딩이 문맥에 녹여 버려 상위 k에 들어오지 못한다. 의미 검색과 단어 검색을 나란히
+> 돌려 RRF로 합치는 구조로 바꿨다.
+>
+> - `supabase/hybrid-search.sql` (신규): `pgroonga` 확장, `knowledge_chunk.search_text` 생성 컬럼
+>   (`content_ko + original_excerpt + content_original`), PGroonga 인덱스
+>   (`TokenBigramSplitSymbolAlphaDigit`), `lexical_knowledge_chunks()` RPC.
+>   **아직 SQL Editor에서 실행하지 않았다.** 이것을 돌리기 전까지 단어 검색은 404로 죽고
+>   의미 검색만으로 동작한다(의도된 물러남).
+> - `lib/knowledge-search.js`: `buildLexicalQuery()`(토큰화 · 조사 변형 OR 확장 · 연산자 차단),
+>   `fuseByRrf()`(k=60, 가중치 0.5/0.5), `searchKnowledge()`가 두 검색기를 `Promise.allSettled`로
+>   병렬 실행. 검색기당 10건 → 후보 최대 20건 → 프롬프트 10건(`MATCH_COUNT`, `ANSWER_SCHEMA`의
+>   `used_sources` 상한과 동일해야 한다. 회귀가 이 등식을 검사한다).
+> - `api/company.js`: `[KNOWLEDGE_ASK]` 로그에 `retrieval` 통계 추가. `lexical_matched`가 계속
+>   0이면 SQL 미적용이거나 질의가 비어 있는 것이다.
+> - `app/app.js`·`app/styles.css`: 근거마다 `의미+단어` / `단어 검색` / `의미 검색` 칩, 하단에 융합 통계.
+> - `scripts/check-hybrid-search.mjs` (신규): 합집합·겹침 보너스·연산자 차단·404 물러남 검사.
+>   25개 회귀 스크립트, `npm run check`, `git diff --check` 모두 통과.
+>
+> **왜 Kiwi가 아닌가**(사용자가 처음 요청한 것). 처음에 "`content_ko`에 한국어와 중국어가 섞여 있다"고
+> 표본 1건을 보고 단정했는데, 사용자가 "번역된 한국어 아니냐"고 되물어 실제 분포를 셌더니 절반만
+> 맞았다. 측정값을 남긴다.
+>
+> | source_type | 행 | 한글 | 한자 | 30자↑ 중국어 덩어리 |
+> |---|---|---|---|---|
+> | `event_fact` | 749 | 43% | 1% | 0 |
+> | `article_chunk` | 598 | 13% | 29% | 79 |
+> | `headline` | 340 | 34% | 15% | 36 |
+> | `original_excerpt`(컬럼) | 1064 | 0% | 65% | — |
+>
+> `event_fact`는 사실상 순수 한국어가 맞다. 다만 기본 검색 풀(헤드라인 제외 1359행)의 44%인
+> `article_chunk`는 한자가 한글의 2배가 넘고 `original_excerpt`는 한글이 0%다. 그래서 한국어 전용
+> 분석기는 여전히 절반을 놓친다. 더 중요한 이유는 이 검색이 건져야 하는 것이 형태소가 아니라
+> 부서지지 않은 코드·모델명·고유명사라는 점이고, kiwi 모델 58.7MB를 Vercel 함수에 실을 이유도 없다.
+>
+> **LLM 회계**(사용자의 "최대한 LLM을 안 쓰는 방향" 요구): 단어 검색은 Postgres 안에서 끝나 외부
+> 호출이 0이다. 이 기능의 외부 호출은 질문 임베딩(OpenAI) 1회와 답변 생성(LLM) 1회 그대로다.
+> 처음 구현에서 임베딩 실패 시 전체를 throw하게 둔 것을 고쳤다. 이제 두 검색기가 독립적으로 실패하고,
+> 한쪽만 살아 있으면 그것으로 답한다. 둘 다 죽었을 때만 오류를 올린다.
+>
+> **다음에 확인할 것**: SQL 적용 후 화면에서 `단어 검색`으로만 걸린 근거가 실제로 나오는지,
+> `lexical_matched`가 0이 아닌지. 재현율이 지나치면 `LEXICAL_WEIGHT`를 낮추거나
+> `QUESTION_STOPWORDS`를 넓힌다. 후보를 더 줄이는 리랭킹은 아직 없다.
+
 > **2026-09-07 밤 갱신 — Reshine bootstrap 구현·배포 완료. 실제 실행 검증은 아직.**
 >
 > 아래 C절 계획대로 구현해 커밋 `1b1459b`(`main`)까지 푸시했다. 사용자 요청으로 검색 기간은

@@ -65,7 +65,9 @@ async function runAsk(request, response) {
   const includeUnverified = request.body?.includeUnverified === true || String(request.query?.include_unverified || "") === "1";
   try {
     const result = await answerFromKnowledge({ question, companyId: companyId || null, includeUnverified });
-    console.info("[KNOWLEDGE_ASK]", JSON.stringify({ companyId: companyId || "all", matched: result.matched, unverified: result.unverified_matched || 0, include_unverified: includeUnverified, sufficient: result.sufficient }));
+    // 하이브리드가 실제로 두 갈래로 돌았는지는 로그에서 바로 보여야 한다.
+    // lexical_matched가 계속 0이면 supabase/hybrid-search.sql이 아직 적용되지 않았거나 질의가 비어 있는 것이다.
+    console.info("[KNOWLEDGE_ASK]", JSON.stringify({ companyId: companyId || "all", matched: result.matched, unverified: result.unverified_matched || 0, include_unverified: includeUnverified, sufficient: result.sufficient, retrieval: result.retrieval || null }));
     return response.status(200).json({ status: "ok", question, company_id: companyId || null, include_unverified: includeUnverified, ...result });
   } catch (error) {
     console.error("[KNOWLEDGE_ASK_FAILED]", JSON.stringify({ message: error.message }));

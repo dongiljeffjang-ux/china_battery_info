@@ -37,12 +37,19 @@ flowchart LR
 
   EVENT --> COMPANY[/Vercel: company API<br>회사 마스터 · 그룹 · 이벤트 시계열/]
   COMPANY --> UI
-  VECTOR -. 향후 RAG 챗 .-> UI
+  VECTOR -->|의미 검색<br>match_knowledge_chunks| FUSE[/RRF 순위 융합<br>lib/knowledge-search.js/]
+  VECTOR -->|단어 검색 PGroonga<br>lexical_knowledge_chunks| FUSE
+  FUSE -->|상위 10건만| ASK[/LLM 근거 인용 답변<br>company API · runAsk/]
+  ASK --> UI
 ```
 
 수집은 공개 트리거를 허용하고, 비용이 발생하는 본문 LLM 처리·Daily 생성은 Vercel Cron의 `CRON_SECRET` 인증 요청에서만 실행한다. 뉴스 원문은 사용자의 명시 요구로 `article.body_original`에 보관하며 청킹·임베딩에 사용한다. 본문 교차검증은 `pass` / `corrected_pass` / `reject` 세 단계다. 일부 오류를 제거하고 의미 있는 사실이 남는 `corrected_pass`는 검증자가 다시 작성한 기사·이벤트 필드만 저장하며, 확인 가능한 사실이 전혀 없거나 회사와 무관할 때만 기사 전체를 기각한다.
 
 RSS 수집기는 웹 검색 방식으로 전환하면서 호출이 끊겨 제거했다. 실제 수집 경로는 위 네 가지다.
+
+기업 페이지의 근거 인용 질의응답은 하이브리드 검색이다. 의미 검색(임베딩 코사인)과 단어 검색(PGroonga)을 각각 10건씩 병렬로 돌려 RRF(Reciprocal Rank Fusion, `k=60`, 가중치 반반)로 합치고, 겹치는 것을 뺀 최대 20건의 후보 중 상위 10건만 프롬프트에 넣는다. 하이브리드는 후보를 좁히는 장치가 아니라 넓히는 장치다. 임베딩은 `SW-2413` 같은 모델명·코드·정확한 수치를 주변 문맥에 녹여 버려 놓치는데, 그 구멍을 단어 검색이 메운다. 양쪽에 모두 걸린 청크는 점수를 두 번 받아 자연히 위로 올라가며, 이 겹침 보너스는 가중치를 한쪽으로 기울여도 뒤집히지 않는다. 후보를 더 줄이는 일(리랭킹)은 아직 없다. 두 검색기는 독립적으로 실패한다. 단어 검색은 `supabase/hybrid-search.sql`을 적용해야 살아나고 적용 전에는 RPC 404를 잡아 의미 검색만으로 물러난다. 반대로 의미 검색은 질문마다 OpenAI 임베딩을 부르는 이 기능의 유일한 외부 호출이라 키·쿼터·장애로 끊길 여지가 가장 큰데, 그때는 Postgres 안에서 끝나는 단어 검색만으로 버틴다. 둘 다 실패했을 때만 오류를 올린다.
+
+형태소 분석기(Kiwi) 대신 PGroonga를 쓴 이유는 세 가지다. 첫째, 이 검색이 건져야 하는 것은 형태소가 아니라 부서지지 않은 코드·모델명·고유명사다. 둘째, 검색 대상의 언어가 균질하지 않다 — `event_fact` 749행은 한자 1%로 사실상 순수 한국어지만, `article_chunk` 598행은 한자 29% 대 한글 13%로 중국어가 우세하고 `original_excerpt` 1,064행은 한글 0%다. 기본 검색 풀의 44%가 한국어 전용 분석기로는 처리되지 않는다. 셋째, PGroonga는 Postgres 안에서 끝나 Vercel 함수에 58.7MB 모델을 싣지 않고 외부 호출도 늘리지 않는다.
 
 CNINFO 공시는 수집·저장되지만 `selectHeadlineTop10()`이 `web_search_*`와 CATL 뉴스룸만 선별 대상으로 삼기 때문에 본문 분석과 `event` 생성에 들어가지 않는다. 공식 공시를 최우선 출처로 둔다는 제품 원칙과 어긋나는 지점이며 `docs/HANDOFF.md` 9절에 기술부채로 올려 두었다.
 
