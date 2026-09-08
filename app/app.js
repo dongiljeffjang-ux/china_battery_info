@@ -976,6 +976,13 @@ function shortTitle(title){
   return out;
 }
 const DIGEST_PREVIEW = 4;
+const DIGEST_ITEM_CHARS = 300;
+function digestItemText(event, companyId){
+  const title = stripCompanySubject(event.title, companyId).trim();
+  const fact = String(event.fact || '').trim();
+  const combined = fact && fact !== title ? `${title}\n${fact}` : title || fact;
+  return combined.length > DIGEST_ITEM_CHARS ? `${combined.slice(0, DIGEST_ITEM_CHARS - 1).trimEnd()}…` : combined;
+}
 function renderCompanyEvents(timeline){
   const grid = document.querySelector('#snapshot-grid');
   grid.className = 'snapshot-grid digest-stack';
@@ -984,7 +991,7 @@ function renderCompanyEvents(timeline){
     grid.innerHTML = `<p>${escapeHtml(timelineNotice(timeline.status) || '아직 읽어들인 정기보고서가 없습니다. 매일 밤 수집 뒤 자동으로 채워집니다.')}</p>`;
     return;
   }
-  // 보고서(시점)마다 카드 하나. 안에서는 시장/기술 두 열로 나누고 중요한 것부터 몇 줄만 보인다.
+  // 보고서(시점)마다 카드 하나. 시장 다음 기술 순서로 세로 배치하고, 각 사실은 300자까지 직접 보여준다.
   const groups = new Map();
   [...events].sort((a, b) => b.date.localeCompare(a.date)).forEach(event => {
     const label = displayDate(event);
@@ -992,9 +999,8 @@ function renderCompanyEvents(timeline){
     groups.get(label).push(event);
   });
   const line = event => {
-    const title = shortTitle(stripCompanySubject(event.title, timeline.companyId));
-    const metrics = [...new Set([...String(event.fact || '').matchAll(METRIC_PATTERN)].map(m => m[1].trim()))].filter(m => !title.includes(m)).slice(0, 2).join(' · ');
-    return `<li class="digest-line" data-tip="${escapeHtml(eventTip(event))}"><span class="digest-title">${escapeHtml(title)}</span>${metrics ? `<span class="digest-metric">${escapeHtml(metrics)}</span>` : ''}</li>`;
+    const [title, ...details] = digestItemText(event, timeline.companyId).split('\n');
+    return `<li class="digest-line" data-tip="${escapeHtml(eventTip(event))}"><span class="digest-title">${escapeHtml(title)}</span>${details.length ? `<span class="digest-detail">${escapeHtml(details.join(' '))}</span>` : ''}</li>`;
   };
   const column = (name, list, cls) => {
     if (!list.length) return '';
