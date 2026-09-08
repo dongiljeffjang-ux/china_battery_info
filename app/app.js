@@ -604,6 +604,16 @@ function isPrimaryEvidence(event){
 function visibleEvents(timeline){
   return includeSupporting ? timeline.events : timeline.events.filter(isPrimaryEvidence);
 }
+// 리포트는 화면 토글 상태를 암묵적으로 따라가지 않는다. 생성 직전에 사용자가 핵심 근거만
+// 볼지, 아직 공시로 확정되지 않은 참고 기사·웹 백필까지 넓힐지를 설명과 함께 고른다.
+async function chooseReportSupporting(){
+  const selected = window.confirm('리포트에 보조 정보를 포함할까요?\n\n확인: 거래소 공시·본문 검증을 통과한 핵심 근거에 더해, 아직 공시로 확정되지 않은 참고 기사와 웹 백필도 포함합니다. 최신 범위는 넓어지지만 확정도는 낮습니다.\n\n취소: 핵심 근거만 사용합니다.');
+  if (includeSupporting === selected) return selected;
+  includeSupporting = selected;
+  [document.querySelector('#include-supporting'), document.querySelector('#include-supporting-compare')].filter(Boolean).forEach(box => { box.checked = selected; });
+  await Promise.all([renderCompany(), renderComparison()]);
+  return selected;
+}
 // 드롭다운 대신 밸류체인 탭 → 회사 칩으로 고른다. 칩의 아이콘은 중문 법인명 첫 글자다.
 function renderCompanyPicker(){
   const tabs = document.querySelector('#company-chain-tabs');
@@ -895,6 +905,7 @@ function renderTimelineReportPanel(payload){
 }
 
 async function generateTimelineReport(){
+  await chooseReportSupporting();
   if (!lastCompanyTimeline?.events?.length) { window.alert('현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다.'); return; }
   const snapshot = lastCompanyTimeline;
   const button = document.querySelector('#company-timeline-report');
@@ -1435,6 +1446,7 @@ async function synthesizeReports(){
   }
 }
 async function generateCompareReport(){
+  await chooseReportSupporting();
   if (!lastComparison || (!lastComparison.eventsA.length && !lastComparison.eventsB.length)) {
     window.alert('비교할 이벤트가 화면에 없습니다. 두 기업을 고른 뒤 다시 시도해 주세요.');
     return;
