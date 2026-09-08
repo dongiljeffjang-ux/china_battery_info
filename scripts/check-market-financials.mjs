@@ -11,6 +11,11 @@ const close = (actual, expected, label) => assert.ok(Math.abs(actual - expected)
 assert.deepEqual(securityCodeOf({ cninfo: { codes: ["300750"] } }), { code: "300750.SZ", market: "a" }, "3으로 시작하면 선전");
 assert.deepEqual(securityCodeOf({ cninfo: { codes: ["688005"] } }), { code: "688005.SH", market: "a" }, "6으로 시작하면 상하이");
 assert.deepEqual(securityCodeOf({ cninfo: { codes: ["002594"] } }), { code: "002594.SZ", market: "a" });
+// 북경증권거래소. BTR(贝特瑞 920185)을 .SZ로 붙였다가 이 회사만 응답이 비어 통째로 빠졌다.
+assert.deepEqual(securityCodeOf({ cninfo: { codes: ["920185"] } }), { code: "920185.BJ", market: "a" }, "92로 시작하면 북경");
+assert.equal(securityCodeOf({ cninfo: { codes: ["430047"] } }).code, "430047.BJ");
+assert.equal(securityCodeOf({ cninfo: { codes: ["830799"] } }).code, "830799.BJ");
+assert.equal(securityCodeOf({ cninfo: { codes: ["873001"] } }).code, "873001.BJ");
 assert.deepEqual(securityCodeOf({ hkex: { code: "03931" } }), { code: "03931.HK", market: "hk" });
 assert.equal(securityCodeOf({}), null, "코드가 없으면 대상이 아니다");
 // 홍콩·본토 양쪽 코드를 가진 회사는 홍콩을 쓴다(그쪽이 그 회사의 보고 통화·기준이다).
