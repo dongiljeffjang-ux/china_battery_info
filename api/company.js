@@ -54,6 +54,9 @@ function sortedCatalog() {
 
 const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,fact_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier)";
 
+// 정량 궤적용 지표. line_item_zh와 원문 표기를 함께 보내 화면이 계정을 밝히고 검산할 수 있게 한다.
+const METRIC_SELECT = "period,metric,value,unit,currency,line_item_zh,quantity_text,yoy_pct_stated,excerpt,report_kind,source_url,occurred_at";
+
 // 근거 인용 질의응답. 새 함수 파일을 만들지 않으려고 기업 API에 붙였다.
 async function runAsk(request, response) {
   const question = String(request.body?.question || request.query?.question || "").trim();
@@ -322,9 +325,16 @@ async function handleRequest(request, response) {
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured", company, events: [] });
 
   try {
-    const events = await supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&timeline_eligibility=neq.exclude&order=occurred_at.asc`);
+    // 정량 궤적은 정기보고서에서만 온다. 지표가 없는 회사(비상장)는 빈 배열이 오고 화면이 기존 카드만 그린다.
+    const [events, metrics] = await Promise.all([
+      supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&timeline_eligibility=neq.exclude&order=occurred_at.asc`),
+      supabaseRest(`report_metric?select=${METRIC_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&order=period.asc`).catch((error) => {
+        console.error("[COMPANY_METRICS_FAILED]", JSON.stringify({ companyId, message: error.message }));
+        return [];
+      }),
+    ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
-    return response.status(200).json({ status: "ok", company, events });
+    return response.status(200).json({ status: "ok", company, events, metrics });
   } catch (error) {
     console.error("[COMPANY_QUERY_FAILED]", JSON.stringify({ companyId, message: error.message }));
     return response.status(502).json({ status: error.code || "db_error", company, events: [] });

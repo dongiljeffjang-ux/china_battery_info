@@ -723,7 +723,9 @@ async function loadCompanyTimeline(companyId){
     // 어느 회사의 시계열인지 함께 들고 다닌다. 비교 화면은 두 회사를 동시에 그리므로
     // 화면 전역의 '현재 회사'로는 제목에서 걷어낼 주어를 정할 수 없다.
     companyId,
-    events: (payload?.events || []).map(normalizeEvent).filter(event => /^\d{4}-\d{2}-\d{2}$/.test(event.date))
+    events: (payload?.events || []).map(normalizeEvent).filter(event => /^\d{4}-\d{2}-\d{2}$/.test(event.date)),
+    // 정기보고서에서 뽑은 정량 지표. 비상장사는 빈 배열이라 궤적 영역이 통째로 숨는다.
+    metrics: payload?.metrics || []
   };
   if (timeline.status === 'ok') companyTimelineCache.set(companyId, timeline);
   return timeline;
@@ -796,6 +798,8 @@ async function renderCompany(){
   if (!currentCompany) {
     profile.innerHTML = '<div><h2>추적 기업 목록을 불러오지 못했습니다</h2><p>접근 세션과 네트워크 상태를 확인한 뒤 새로고침해 주세요.</p></div>';
     grid.innerHTML = ''; matrix.innerHTML = '';
+    const trajectory = document.querySelector('#trajectory-section');
+    if (trajectory) trajectory.hidden = true;
     return;
   }
   const requestedId = currentCompany;
@@ -826,6 +830,7 @@ async function renderCompany(){
       ? `공시·핵심 근거 이벤트 ${shown.length}건을 표시합니다.${hidden ? ` 보조 데이터 ${hidden}건은 숨겨져 있습니다.` : ''}`
       : '표시할 공시 기반 이벤트가 없습니다. 연차보고서 요약을 실행하면 이 화면에 채워집니다.');
   }
+  renderTrajectory(timeline);
   renderCompanyEvents(timeline);
   renderLayerMatrix(timeline);
 }
@@ -983,6 +988,179 @@ function digestItemText(event, companyId){
   const combined = fact && fact !== title ? `${title}\n${fact}` : title || fact;
   return combined.length > DIGEST_ITEM_CHARS ? `${combined.slice(0, DIGEST_ITEM_CHARS - 1).trimEnd()}…` : combined;
 }
+// ── 정량 궤적 ───────────────────────────────────────────────────────────────
+// 하나의 연속 시간축을 지표 선(정기보고서 수치)과 사건 플래그가 나눠 쓴다.
+// 축은 연도 칸이 아니라 날짜다 — 사건은 실제 '월' 위치에 꽂히고, 플래그에 마우스를 올리면
+// 그 사실이 툴팁으로 뜬다. 재료는 정기보고서뿐이다(뉴스 제외).
+const METRIC_LABELS = {
+  revenue_total: '매출', net_profit_attr: '지배주주 순이익', net_profit: '순이익',
+  net_profit_excl: '扣非 순이익', operating_profit: '영업이익',
+  ocf: '영업활동 현금흐름', overseas_revenue: '해외 매출',
+};
+const METRIC_ORDER = ['revenue_total', 'net_profit_attr', 'net_profit', 'operating_profit', 'net_profit_excl', 'ocf', 'overseas_revenue'];
+// SVG 좌표계. 화면 폭에 맞춰 늘어나되 비율은 유지한다.
+const TRAJ = { width: 1000, plotTop: 26, plotHeight: 108, axisY: 146, laneGap: 14, height: 232, padX: 46 };
+let trajectoryMetric = null;
+
+// 기간 표기를 그 구간의 마지막 날로 바꾼다. 연간 값을 1월에 찍으면 시간축에서 앞당겨진다.
+function periodEndDate(period){
+  const match = String(period || '').match(/^(\d{4})(?:(H[12])|(Q[1-4]))?$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = match[2] ? (match[2] === 'H1' ? 6 : 12) : match[3] ? Number(match[3][1]) * 3 : 12;
+  return { time: Date.UTC(year, month, 0), year: match[1], interim: Boolean(match[2] || match[3]) };
+}
+function metricValueText(row){
+  const value = Number(row.value);
+  if (!Number.isFinite(value)) return '';
+  const digits = Math.abs(value) >= 1000 ? 0 : Math.abs(value) >= 10 ? 1 : 2;
+  const shown = value.toLocaleString('ko-KR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return row.unit === 'CNY_100M' ? `${shown}억 위안` : `${shown} ${row.unit || ''}`.trim();
+}
+function metricTip(row){
+  const parts = [`${row.period} · ${metricValueText(row)}`, `원문 계정 ${row.line_item_zh}`, `원문 표기 ${row.quantity_text}`];
+  if (row.yoy_pct_stated !== null && row.yoy_pct_stated !== undefined) parts.push(`원문에 적힌 전년비 ${row.yoy_pct_stated}%`);
+  parts.push(row.report_kind === 'annual_report' ? '연차보고서' : '반기·분기보고서');
+  return parts.join(' · ');
+}
+function trajectoryFlagTip(event, companyId){
+  const title = stripCompanySubject(event.title, companyId).trim();
+  const fact = String(event.fact || '').trim();
+  return [`${event.date} · ${evidenceLabels[event.kind] || ''}`, title, fact].filter(Boolean).join('\n').slice(0, 420);
+}
+function renderTrajectory(timeline){
+  const section = document.querySelector('#trajectory-block');
+  const target = document.querySelector('#trajectory');
+  if (!section || !target) return;
+  const metrics = (timeline.metrics || [])
+    .map(row => ({ ...row, at: periodEndDate(row.period) }))
+    .filter(row => row.at && Number.isFinite(Number(row.value)));
+  if (!metrics.length) {
+    // 정기보고서가 수집되지 않는 회사(비상장)는 아래 사실 카드만 쓴다. 빈 차트를 두지 않는다.
+    section.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  section.hidden = false;
+  const available = METRIC_ORDER.filter(metric => metrics.some(row => row.metric === metric));
+  if (!available.includes(trajectoryMetric)) trajectoryMetric = available[0];
+  const rows = metrics.filter(row => row.metric === trajectoryMetric).sort((a, b) => a.at.time - b.at.time);
+  const flags = (timeline.events || [])
+    .filter(event => (event.kind === 'annual_report' || event.kind === 'periodic_report') && /^\d{4}-\d{2}-\d{2}$/.test(event.date))
+    .map(event => ({ event, time: Date.UTC(Number(event.date.slice(0, 4)), Number(event.date.slice(5, 7)) - 1, Number(event.date.slice(8, 10))) }))
+    .sort((a, b) => a.time - b.time);
+
+  // 시간축은 지표와 사건을 모두 담는다. 한쪽만 담으면 두 층의 x가 어긋난다.
+  const times = [...metrics.map(row => row.at.time), ...flags.map(flag => flag.time)];
+  const minTime = Math.min(...times), maxTime = Math.max(...times);
+  const span = Math.max(1, maxTime - minTime);
+  const plotWidth = TRAJ.width - TRAJ.padX * 2;
+  const x = (time) => TRAJ.padX + ((time - minTime) / span) * plotWidth;
+
+  const values = rows.map(row => Number(row.value));
+  const top = Math.max(0, ...values), bottom = Math.min(0, ...values);
+  const range = (top - bottom) || 1;
+  const y = (value) => TRAJ.plotTop + TRAJ.plotHeight - ((value - bottom) / range) * TRAJ.plotHeight;
+  const zeroY = y(0);
+
+  // 연간과 반기·분기는 성격이 달라 한 선으로 잇지 않는다. 반기 누적을 연간과 같은 실선에
+  // 이으면 급락으로 오독된다. 연간은 실선, 반기·분기는 점선으로 나눠 그린다.
+  const series = (interim) => rows.filter(row => row.at.interim === interim);
+  const path = (list) => list.map((row, index) => `${index ? 'L' : 'M'}${x(row.at.time).toFixed(1)} ${y(Number(row.value)).toFixed(1)}`).join(' ');
+  const point = (row) => {
+    const cx = x(row.at.time), cy = y(Number(row.value));
+    const shape = row.at.interim
+      ? `<rect x="${(cx - 3.4).toFixed(1)}" y="${(cy - 3.4).toFixed(1)}" width="6.8" height="6.8" transform="rotate(45 ${cx.toFixed(1)} ${cy.toFixed(1)})" class="traj-dot interim"/>`
+      : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" class="traj-dot"/>`;
+    return `<g class="traj-point" data-tip="${escapeHtml(metricTip(row))}"><rect x="${(cx - 12).toFixed(1)}" y="${(cy - 12).toFixed(1)}" width="24" height="24" fill="transparent"/>${shape}<text x="${cx.toFixed(1)}" y="${(cy - 9).toFixed(1)}" class="traj-point-label">${escapeHtml(metricValueText(row))}${row.at.interim ? ' 누적' : ''}</text></g>`;
+  };
+
+  // 정기보고서 사건은 같은 날짜(보고서 결산일)에 여러 건이 몰린다. 같은 날·같은 트랙이면
+  // 점 하나로 묶고 건수를 적는다. 점을 흩뿌리면 날짜가 어긋나 보이고, 겹쳐 두면 못 누른다.
+  const laneRows = 2;
+  const cluster = (list) => {
+    const byDate = new Map();
+    for (const item of list) {
+      const key = item.event.date;
+      if (!byDate.has(key)) byDate.set(key, { time: item.time, date: key, events: [] });
+      byDate.get(key).events.push(item.event);
+    }
+    const groups = [...byDate.values()].sort((a, b) => a.time - b.time);
+    const lastX = new Array(laneRows).fill(-Infinity);
+    return groups.map(group => {
+      const px = x(group.time);
+      let row = lastX.findIndex(previous => px - previous > 22);
+      if (row < 0) row = lastX.indexOf(Math.min(...lastX));
+      lastX[row] = px;
+      return { ...group, px, row };
+    });
+  };
+  const marketFlags = cluster(flags.filter(flag => flag.event.track !== 'tech'));
+  const techFlags = cluster(flags.filter(flag => flag.event.track === 'tech'));
+  const clusterTip = (group) => group.events.length === 1
+    ? trajectoryFlagTip(group.events[0], timeline.companyId)
+    : [`${group.date} · ${group.events.length}건`, ...group.events.map(event => `· ${stripCompanySubject(event.title, timeline.companyId).trim()}`)].join('\n').slice(0, 460);
+  const flagMark = (group, track, baseY) => {
+    const py = baseY + group.row * TRAJ.laneGap;
+    const many = group.events.length > 1;
+    return `<g class="traj-flag ${track}${many ? ' many' : ''}" data-tip="${escapeHtml(clusterTip(group))}" data-flag-date="${escapeHtml(group.date)}" data-flag-track="${track}" tabindex="0">
+      <line x1="${group.px.toFixed(1)}" y1="${TRAJ.axisY}" x2="${group.px.toFixed(1)}" y2="${(py - 4).toFixed(1)}"/>
+      <circle cx="${group.px.toFixed(1)}" cy="${py.toFixed(1)}" r="${many ? 6 : 4.2}"/>
+      ${many ? `<text x="${group.px.toFixed(1)}" y="${(py + 2.6).toFixed(1)}" class="traj-flag-count">${group.events.length}</text>` : ''}
+      <circle cx="${group.px.toFixed(1)}" cy="${py.toFixed(1)}" r="11" fill="transparent"/>
+    </g>`;
+  };
+  const marketBase = TRAJ.axisY + 12;
+  const techBase = marketBase + laneRows * TRAJ.laneGap + 8;
+
+  // 눈금은 연 단위로만 둔다. 월 눈금까지 그리면 3~4년 폭에서 축이 지저분해진다.
+  const yearTicks = [];
+  for (let year = new Date(minTime).getUTCFullYear(); year <= new Date(maxTime).getUTCFullYear(); year += 1) {
+    const time = Date.UTC(year, 0, 1);
+    if (time < minTime || time > maxTime) continue;
+    yearTicks.push(`<g class="traj-tick"><line x1="${x(time).toFixed(1)}" y1="${TRAJ.plotTop}" x2="${x(time).toFixed(1)}" y2="${TRAJ.height - 14}"/><text x="${x(time).toFixed(1)}" y="${TRAJ.height - 3}">${year}</text></g>`);
+  }
+
+  const chips = available.map(metric => `<button type="button" class="traj-chip${metric === trajectoryMetric ? ' active' : ''}" data-metric="${escapeHtml(metric)}">${escapeHtml(METRIC_LABELS[metric] || metric)}</button>`).join('');
+  const annual = series(false), interim = series(true);
+  const label = METRIC_LABELS[trajectoryMetric] || trajectoryMetric;
+  target.innerHTML = `<div class="traj-head"><div class="traj-chips">${chips}</div><div class="traj-legend"><span><i class="dot market"></i>시장</span><span><i class="dot tech"></i>기술</span><span class="traj-legend-line">연차보고서</span><span class="traj-legend-line interim">반기·분기(누적)</span></div></div>
+    <svg class="traj-svg" viewBox="0 0 ${TRAJ.width} ${TRAJ.height}" role="img" aria-label="${escapeHtml(label)} 시계열과 정기보고서 사건 플래그">
+      ${yearTicks.join('')}
+      ${bottom < 0 ? `<line class="traj-zero" x1="${TRAJ.padX}" y1="${zeroY.toFixed(1)}" x2="${TRAJ.width - TRAJ.padX}" y2="${zeroY.toFixed(1)}"/>` : ''}
+      <line class="traj-axis-line" x1="${TRAJ.padX - 12}" y1="${TRAJ.axisY}" x2="${TRAJ.width - TRAJ.padX + 12}" y2="${TRAJ.axisY}"/>
+      ${annual.length > 1 ? `<path class="traj-line" d="${path(annual)}"/>` : ''}
+      ${interim.length > 1 ? `<path class="traj-line interim" d="${path(interim)}"/>` : ''}
+      ${rows.map(point).join('')}
+      ${marketFlags.map(item => flagMark(item, 'market', marketBase)).join('')}
+      ${techFlags.map(item => flagMark(item, 'tech', techBase)).join('')}
+    </svg>
+    <p class="traj-note">가로축은 날짜입니다. 위쪽 선이 <strong>${escapeHtml(label)}</strong>, 축 아래 점이 그 달에 공시된 사건입니다(위 줄 시장 · 아래 줄 기술). 점에 마우스를 올리면 내용과 원문 계정이 보이고, 누르면 근거가 아래에 열립니다. 선이 끊긴 구간은 그 기간 값이 보고서 요약에 담기지 않았다는 뜻이며 실적이 없었다는 뜻이 아닙니다.</p>
+    <div id="traj-detail" class="traj-detail" hidden></div>`;
+
+  target.querySelectorAll('.traj-chip').forEach(button => button.addEventListener('click', () => {
+    trajectoryMetric = button.dataset.metric;
+    renderTrajectory(timeline);
+  }));
+  const detail = target.querySelector('#traj-detail');
+  const detailCard = (event) => `<article class="traj-detail-item">
+    <h4>${escapeHtml(stripCompanySubject(event.title, timeline.companyId))}</h4>
+    <p class="traj-detail-meta">${escapeHtml(displayDate(event))} · ${escapeHtml(evidenceLabels[event.kind] || '')}${event.sourceUrl ? ` · <a href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문 ↗</a>` : ''}</p>
+    <p>${escapeHtml(event.fact || '')}</p>
+    ${event.excerpt ? `<blockquote>${escapeHtml(String(event.excerpt).slice(0, 400))}</blockquote>` : ''}
+  </article>`;
+  target.querySelectorAll('.traj-flag').forEach(node => node.addEventListener('click', () => {
+    if (!detail) return;
+    const date = node.dataset.flagDate, track = node.dataset.flagTrack;
+    const picked = flags.filter(item => item.event.date === date && (item.event.track === 'tech' ? 'tech' : 'market') === track).map(item => item.event);
+    if (!picked.length) return;
+    target.querySelectorAll('.traj-flag').forEach(other => other.classList.remove('active'));
+    node.classList.add('active');
+    detail.hidden = false;
+    detail.innerHTML = `${picked.length > 1 ? `<p class="traj-detail-count">${escapeHtml(date)} · ${picked.length}건</p>` : ''}${picked.map(detailCard).join('')}`;
+  }));
+}
+
 function renderCompanyEvents(timeline){
   const grid = document.querySelector('#snapshot-grid');
   grid.className = 'snapshot-grid digest-stack';

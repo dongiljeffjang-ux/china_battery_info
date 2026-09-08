@@ -273,3 +273,51 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .company-timeline-report-panel .timeline-report-table tbody tr:last-child td{border-bottom:0}
 .company-timeline-report-panel .timeline-report-table th:nth-child(1){min-width:155px}.company-timeline-report-panel .timeline-report-table th:nth-child(2),.company-timeline-report-panel .timeline-report-table th:nth-child(3){min-width:150px}.company-timeline-report-panel .timeline-report-table th:nth-child(4){min-width:120px}.company-timeline-report-panel .timeline-report-table th:nth-child(5){min-width:150px}.company-timeline-report-panel .timeline-report-table th:nth-child(6){min-width:165px}.company-timeline-report-panel .timeline-report-table th:nth-child(7){min-width:90px}
 @media(max-width:760px){.company-timeline-report-panel .report-doc{max-width:none;padding:22px 18px}.company-timeline-report-panel .timeline-report-table{font-size:12px}.company-timeline-report-panel .timeline-report-table th,.company-timeline-report-panel .timeline-report-table td{padding:9px 10px}}
+
+/* ── 정량 궤적 ──────────────────────────────────────────────────────────────
+   연속 시간축 하나를 지표 선과 사건 플래그가 나눠 쓴다. 사건은 실제 월 위치에 꽂힌다.
+   색은 이미 있는 축 색을 그대로 쓴다(시장 --market, 기술 --tech, 적자 --alert). */
+.trajectory{border:1px solid var(--line);background:var(--card);padding:14px 16px 12px;margin-bottom:16px}
+.traj-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.traj-chips{display:flex;flex-wrap:wrap;gap:6px}
+.traj-chip{border:1px solid var(--line);background:#fff;color:var(--muted);font-size:12px;padding:4px 11px;border-radius:999px;cursor:pointer}
+.traj-chip:hover{border-color:var(--blue);color:var(--blue)}
+.traj-chip.active{background:var(--pale);border-color:var(--blue);color:var(--blue);font-weight:700}
+.traj-legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--muted);font-size:11px;align-items:center}
+.traj-legend-line::before{content:"";display:inline-block;width:16px;height:0;border-top:2px solid var(--market);vertical-align:middle;margin-right:5px}
+.traj-legend-line.interim::before{border-top-style:dashed}
+.traj-svg{display:block;width:100%;height:auto}
+.traj-line{fill:none;stroke:var(--market);stroke-width:2}
+.traj-line.interim{stroke-dasharray:5 4;opacity:.75}
+.traj-dot{fill:var(--market)}
+.traj-dot.interim{fill:#fff;stroke:var(--market);stroke-width:1.6}
+.traj-point-label{font-size:10.5px;fill:var(--ink);text-anchor:middle}
+.traj-point{cursor:default}
+.traj-point:hover .traj-dot{fill:var(--blue)}
+.traj-axis-line{stroke:var(--ink);stroke-width:1}
+.traj-zero{stroke:var(--alert);stroke-width:1;stroke-dasharray:3 3;opacity:.5}
+.traj-tick line{stroke:var(--line);stroke-width:1}
+.traj-tick text{font-size:10.5px;fill:var(--muted);text-anchor:middle}
+/* 플래그: 축에서 내려오는 짧은 선 끝의 점. 색이 트랙(시장·기술)을 가른다. */
+.traj-flag{cursor:pointer}
+.traj-flag line{stroke:var(--line);stroke-width:1}
+.traj-flag circle{fill:var(--market)}
+.traj-flag.tech circle{fill:var(--tech)}
+.traj-flag:hover circle,.traj-flag:focus circle{r:6}
+.traj-flag:hover line,.traj-flag:focus line{stroke:var(--muted)}
+.traj-flag.active circle{stroke:var(--ink);stroke-width:2}
+.traj-flag:focus{outline:none}
+.traj-note{margin:2px 0 0;color:var(--muted);font-size:12px;line-height:1.6}
+.traj-detail{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.traj-detail h4{margin:0 0 4px;font-size:14px}
+.traj-detail-meta{margin:0 0 8px;color:var(--muted);font-size:12px}
+.traj-detail p{margin:0 0 8px;font-size:13px;line-height:1.6}
+.traj-detail blockquote{margin:0;padding:8px 12px;background:var(--band);color:var(--muted);font-size:12px;line-height:1.6}
+/* 툴팁은 여러 줄로 온다(제목/사실). 줄바꿈을 살린다. */
+.hover-tip{white-space:pre-line}
+.traj-flag.many circle:first-of-type{fill:var(--market)}
+.traj-flag.tech.many circle:first-of-type{fill:var(--tech)}
+.traj-flag-count{font-size:8px;fill:#fff;text-anchor:middle;font-weight:700;pointer-events:none}
+.traj-detail-count{margin:0 0 8px;font-size:12px;color:var(--muted);font-weight:700}
+.traj-detail-item + .traj-detail-item{margin-top:12px;border-top:1px dotted var(--line);padding-top:10px}
+.traj-detail-item h4{margin:0 0 4px;font-size:14px}
