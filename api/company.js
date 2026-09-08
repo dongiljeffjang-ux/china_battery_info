@@ -98,9 +98,11 @@ function cleanTimelineEvents(list) {
     date: /^\d{4}-\d{2}-\d{2}$/.test(String(event?.date || "")) ? String(event.date) : "",
     track: event?.track === "tech" || event?.track === "technology" ? "tech" : "market",
     layer: String(event?.layer || "").slice(0, 80),
+    period: String(event?.period || "").slice(0, 30),
     title: String(event?.title || "").slice(0, 180),
     fact: String(event?.fact || "").slice(0, 500),
     sourceName: String(event?.sourceName || "").slice(0, 100),
+    sourceUrl: /^https?:\/\//i.test(String(event?.sourceUrl || "")) ? String(event.sourceUrl).slice(0, 500) : "",
   })).filter(event => event.id && event.date && event.title && event.fact);
 }
 

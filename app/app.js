@@ -822,22 +822,17 @@ async function renderCompany(){
 
 function timelineReportParts(payload){
   const report = payload.report || {};
-  const evidenceById = new Map((payload.events || []).map(event => [event.id, event]));
-  const evidence = ids => (ids || []).map(id => {
-    const event = evidenceById.get(id);
-    if (!event) return '';
-    return `<li><span class="axis-tag ${event.track === 'tech' ? 'tech' : 'market'}">${event.track === 'tech' ? '기술' : '시장'}</span> <strong>${escapeHtml(displayDate(event))}</strong> · ${escapeHtml(event.title)}<br><span class="basis">${highlightMetrics(event.fact)} · 출처: ${escapeHtml(event.sourceName || '미상')}</span></li>`;
-  }).filter(Boolean).join('');
-  const points = (report.turning_points || []).map(point => `<article class="point"><p><span class="axis-tag ${point.track === 'tech' ? 'tech' : 'market'}">${point.track === 'tech' ? '기술' : '시장'}</span> <strong>${escapeHtml(point.period_ko)}</strong></p><p>${highlightMetrics(point.finding_ko)}</p><ul class="timeline-report-evidence">${evidence(point.basis_event_ids)}</ul></article>`).join('') || '<p class="none">근거 이벤트에서 분명한 변곡점을 추출하지 못했습니다.</p>';
   const title = `${payload.company_name_ko || '기업'} 시계열 리포트`;
   const generated = payload.generated_at ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(payload.generated_at)) : '';
-  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">화면에 표시된 시장·기술 이벤트 ${payload.events?.length || 0}건만 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><p class="headline">${highlightMetrics(report.headline_ko || '')}</p><div class="pair"><section class="col"><h2>1. 시장 흐름</h2><p>${highlightMetrics(report.market_trajectory_ko || '')}</p></section><section class="col"><h2>2. 기술 흐름</h2><p>${highlightMetrics(report.technology_trajectory_ko || '')}</p></section></div><h2>3. 주요 변곡점</h2><div class="points">${points}</div><h2>4. 현재 위치</h2><p>${highlightMetrics(report.current_position_ko || '')}</p><h2>해석 한계</h2><p class="basis">${highlightMetrics(report.limits_ko || '')}</p><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
+  // 표 중심 Markdown은 모델이 지정한 7개 섹션을 그대로 지키게 하며, HTML 삽입 없이 텍스트로 렌더링한다.
+  const markdown = escapeHtml(report.markdown_ko || '생성된 리포트가 비어 있습니다.');
+  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">화면에 표시된 시장·기술 이벤트 ${payload.events?.length || 0}건만 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><pre class="timeline-report-markdown">${markdown}</pre><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
   return { title, body };
 }
 
 function downloadTimelineReportHtml(payload){
   const { title, body } = timelineReportParts(payload);
-  const styles = `body{margin:0;background:#fff;color:#172235;font-family:Arial,'Noto Sans KR',sans-serif}.report-doc{max-width:840px;margin:0 auto;padding:32px;font-size:15px;line-height:1.75}.eyebrow,.meta,.basis,footer{color:#617187;font-size:13px}.headline,.col,.point{border:1px solid #d7e0ea;border-radius:10px;padding:14px 16px}.headline{background:#f2f7fb;font-size:17px;font-weight:700}.pair{display:grid;grid-template-columns:1fr 1fr;gap:18px}.points{display:grid;gap:12px}.axis-tag{display:inline-block;padding:1px 8px;border-radius:999px;background:#eaf3ff;font-size:12px}.axis-tag.tech{background:#edf8f2}h1{font-size:28px;margin:4px 0}h2{margin-top:26px;font-size:19px}ul{padding-left:20px}.timeline-report-evidence li{margin:7px 0}@media(max-width:700px){.report-doc{padding:20px}.pair{grid-template-columns:1fr}}`;
+  const styles = `body{margin:0;background:#fff;color:#172235;font-family:Arial,'Noto Sans KR',sans-serif}.report-doc{max-width:1100px;margin:0 auto;padding:32px;font-size:15px;line-height:1.75}.eyebrow,.meta,footer{color:#617187;font-size:13px}.timeline-report-markdown{white-space:pre-wrap;overflow-x:auto;font:14px/1.7 ui-monospace,Consolas,monospace}h1{font-size:28px;margin:4px 0}@media(max-width:700px){.report-doc{padding:20px}.timeline-report-markdown{font-size:12px}}`;
   const blob = new Blob([`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${styles}</style></head><body>${body}</body></html>`], { type: 'text/html;charset=utf-8' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -869,7 +864,7 @@ async function generateTimelineReport(){
   try {
     const response = await fetch('/api/company', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'timeline_report', companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, track: event.track, layer: event.layer, title: event.title, fact: event.fact, sourceName: event.sourceName })) })
+      body: JSON.stringify({ mode: 'timeline_report', companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, sourceName: event.sourceName, sourceUrl: event.sourceUrl })) })
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
