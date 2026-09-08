@@ -1165,7 +1165,29 @@ function metricPickerMarkup(available, current){
   };
 }
 
+// 좌우 메뉴가 세로로 길어지면서 그래프 위아래에 빈 공간만 남았다(2026-09-08 사용자 지적).
+// SVG는 폭 기준으로 크기가 정해지고 높이는 viewBox 비율을 그대로 따르므로, 메뉴가 길어져도
+// 그래프는 커지지 않았다.
+//
+// 고정 비율을 키우는 것으로는 회사마다 다른 메뉴 길이를 따라갈 수 없고, preserveAspectRatio를
+// 풀어 늘이면 점과 플래그가 타원으로 찌그러진다. 그래서 좌표계의 세로 길이를 실제 칸 높이에
+// 맞춰 다시 잡는다 — 폭과 높이의 배율이 같아지므로 원은 원으로 남고, 늘어난 높이는 전부
+// 꺾은선이 그려지는 영역이 가져간다.
 const TRAJ = { width: 1000, plotTop: 26, plotHeight: 108, axisY: 146, laneGap: 14, height: 232, padX: 46 };
+// 축 아래(플래그·연도 라벨)가 쓰는 세로 예산. 이만큼은 높이가 변해도 그대로 두고,
+// 남는 높이는 플롯이 가져간다. 그래야 점 크기·글자 크기가 회사마다 달라지지 않는다.
+const TRAJ_BELOW_PLOT = TRAJ.height - TRAJ.plotHeight;
+function trajGeometry(height){
+  const plotHeight = Math.max(60, height - TRAJ_BELOW_PLOT);
+  return { ...TRAJ, height: plotHeight + TRAJ_BELOW_PLOT, plotHeight, axisY: TRAJ.plotTop + plotHeight + 12 };
+}
+// 직전에 측정해 둔 좌표계 높이. 다음 렌더의 첫 추정값으로 써서 두 번 그리는 깜빡임을 줄인다.
+let trajectoryViewHeight = null;
+// 칸 크기가 바뀌면(창 크기, 글꼴 적재, 다른 지표로 메뉴 길이가 달라짐) 좌표계를 다시 맞춘다.
+// requestAnimationFrame은 탭이 가려져 있으면 오지 않아 첫 맞춤을 놓친다(2026-09-08 실측).
+// ResizeObserver는 그리기와 무관하게 배치가 정해지면 부른다.
+let trajectoryTimeline = null;
+let trajectoryPlotObserver = null;
 // 축에 기본으로 담는 연도 수. 재무 데이터는 2011년치까지 있으나 사건 플래그는 2023년부터라,
 // 전부 펼치면 최근 흐름이 왼쪽 빈 구간에 눌린다. 전체 보기는 버튼으로 연다.
 const TRAJ_RECENT_YEARS = 4;
@@ -1329,10 +1351,40 @@ function financialFreshnessWarning(status){
   if (days !== null && days > FINANCIAL_STALE_DAYS) return `재무 데이터가 ${days}일째 갱신되지 않았습니다${when}.`;
   return '';
 }
+// 그려진 그래프의 실제 칸 높이를 재어 좌표계를 맞춘다. 어긋남이 작으면 아무것도 하지 않으므로
+// 다시 그리기가 스스로 멈춘다 — 좌표계를 맞추면 그래프의 고유 높이가 곧 칸 높이가 되어
+// 다음 측정에서 같은 값이 나온다.
+function refitTrajectory(timeline){
+  const target = document.querySelector('#trajectory');
+  const plotBox = target?.querySelector('.traj-plot');
+  const svgBox = target?.querySelector('.traj-svg');
+  if (!plotBox || !svgBox) return;
+  const boxWidth = svgBox.getBoundingClientRect().width;
+  const boxHeight = plotBox.getBoundingClientRect().height;
+  if (!(boxWidth > 0) || !(boxHeight > 0)) return;
+  const wanted = Math.round(TRAJ.width * boxHeight / boxWidth);
+  const current = Number(String(svgBox.getAttribute('viewBox') || '').split(' ')[3]) || TRAJ.height;
+  if (Math.abs(wanted - current) <= 2) return;
+  trajectoryViewHeight = wanted;
+  renderTrajectory(timeline);
+}
+
+// 그래프 칸의 크기 변화를 따라간다. 다시 그릴 때마다 칸이 새로 만들어지므로 매번 다시 붙인다.
+function observeTrajectoryPlot(target, timeline){
+  if (typeof ResizeObserver !== 'function') return;
+  trajectoryPlotObserver?.disconnect();
+  const plotBox = target.querySelector('.traj-plot');
+  if (!plotBox) return;
+  trajectoryPlotObserver = new ResizeObserver(() => refitTrajectory(timeline));
+  trajectoryPlotObserver.observe(plotBox);
+}
+
 function renderTrajectory(timeline){
   const section = document.querySelector('#trajectory-block');
   const target = document.querySelector('#trajectory');
   if (!section || !target) return;
+  // 좌표계 세로 길이. 직전 측정값이 있으면 그것으로 그려 다시 그리는 일을 줄인다.
+  const G = trajGeometry(trajectoryViewHeight || TRAJ.height);
   const all = mergeMetricSources(timeline)
     .map(row => ({ ...row, at: periodEndDate(row.period) }))
     .filter(row => row.at && Number.isFinite(Number(row.value)));
@@ -1379,14 +1431,14 @@ function renderTrajectory(timeline){
   const times = [...rows.map(pointTime), ...flags.map(flag => flag.time)];
   const minTime = Math.min(...times), maxTime = Math.max(...times);
   const span = Math.max(1, maxTime - minTime);
-  const plotWidth = TRAJ.width - TRAJ.padX * 2;
-  const x = (time) => TRAJ.padX + ((time - minTime) / span) * plotWidth;
+  const plotWidth = G.width - G.padX * 2;
+  const x = (time) => G.padX + ((time - minTime) / span) * plotWidth;
 
   const valueOf = (row) => convertedValue(row, trajectoryCurrency, rates.get(row.period));
   const values = rows.map(valueOf).filter(value => value !== null);
   const top = Math.max(0, ...values), bottom = Math.min(0, ...values);
   const range = (top - bottom) || 1;
-  const y = (value) => TRAJ.plotTop + TRAJ.plotHeight - ((value - bottom) / range) * TRAJ.plotHeight;
+  const y = (value) => G.plotTop + G.plotHeight - ((value - bottom) / range) * G.plotHeight;
   const zeroY = y(0);
 
   // 분기 값은 누적(YTD)이라 해가 바뀌면 1분기부터 다시 쌓인다. 한 줄로 이으면 매년 초에
@@ -1412,7 +1464,7 @@ function renderTrajectory(timeline){
     const shape = row.at.interim
       ? `<rect x="${(cx - 3).toFixed(1)}" y="${(cy - 3).toFixed(1)}" width="6" height="6" transform="rotate(45 ${cx.toFixed(1)} ${cy.toFixed(1)})" class="traj-dot interim"/>`
       : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" class="traj-dot${row.verified ? ' verified' : ''}"/>`;
-    const anchor = cx > TRAJ.width - TRAJ.padX - 30 ? 'end' : cx < TRAJ.padX + 30 ? 'start' : 'middle';
+    const anchor = cx > G.width - G.padX - 30 ? 'end' : cx < G.padX + 30 ? 'start' : 'middle';
     return `<g class="traj-point" data-tip="${escapeHtml(metricTip(row, trajectoryCurrency, rates.get(row.period)))}"><rect x="${(cx - 13).toFixed(1)}" y="${(cy - 13).toFixed(1)}" width="26" height="26" fill="transparent"/>${shape}${showLabel ? `<text x="${cx.toFixed(1)}" y="${(cy - 9).toFixed(1)}" class="traj-point-label" text-anchor="${anchor}">${escapeHtml(metricValueText(row, trajectoryCurrency, rates.get(row.period)))}</text>` : ''}</g>`;
   };
 
@@ -1447,17 +1499,17 @@ function renderTrajectory(timeline){
     ].join('\n');
   };
   const flagMark = (group, track, baseY) => {
-    const py = baseY + group.row * TRAJ.laneGap;
+    const py = baseY + group.row * G.laneGap;
     const many = group.events.length > 1;
     return `<g class="traj-flag ${track}${many ? ' many' : ''}" data-tip="${escapeHtml(clusterTip(group))}" data-flag-date="${escapeHtml(group.date)}" data-flag-track="${track}" tabindex="0">
-      <line x1="${group.px.toFixed(1)}" y1="${TRAJ.axisY}" x2="${group.px.toFixed(1)}" y2="${(py - 4).toFixed(1)}"/>
+      <line x1="${group.px.toFixed(1)}" y1="${G.axisY}" x2="${group.px.toFixed(1)}" y2="${(py - 4).toFixed(1)}"/>
       <circle cx="${group.px.toFixed(1)}" cy="${py.toFixed(1)}" r="${many ? 6 : 4.2}"/>
       ${many ? `<text x="${group.px.toFixed(1)}" y="${(py + 2.6).toFixed(1)}" class="traj-flag-count">${group.events.length}</text>` : ''}
       <circle cx="${group.px.toFixed(1)}" cy="${py.toFixed(1)}" r="11" fill="transparent"/>
     </g>`;
   };
-  const marketBase = TRAJ.axisY + 12;
-  const techBase = marketBase + laneRows * TRAJ.laneGap + 8;
+  const marketBase = G.axisY + 12;
+  const techBase = marketBase + laneRows * G.laneGap + 8;
 
   // 선은 그 해가 시작되는 1월 1일에, 라벨은 그 해 구간의 가운데에 둔다.
   // 둘을 같은 자리에 두면 12월 31일에 찍히는 연간 값 바로 오른쪽에 다음 해 라벨이 서서,
@@ -1467,7 +1519,7 @@ function renderTrajectory(timeline){
   for (let year = firstYear; year <= lastYear; year += 1) {
     const boundary = Date.UTC(year, 0, 1);
     if (boundary > minTime && boundary < maxTime) {
-      yearTicks.push(`<g class="traj-tick"><line x1="${x(boundary).toFixed(1)}" y1="${TRAJ.plotTop}" x2="${x(boundary).toFixed(1)}" y2="${TRAJ.height - 14}"/></g>`);
+      yearTicks.push(`<g class="traj-tick"><line x1="${x(boundary).toFixed(1)}" y1="${G.plotTop}" x2="${x(boundary).toFixed(1)}" y2="${G.height - 14}"/></g>`);
     }
     const bandStart = Math.max(minTime, boundary);
     const bandEnd = Math.min(maxTime, Date.UTC(year + 1, 0, 1));
@@ -1475,14 +1527,14 @@ function renderTrajectory(timeline){
     const left = x(bandStart), right = x(bandEnd);
     // 연간 값은 12월 31일에 찍혀 그 해 구간의 오른쪽 끝에 선다. 구간을 한 해씩 걸러 옅게 칠해
     // 그 점이 어느 해에 속하는지 선 하나로 판단하지 않아도 되게 한다.
-    if (year % 2 === 0) yearTicks.push(`<rect class="traj-band" x="${left.toFixed(1)}" y="${TRAJ.plotTop}" width="${(right - left).toFixed(1)}" height="${TRAJ.height - 14 - TRAJ.plotTop}"/>`);
+    if (year % 2 === 0) yearTicks.push(`<rect class="traj-band" x="${left.toFixed(1)}" y="${G.plotTop}" width="${(right - left).toFixed(1)}" height="${G.height - 14 - G.plotTop}"/>`);
     // 구간이 좁으면 라벨이 옆 라벨과 겹친다. 그런 해는 적지 않는다.
     if (right - left < 34) continue;
     // 그 해의 값이 화면에 있으면 라벨을 그 값 바로 아래에 둔다. 축 양 끝의 해는 구간이 잘려
     // 가운데가 밀리는데, 그러면 값과 연도가 어긋나 보인다.
     const anchorRow = rows.find(row => row.at.year === String(year) && !row.at.interim) || rows.find(row => row.at.year === String(year));
     const labelX = anchorRow ? x(pointTime(anchorRow)) : (left + right) / 2;
-    yearTicks.push(`<g class="traj-tick"><text x="${Math.min(Math.max(labelX, left + 12), right - 12).toFixed(1)}" y="${TRAJ.height - 3}">${year}</text></g>`);
+    yearTicks.push(`<g class="traj-tick"><text x="${Math.min(Math.max(labelX, left + 12), right - 12).toFixed(1)}" y="${G.height - 3}">${year}</text></g>`);
   }
 
   const label = metricLabel(trajectoryMetric);
@@ -1500,10 +1552,10 @@ function renderTrajectory(timeline){
       ${years.length > TRAJ_RECENT_YEARS ? `<button type="button" class="traj-range" data-toggle="range">${trajectoryFullRange ? `최근 ${TRAJ_RECENT_YEARS}년만` : `전체 기간(${years[0]}~)`}</button>` : ''}
     </div></div>
     <div class="traj-stage">${picker.financial}<div class="traj-plot">
-    <svg class="traj-svg" viewBox="0 0 ${TRAJ.width} ${TRAJ.height}" role="img" aria-label="${escapeHtml(label)} 시계열과 정기보고서 사건 플래그">
+    <svg class="traj-svg" viewBox="0 0 ${G.width} ${G.height}" role="img" aria-label="${escapeHtml(label)} 시계열과 정기보고서 사건 플래그">
       ${yearTicks.join('')}
-      ${bottom < 0 ? `<line class="traj-zero" x1="${TRAJ.padX}" y1="${zeroY.toFixed(1)}" x2="${TRAJ.width - TRAJ.padX}" y2="${zeroY.toFixed(1)}"/>` : ''}
-      <line class="traj-axis-line" x1="${TRAJ.padX - 12}" y1="${TRAJ.axisY}" x2="${TRAJ.width - TRAJ.padX + 12}" y2="${TRAJ.axisY}"/>
+      ${bottom < 0 ? `<line class="traj-zero" x1="${G.padX}" y1="${zeroY.toFixed(1)}" x2="${G.width - G.padX}" y2="${zeroY.toFixed(1)}"/>` : ''}
+      <line class="traj-axis-line" x1="${G.padX - 12}" y1="${G.axisY}" x2="${G.width - G.padX + 12}" y2="${G.axisY}"/>
       ${trajectoryQuarterly
         ? `${segments.slice(1).map((segment, index) => `<path class="traj-line link" d="${path([segments[index].rows.at(-1), segment.rows[0]])}"/>`).join('')}${segments.filter(segment => segment.rows.length > 1).map(segment => `<path class="traj-line" d="${path(segment.rows)}"/>`).join('')}`
         : `${tailPoints.length && annualPoints.length ? `<path class="traj-line link" d="${path([annualPoints.at(-1), ...tailPoints])}"/>` : ''}${annualPoints.length > 1 ? `<path class="traj-line" d="${path(annualPoints)}"/>` : ''}`}
@@ -1550,6 +1602,13 @@ function renderTrajectory(timeline){
     detail.hidden = false;
     detail.innerHTML = `${picked.length > 1 ? `<p class="traj-detail-count">${escapeHtml(date)} · ${picked.length}건</p>` : ''}${picked.map(detailCard).join('')}`;
   }));
+
+  // 칸 높이는 좌우 메뉴 중 더 긴 쪽이 정하는데, 그 메뉴도 방금 이 함수가 함께 그렸다.
+  // 그래서 좌표계를 미리 알 수 없다 — 그린 뒤에 재서 맞춘다. 대개 이 한 번으로 끝나고,
+  // 나중에 칸이 달라지면 관찰자가 따라잡는다.
+  trajectoryTimeline = timeline;
+  observeTrajectoryPlot(target, timeline);
+  refitTrajectory(timeline);
 }
 
 function renderCompanyEvents(timeline){
@@ -2229,8 +2288,8 @@ async function confirmAccessCode(actionLabel){
 // 시계열 백필 1회 실행. Vercel은 같은 함수의 재귀 호출을 5번째에 508로 막으므로
 // 브라우저가 독립 요청으로 한 홉씩 호출한다. 탭을 닫으면 다음 홉은 시작되지 않는다.
 async function runTimelineBackfill(){
-  if (!(await confirmAccessCode('시계열 백필 1회 실행'))) return;
-  if (!window.confirm('정기보고서 읽기·보강·시점 재확인을 20~30분 동안 돌립니다. 완료될 때까지 이 탭을 열어 두세요. LLM 호출이 많으니 필요할 때만 실행하세요. 시작할까요?')) return;
+  if (!(await confirmAccessCode('정기보고서 재처리'))) return;
+  if (!window.confirm('정기보고서만 한 건씩 읽고 시계열 이벤트와 벡터 임베딩을 갱신합니다. 완료될 때까지 이 탭을 열어 두세요. 시작할까요?')) return;
   const button = document.querySelector('#run-backfill-button');
   button.disabled = true; button.textContent = '백필 시작 중…';
   try {
@@ -2238,7 +2297,7 @@ async function runTimelineBackfill(){
     let lastTask = '';
     for (let hop = 1; hop <= 40; hop += 1) {
       button.textContent = `시계열 백필 진행 중 (${hop}/40)`;
-      const result = await fetch(`/api/ingest-rss?curate_step=1&hop=${hop}`, { method: 'POST' });
+      const result = await fetch(`/api/ingest-rss?curate_step=1&task=renew&hop=${hop}`, { method: 'POST' });
       const payload = await result.json();
       if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `홉 ${hop} 요청 실패`);
       completed = hop;

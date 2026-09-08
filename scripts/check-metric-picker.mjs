@@ -140,12 +140,65 @@ assert.ok(!sparse.includes('<span class="traj-rel exact">=</span> 는'), "'=' �
 const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8");
 const stageCss = css.slice(css.indexOf(".traj-stage{"), css.indexOf(".traj-plot{"));
 assert.ok(/align-items:stretch/.test(stageCss), "세 칸의 위아래를 맞추려면 stretch여야 한다");
-assert.ok(/\.traj-plot\{[^}]*justify-content:center/.test(css), "그래프는 늘어난 칸의 세로 가운데에 놓는다");
+// 그래프는 칸의 남는 높이를 채운다. 옛 방식(가운데 정렬 + 고정 종횡비)은 항목이 많은 회사에서
+// 위아래가 크게 남았다(2026-09-08 사용자 지적).
+assert.ok(/\.traj-svg\{[^}]*height:100%/.test(css), "그래프는 칸 높이를 그대로 채워야 한다");
+// 그래프는 흐름에서 빠져 있어야 한다. 흐름 안에 두면 한 번 커진 그래프가 스스로 행 높이를
+// 키우고 그 높이에 다시 맞춰 영영 줄어들지 않는다(2026-09-08 실측: 892px까지 커졌다).
+assert.ok(/\.traj-plot\{[^}]*position:relative/.test(css), "그래프 칸이 기준 상자가 되어야 한다");
+assert.ok(/\.traj-svg\{[^}]*position:absolute/.test(css), "그래프가 행 높이에 끼어들면 안 된다");
+// 좁은 화면에서는 그래프가 자기 행으로 빠져 채울 높이가 정해지지 않는다. 그때는 흐름으로 돌아간다.
+const narrow = css.slice(css.indexOf("@media (max-width:900px)"));
+assert.ok(/\.traj-plot\{position:static\}/.test(narrow), "좁은 화면에서는 그래프를 흐름 안으로 되돌려야 한다");
+assert.ok(/\.traj-svg\{position:static;height:auto\}/.test(narrow), "좁은 화면에서는 폭 기준 비율로 물러나야 한다");
+// 늘여서 채우면 점과 플래그가 타원이 된다. 좌표계를 맞추는 방식이어야 한다.
+assert.ok(!/preserveAspectRatio="none"/.test(source), "SVG를 늘여 채우면 점이 타원으로 찌그러진다");
+assert.ok(/function trajGeometry\(/.test(source), "실제 칸 높이에 맞춰 좌표계를 다시 잡는 함수가 있어야 한다");
+const refit = source.slice(source.indexOf("function refitTrajectory("), source.indexOf("function observeTrajectoryPlot("));
+assert.ok(refit.includes("renderTrajectory(timeline)"), "어긋나면 다시 그려야 한다");
+// 지금 그려진 viewBox와 견준다. 그래야 다시 그리기가 스스로 멈춘다.
+assert.ok(refit.includes("svgBox.getAttribute('viewBox')"), "현재 좌표계와 견주어야 멈춘다");
+assert.ok(/Math\.abs\(wanted - current\) <= 2/.test(refit), "어긋남이 작으면 다시 그리지 않아야 한다");
+// 첫 맞춤은 동기로 한다. requestAnimationFrame은 탭이 가려지면 오지 않아 첫 그림이 어긋난 채 남는다.
+assert.ok(!/requestAnimationFrame\(\(\) => refitTrajectory/.test(source),
+  "첫 맞춤을 rAF에 맡기면 탭이 가려졌을 때 놓친다");
+assert.ok(source.includes("observeTrajectoryPlot(target, timeline);"), "칸 크기 변화를 따라갈 관찰자를 붙여야 한다");
+assert.ok(/new ResizeObserver\(\(\) => refitTrajectory\(timeline\)\)/.test(source), "ResizeObserver로 따라잡아야 한다");
+// 늘어난 높이는 꺾은선 영역이 가져간다. 점 크기·글자 크기는 회사마다 달라지면 안 된다.
+assert.ok(/const TRAJ_BELOW_PLOT = TRAJ\.height - TRAJ\.plotHeight;/.test(source),
+  "축 아래(플래그·연도) 예산은 높이가 변해도 그대로여야 한다");
 assert.ok(/\.traj-groups\{[^}]*flex:1/.test(css), "오른쪽 묶음 상자가 남는 세로 공간을 받아야 한다");
 // 버튼은 크기를 고정하고 남는 세로 공간은 버튼 사이에 나눈다. 버튼이 늘어나게 두면
 // 한 묶음에 항목이 하나뿐일 때 138px짜리 덩어리가 된다(2026-09-08 실측).
 assert.ok(/\.traj-list li\{[^}]*flex:0 0 auto/.test(css), "목록 항목이 늘어나면 버튼이 덩어리가 된다");
 assert.ok(/\.traj-list\{[^}]*justify-content:space-evenly/.test(css), "남는 공간은 버튼 사이에 고르게 나눈다");
 assert.ok(/\.traj-list \.traj-chip\{[^}]*min-height/.test(css), "버튼에 최소 높이가 있어야 눌러야 할 것으로 읽힌다");
+
+// --- 6) 좌표계 계산 -----------------------------------------------------------
+
+const geoRegion = source.slice(source.indexOf("const TRAJ = {"), source.indexOf("let trajectoryMetric"));
+const { trajGeometry, TRAJ } = new Function(`${geoRegion} return { trajGeometry, TRAJ };`)();
+
+// 기준 높이를 넣으면 옛 좌표계 그대로여야 한다. 여기가 어긋나면 모든 회사의 그림이 함께 바뀐다.
+const base = trajGeometry(TRAJ.height);
+assert.equal(base.height, TRAJ.height);
+assert.equal(base.plotHeight, TRAJ.plotHeight);
+assert.equal(base.axisY, TRAJ.axisY);
+
+// 늘어난 높이는 전부 꺾은선 영역이 가져간다.
+const tall = trajGeometry(652);
+assert.equal(tall.plotHeight, 652 - (TRAJ.height - TRAJ.plotHeight), "남는 높이는 플롯이 가져간다");
+assert.equal(tall.height, 652);
+// 점·플래그·연도 라벨이 쓰는 값은 높이가 변해도 그대로다. 회사마다 점 크기가 달라지면 안 된다.
+for (const key of ["plotTop", "laneGap", "padX", "width"]) {
+  assert.equal(tall[key], TRAJ[key], `${key}는 높이가 변해도 그대로여야 한다`);
+}
+// 축 아래 예산이 그대로이므로 플래그가 놓일 자리도 같은 거리에 남는다.
+assert.equal(tall.height - tall.axisY, TRAJ.height - TRAJ.axisY, "축부터 아래 끝까지의 여백은 고정이다");
+
+// 칸이 아주 낮아도 플롯이 음수가 되지 않는다.
+const squat = trajGeometry(40);
+assert.ok(squat.plotHeight >= 60, "플롯 높이에 하한이 있어야 한다");
+assert.ok(squat.axisY < squat.height, "축이 그림 밖으로 나가면 안 된다");
 
 console.log("ok  metric-picker");

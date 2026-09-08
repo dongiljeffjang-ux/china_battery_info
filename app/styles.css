@@ -284,9 +284,15 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
    그래프를 볼 때마다 눈이 위아래로 왕복한다. */
 .traj-stage{display:grid;grid-template-columns:minmax(140px,178px) minmax(0,1fr) minmax(130px,168px);
   gap:14px;align-items:stretch;margin-top:6px}
-/* 세 칸의 위아래를 맞춘다. 높이는 가장 긴 칸(대개 재무 사다리)이 정한다. 그래프는 세로 가운데에
-   놓아 위나 아래로 치우쳐 보이지 않게 한다. */
-.traj-plot{min-width:0;display:flex;flex-direction:column;justify-content:center}
+/* 세 칸의 위아래를 맞춘다. 높이는 가장 긴 칸(대개 재무 사다리)이 정한다. 그래프는 옛 비율을 그대로
+   키우기만 해서는 넓은 메뉴 옆에서 위아래가 계속 남았다(2026-09-08 사용자 지적 — 항목이 많은
+   회사일수록 메뉴가 길어지는데 그래프는 폭 기준 고정 비율이라 커지지 않았다). 그래서 그래프의
+   세로 비율을 고정하지 않고 이 칸(=메뉴 중 더 긴 쪽)의 실제 높이를 그대로 채운다.
+   grid의 stretch가 이 칸에 확정된 높이를 주므로, 안의 SVG가 height:100%로 그 높이를 받을 수 있다. */
+/* 그래프는 흐름에서 빼 둔다(아래 .traj-svg가 absolute). 그래야 행 높이를 좌우 메뉴만 정한다 —
+   그래프가 행 높이에 끼어들면, 한 번 커진 그래프가 스스로 행을 키우고 그 높이에 다시 맞춰
+   영영 줄어들지 않는다(2026-09-08 실측: 892px까지 커졌다). */
+.traj-plot{min-width:0;position:relative}
 .traj-col{min-width:0;border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:#fcfdfe;
   display:flex;flex-direction:column}
 .traj-col-title{margin:0 0 7px;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.02em}
@@ -333,7 +339,17 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .traj-legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--muted);font-size:11px;align-items:center}
 .traj-legend-line::before{content:"";display:inline-block;width:16px;height:0;border-top:2px solid var(--market);vertical-align:middle;margin-right:5px}
 .traj-legend-line.interim::before{border-top-style:dashed}
-.traj-svg{display:block;width:100%;height:auto}
+/* 그래프는 이 칸(=좌우 메뉴 중 더 긴 쪽)의 높이를 그대로 채운다. 늘려서 채우는 것이 아니라
+   app.js가 그린 뒤 실제 높이를 재어 viewBox의 세로 길이를 같은 배율로 맞춘다 — 그래야 점과
+   플래그가 타원으로 찌그러지지 않는다. */
+.traj-svg{display:block;position:absolute;inset:0;width:100%;height:100%}
+/* 좁은 화면에서는 그래프가 위로 올라가고 메뉴가 아래 2열로 접혀, .traj-plot의 높이가 더 이상
+   메뉴 높이에 묶이지 않는다(자기 콘텐츠만큼만 차지하는 암묵 행이라 채울 높이가 정해지지 않는다).
+   그때는 흐름 안으로 되돌리고 폭 기준 비율을 쓴다. */
+@media (max-width:900px){
+  .traj-plot{position:static}
+  .traj-svg{position:static;height:auto}
+}
 .traj-line{fill:none;stroke:var(--market);stroke-width:2}
 .traj-line.interim{stroke-dasharray:5 4;opacity:.75}
 .traj-dot{fill:var(--market)}
