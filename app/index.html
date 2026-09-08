@@ -168,11 +168,12 @@
               <p class="eyebrow">MARKET × TECHNOLOGY</p>
               <h2 id="tracks-title">시장·기술 레이어별 시간축</h2>
             </div>
-            <label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 거래소 공시·본문 검증을 통과한 핵심(core) 사실만 표시합니다. 이 옵션을 켜면 아직 공시로 확정되지 않은 참고(reference) 등급 데이터도 함께 보입니다: 언론 기사, 그리고 상장사 올해분·비상장사의 뉴스 웹 백필. 이 레이어별 시간축과 기업 비교 화면에 반영됩니다. 최신 소식을 폭넓게 보되 확정도는 낮으니 참고용으로 보세요.">?</span></label>
+            <div class="company-actions"><button id="company-timeline-report" class="secondary-button" type="button">시계열 리포트 생성</button><label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 거래소 공시·본문 검증을 통과한 핵심(core) 사실만 표시합니다. 이 옵션을 켜면 아직 공시로 확정되지 않은 참고(reference) 등급 데이터도 함께 보입니다: 언론 기사, 그리고 상장사 올해분·비상장사의 뉴스 웹 백필. 이 레이어별 시간축과 기업 비교 화면에 반영됩니다. 최신 소식을 폭넓게 보되 확정도는 낮으니 참고용으로 보세요.">?</span></label></div>
           </div>
           <div class="track-legend"><span><i class="dot market"></i>시장: 실적·생산기반 / 고객·해외</span><span><i class="dot tech"></i>기술: 소재·공정 / IP·인증·양산</span><span>위가 최근 · 아래가 과거</span></div>
           <div id="dual-track" class="dual-track"></div>
         </section>
+        <section id="company-timeline-report-panel" class="company-timeline-report-panel" hidden aria-live="polite"></section>
       </section>
 
       <section id="compare" class="view" aria-labelledby="compare-title">

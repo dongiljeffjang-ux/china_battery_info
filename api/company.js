@@ -5,6 +5,7 @@ import { COMPANIES, TRACKED_COMPANIES, SELECTION_BASIS } from "../lib/china-sour
 import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
 import { buildCompareReport, applyVerifiedFacts, buildReportSynthesis } from "../lib/compare-report.js";
+import { buildTimelineReport } from "../lib/timeline-report.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증), 함의 종합은 긴 입력 한 번을 부른다. `api/*.js` Node 함수는
 // `export const config = { maxDuration }` 형식만 읽으므로(예전 `export const maxDuration`은 무시됐다)
@@ -87,6 +88,36 @@ function cleanEvents(list) {
       sourceName: String(event?.sourceName || "").slice(0, 80)
     }))
     .filter((event) => event.title);
+}
+
+// 기업 화면에 실제로 표시된 시간축 이벤트만 리포트의 재료로 쓴다. 화면의 "보조 데이터 포함"
+// 선택과 서버 리포트의 근거가 어긋나지 않게 하며, 클라이언트 입력은 길이·형식만 보수적으로 제한한다.
+function cleanTimelineEvents(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 80).map(event => ({
+    id: /^[0-9a-f-]{36}$/i.test(String(event?.id || "")) ? String(event.id) : "",
+    date: /^\d{4}-\d{2}-\d{2}$/.test(String(event?.date || "")) ? String(event.date) : "",
+    track: event?.track === "tech" || event?.track === "technology" ? "tech" : "market",
+    layer: String(event?.layer || "").slice(0, 80),
+    title: String(event?.title || "").slice(0, 180),
+    fact: String(event?.fact || "").slice(0, 500),
+    sourceName: String(event?.sourceName || "").slice(0, 100),
+  })).filter(event => event.id && event.date && event.title && event.fact);
+}
+
+async function runTimelineReport(request, response) {
+  const companyId = String(request.body?.companyId || "").trim();
+  const company = COMPANIES.find(item => item.id === companyId);
+  if (!company) return response.status(404).json({ status: "unknown_company" });
+  const events = cleanTimelineEvents(request.body?.events);
+  if (!events.length) return response.status(400).json({ status: "no_evidence", message: "현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다." });
+  try {
+    const result = await buildTimelineReport({ companyName: company.name_ko, events });
+    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, events: events.length, turningPoints: result.report.turning_points.length }));
+    return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, events, generated_at: new Date().toISOString(), ...result });
+  } catch (error) {
+    console.error("[TIMELINE_REPORT_FAILED]", JSON.stringify({ companyId, message: error.message }));
+    return response.status(502).json({ status: "timeline_report_failed", message: error.message });
+  }
 }
 
 async function runCompareReport(request, response) {
@@ -208,6 +239,7 @@ async function handleRequest(request, response) {
   if (request.method === "POST") {
     if (String(request.body?.mode || "") === "compare_report") return runCompareReport(request, response);
     if (String(request.body?.mode || "") === "synthesize_reports") return runReportSynthesis(request, response);
+    if (String(request.body?.mode || "") === "timeline_report") return runTimelineReport(request, response);
     if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
     return runAsk(request, response);
   }

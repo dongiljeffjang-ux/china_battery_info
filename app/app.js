@@ -34,6 +34,8 @@ let approvedCompanyNews = [];
 let pendingCandidates = [];
 let rangeFlows = [];
 let lastComparison = null;
+// 기업 시계열 리포트는 비교 리포트와 달리 저장하지 않는다. 현재 화면에 표시된 근거만 이 메모리에 둔다.
+let lastCompanyTimeline = null;
 const TOP_NEWS_PREVIEW = 4;
 let topNewsExpanded = false;
 
@@ -797,6 +799,18 @@ async function renderCompany(){
   const notice = timelineNotice(timeline.status);
   const shown = visibleEvents(timeline);
   const hidden = timeline.events.length - shown.length;
+  const evidenceKey = shown.map(event => event.id).join(',');
+  lastCompanyTimeline = { companyId: requestedId, companyName: company.name_ko, events: shown };
+  const reportButton = document.querySelector('#company-timeline-report');
+  if (reportButton) reportButton.disabled = !shown.length;
+  const reportPanel = document.querySelector('#company-timeline-report-panel');
+  // 다른 기업으로 바꾸면 앞 기업의 일회성 리포트를 계속 보여 주지 않는다.
+  if (reportPanel && (reportPanel.dataset.companyId !== requestedId || reportPanel.dataset.evidenceKey !== evidenceKey)) {
+    reportPanel.hidden = true;
+    reportPanel.innerHTML = '';
+    reportPanel.dataset.companyId = requestedId;
+    reportPanel.dataset.evidenceKey = evidenceKey;
+  }
   if (state) {
     state.textContent = notice || (shown.length
       ? `공시·핵심 근거 이벤트 ${shown.length}건을 표시합니다.${hidden ? ` 보조 데이터 ${hidden}건은 숨겨져 있습니다.` : ''}`
@@ -804,6 +818,69 @@ async function renderCompany(){
   }
   renderCompanyEvents(timeline);
   renderLayerMatrix(timeline);
+}
+
+function timelineReportParts(payload){
+  const report = payload.report || {};
+  const evidenceById = new Map((payload.events || []).map(event => [event.id, event]));
+  const evidence = ids => (ids || []).map(id => {
+    const event = evidenceById.get(id);
+    if (!event) return '';
+    return `<li><span class="axis-tag ${event.track === 'tech' ? 'tech' : 'market'}">${event.track === 'tech' ? '기술' : '시장'}</span> <strong>${escapeHtml(displayDate(event))}</strong> · ${escapeHtml(event.title)}<br><span class="basis">${highlightMetrics(event.fact)} · 출처: ${escapeHtml(event.sourceName || '미상')}</span></li>`;
+  }).filter(Boolean).join('');
+  const points = (report.turning_points || []).map(point => `<article class="point"><p><span class="axis-tag ${point.track === 'tech' ? 'tech' : 'market'}">${point.track === 'tech' ? '기술' : '시장'}</span> <strong>${escapeHtml(point.period_ko)}</strong></p><p>${highlightMetrics(point.finding_ko)}</p><ul class="timeline-report-evidence">${evidence(point.basis_event_ids)}</ul></article>`).join('') || '<p class="none">근거 이벤트에서 분명한 변곡점을 추출하지 못했습니다.</p>';
+  const title = `${payload.company_name_ko || '기업'} 시계열 리포트`;
+  const generated = payload.generated_at ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(payload.generated_at)) : '';
+  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">화면에 표시된 시장·기술 이벤트 ${payload.events?.length || 0}건만 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><p class="headline">${highlightMetrics(report.headline_ko || '')}</p><div class="pair"><section class="col"><h2>1. 시장 흐름</h2><p>${highlightMetrics(report.market_trajectory_ko || '')}</p></section><section class="col"><h2>2. 기술 흐름</h2><p>${highlightMetrics(report.technology_trajectory_ko || '')}</p></section></div><h2>3. 주요 변곡점</h2><div class="points">${points}</div><h2>4. 현재 위치</h2><p>${highlightMetrics(report.current_position_ko || '')}</p><h2>해석 한계</h2><p class="basis">${highlightMetrics(report.limits_ko || '')}</p><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
+  return { title, body };
+}
+
+function downloadTimelineReportHtml(payload){
+  const { title, body } = timelineReportParts(payload);
+  const styles = `body{margin:0;background:#fff;color:#172235;font-family:Arial,'Noto Sans KR',sans-serif}.report-doc{max-width:840px;margin:0 auto;padding:32px;font-size:15px;line-height:1.75}.eyebrow,.meta,.basis,footer{color:#617187;font-size:13px}.headline,.col,.point{border:1px solid #d7e0ea;border-radius:10px;padding:14px 16px}.headline{background:#f2f7fb;font-size:17px;font-weight:700}.pair{display:grid;grid-template-columns:1fr 1fr;gap:18px}.points{display:grid;gap:12px}.axis-tag{display:inline-block;padding:1px 8px;border-radius:999px;background:#eaf3ff;font-size:12px}.axis-tag.tech{background:#edf8f2}h1{font-size:28px;margin:4px 0}h2{margin-top:26px;font-size:19px}ul{padding-left:20px}.timeline-report-evidence li{margin:7px 0}@media(max-width:700px){.report-doc{padding:20px}.pair{grid-template-columns:1fr}}`;
+  const blob = new Blob([`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${styles}</style></head><body>${body}</body></html>`], { type: 'text/html;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${String(payload.company_id || 'company').replace(/[^a-z0-9_-]/gi, '_')}_timeline_report.html`;
+  document.body.append(link); link.click(); link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
+}
+
+function renderTimelineReportPanel(payload){
+  const panel = document.querySelector('#company-timeline-report-panel');
+  if (!panel) return;
+  const { title, body } = timelineReportParts(payload);
+  panel.dataset.companyId = payload.company_id || '';
+  panel.dataset.evidenceKey = (payload.events || []).map(event => event.id).join(',');
+  panel.hidden = false;
+  panel.innerHTML = `<details class="report-panel" open><summary><span class="report-title">${escapeHtml(title)}</span><span class="report-actions"><button type="button" class="secondary-button" data-timeline-report-download>HTML로 저장</button><button type="button" class="secondary-button" data-timeline-report-close>닫기</button></span></summary>${body}</details>`;
+  panel.querySelector('[data-timeline-report-close]').addEventListener('click', event => { event.preventDefault(); panel.hidden = true; });
+  panel.querySelector('[data-timeline-report-download]').addEventListener('click', event => { event.preventDefault(); downloadTimelineReportHtml(payload); });
+  panel.querySelector('.report-actions').addEventListener('click', event => event.stopPropagation());
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function generateTimelineReport(){
+  if (!lastCompanyTimeline?.events?.length) { window.alert('현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다.'); return; }
+  const snapshot = lastCompanyTimeline;
+  const button = document.querySelector('#company-timeline-report');
+  if (button) button.disabled = true;
+  showBusy('시계열 리포트 생성 중', `선택한 기업의 현재 화면 이벤트 ${snapshot.events.length}건만 OpenAI가 읽습니다. 웹 검색과 DB 저장은 하지 않습니다. 1분 안팎 걸립니다.`);
+  try {
+    const response = await fetch('/api/company', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'timeline_report', companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, track: event.track, layer: event.layer, title: event.title, fact: event.fact, sourceName: event.sourceName })) })
+    });
+    const payload = await response.json();
+    if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
+    if (currentCompany !== snapshot.companyId) return;
+    renderTimelineReportPanel(payload);
+  } catch (error) {
+    window.alert(`시계열 리포트를 만들지 못했습니다: ${error.message}`);
+  } finally {
+    hideBusy();
+    if (button && currentCompany === snapshot.companyId) button.disabled = !lastCompanyTimeline?.events?.length;
+  }
 }
 // 훑어보는 화면에서 무엇을 먼저 보여줄지 정하는 중요도. 정기보고서와 핵심 등급, 수치가 있는 사실을 앞에 둔다.
 function importanceOf(event){
@@ -1039,7 +1116,10 @@ async function exportRawNews(){
       links.forEach(link => rows.push([article.id, link.company?.name_ko || link.company_id, (link.company?.type_tags || []).join(', '), article.title_original, article.title_ko, article.published_at, article.source_name, article.canonical_url, article.summary_ko, (article.keywords_ko || []).join(', '), article.verification_status, article.source_tier, article.is_top10 ? 'Y' : '', article.top10_rank || '']));
     });
     if (window.XLSX) {
-      const sheet = XLSX.utils.aoa_to_sheet(rows); sheet['!cols'] = [36,18,14,60,50,20,20,70,70,35,18,18,10,8];
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      // SheetJS의 !cols는 숫자 너비 목록이 아니라 ColInfo 객체 배열이다. hidden을 명시해
+      // Excel이 열을 숨김 상태로 해석하지 않도록 한다.
+      sheet['!cols'] = [{wch:36, hidden:false}, {wch:18, hidden:false}, {wch:14, hidden:false}, {wch:60, hidden:false}, {wch:50, hidden:false}, {wch:20, hidden:false}, {wch:20, hidden:false}, {wch:70, hidden:false}, {wch:70, hidden:false}, {wch:35, hidden:false}, {wch:18, hidden:false}, {wch:18, hidden:false}, {wch:10, hidden:false}, {wch:8, hidden:false}];
       rows.slice(1).forEach((row, index) => { sheet[`H${index + 2}`].l = { Target: row[7] }; });
       const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, sheet, 'Raw articles'); XLSX.writeFile(workbook, `china-battery-lens_raw_${new Date().toISOString().slice(0,10)}.xlsx`);
     } else {
@@ -1544,6 +1624,7 @@ async function initialize(){
   makeChainTabs(document.querySelector('#compare-chain-a'), chainA, chain => { makeSelect(compareA, '', chain); renderComparison(); });
   makeChainTabs(document.querySelector('#compare-chain-b'), chainB, chain => { makeSelect(compareB, '', chain); renderComparison(); });
   document.querySelector('#compare-report').addEventListener('click', generateCompareReport);
+  document.querySelector('#company-timeline-report').addEventListener('click', generateTimelineReport);
   // 목록은 비교 화면을 열 때 activateView가 읽는다. 첫 화면은 Daily라 여기서 미리 받아둘 이유가 없다.
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
