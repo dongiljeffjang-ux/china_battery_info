@@ -12,6 +12,7 @@ assert.ok(chain.includes("&chain=${depth}"), "chainStage must pass the depth to 
 
 const processStage = ingest.slice(ingest.indexOf("async function runProcessStage"), ingest.indexOf("async function runProcessHop"));
 assert.ok(processStage.includes("INVOCATION_BUDGET_MS"), "process hops must loop inside one invocation");
+assert.ok(/const MAX_PROCESS_HOPS = 2;/.test(ingest), "deep process must stop after two hops so Daily and curate stay below the chain-depth cap");
 const curateStage = ingest.slice(ingest.indexOf("async function runCurateStage"), ingest.indexOf("async function runCurateHop"));
 assert.ok(curateStage.includes("INVOCATION_BUDGET_MS"), "curate hops must loop inside one invocation");
 assert.ok(curateStage.includes('chainStage(request, "curate", hop + 1)'), "curate must hand off remaining hops to one more invocation");
