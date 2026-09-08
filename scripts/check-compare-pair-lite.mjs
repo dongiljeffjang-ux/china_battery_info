@@ -27,5 +27,6 @@ assert.match(app, /비교 범위·판정 기준/);
 assert.match(app, /반대 가설/);
 assert.match(app, /const bulletText/);
 assert.match(app, /report-bullets/);
+assert.match(app, /split\(\/\\r\?\\n\|•\/\)/, "inline bullet separators must become separate list rows");
 
 console.log("compare pair-lite checks passed");

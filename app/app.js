@@ -1203,7 +1203,7 @@ function compareReportParts(payload){
   const cmp = r.comparison || {};
   const pairLite = r.pair_lite || {};
   const bulletText = value => {
-    const lines = String(value || '').split(/\r?\n/).map(line => line.trim().replace(/^[•*-]\s*/, '')).filter(Boolean);
+    const lines = String(value || '').split(/\r?\n|•/).map(line => line.trim().replace(/^[*-]\s*/, '')).filter(Boolean);
     return lines.length > 1
       ? `<ul class="report-bullets">${lines.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
       : `<span>${escapeHtml(lines[0] || '')}</span>`;
