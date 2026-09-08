@@ -15,7 +15,7 @@ create table if not exists report_metric (
   metric text not null,                       -- revenue_total, net_profit_attr, ...
   value numeric not null,
   unit text not null,                         -- CNY_100M(억 위안) 등
-  currency text not null default 'CNY',
+  currency text,                              -- 물량(GWh·톤)에는 통화가 없다. null이 정상이다
   line_item_zh text not null,                 -- 원문 계정 표기. 비어 있을 수 없다
   quantity_text text not null,                -- 발췌에 글자 그대로 있는 표기
   yoy_pct_stated numeric,                     -- 원문에 적힌 증감률만. 계산하지 않는다
@@ -38,6 +38,11 @@ create table if not exists report_metric (
 -- 기본값이라 건드리지 않는다. RLS가 켜져 있고 프런트는 anon 키를 쓰지 않는다(모든 조회가
 -- /api/*를 거친다). 불필요한 revoke를 넣으면 이 파일을 돌릴 때마다 파괴적 작업 경고만 뜬다.
 grant select, insert, update, delete on public.report_metric to service_role;
+
+-- 처음에는 금액만 담아 currency를 not null로 두었다. 물량(출하량·생산능력)이 들어오면서
+-- 통화가 없는 행이 생겼다. GWh 값에 'CNY'를 채우면 틀린 사실이 되므로 제약을 푼다.
+-- 이미 만들어진 표에도 적용해야 하므로 create 뒤에 따로 둔다(여러 번 돌려도 안전하다).
+alter table report_metric alter column currency drop not null;
 
 create unique index if not exists report_metric_cell
   on report_metric (company_id, period, metric);
