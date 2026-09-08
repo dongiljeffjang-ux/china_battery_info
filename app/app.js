@@ -169,18 +169,24 @@ function parseDailySections(lines){
 }
 function renderDailySummary(){
   const target = document.querySelector('#daily-summary-list');
-  const sections = parseDailySections(dailyReportFacts || []);
-  if (!sections.length) {
+  const factSections = parseDailySections(dailyReportFacts || []);
+  const industrySection = parseDailySections(dailyReportInsight || []).find(section => ['산업 총평', '오늘의 그림'].includes(section.category));
+  if (!factSections.length && !industrySection?.points?.length) {
     target.innerHTML = '<p class="summary-empty">아직 생성된 Daily Report가 없습니다. 수집·분석 1회 실행 후 Top 10 본문 분석 결과와 통합 리포트가 이 영역에 표시됩니다.</p>';
+    renderDailyInsight();
     return;
   }
-  target.innerHTML = sections.map(section => {
+  const industry = industrySection?.points?.length
+    ? `<div class="summary-block industry-overview"><p class="summary-cat insight">해석 · 산업 총평</p><ul>${industrySection.points.map(point => `<li>${highlightMetrics(point)}</li>`).join('')}</ul></div>`
+    : '';
+  const facts = factSections.map(section => {
     const category = section.category === '산업 총평' ? '주요 사실' : section.category;
     const chip = category
       ? `<p class="summary-cat ${summaryCategoryClass[category] || ''}">${escapeHtml(category)}</p>`
       : '';
     return `<div class="summary-block">${chip}<ul>${section.points.map(point => `<li>${formatSummaryPoint(point)}</li>`).join('')}</ul></div>`;
   }).join('');
+  target.innerHTML = `${industry}${facts}`;
   renderDailyInsight();
 }
 
@@ -189,7 +195,7 @@ function renderDailySummary(){
 function renderDailyInsight(){
   const target = document.querySelector('#daily-insight');
   if (!target) return;
-  const sections = parseDailySections(dailyReportInsight || []);
+  const sections = parseDailySections(dailyReportInsight || []).filter(section => !['산업 총평', '오늘의 그림'].includes(section.category));
   if (!sections.length) { target.innerHTML = ''; return; }
   // 해석은 사실 목록과 성격이 다르다. 판단과 근거를 각각 불릿으로 끊으면 조각나 보이므로
   // 한 문단으로 잇고, 근거는 문단 끝에 덧붙여 판단과 구분만 되게 한다.
@@ -203,10 +209,10 @@ function renderDailyInsight(){
       const basis = split ? split[2].trim() : '';
       return `<p class="insight-point">${chip}${highlightMetrics(lead)}${basis ? `<span class="insight-basis">근거 · ${highlightMetrics(basis)}</span>` : ''}</p>`;
     }).join('');
-    const category = section.category === '오늘의 그림' ? '산업 총평' : section.category;
+    const category = section.category === '한국 기업 관점' ? '한국 소재사 insight' : section.category;
     return `<div class="summary-block">${category ? `<p class="summary-cat insight">${escapeHtml(category)}</p>` : ''}${blocks}</div>`;
   }).join('');
-  target.innerHTML = `<div class="insight-head"><p class="eyebrow">INSIGHT</p><h3>산업 총평과 한국 기업 관점</h3><span class="source-rule">사실이 아니라 해석입니다</span></div>${body}`;
+  target.innerHTML = `<div class="insight-head"><p class="eyebrow">KOREAN MATERIALS INSIGHT</p><h3 id="insight-title">한국 소재사 insight</h3><span class="source-rule">사실이 아니라 해석입니다</span></div>${body}`;
 }
 function feedbackClientKey(){
   const key = 'cbl_feedback_client_key';

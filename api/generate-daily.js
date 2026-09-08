@@ -19,6 +19,10 @@ function isAuthorized(request) {
 const SUMMARY_CATEGORIES = ["셀", "양극재", "음극재", "정책·공급망"];
 export const DAILY_REPORT_PROMPT = "당신은 중국 이차전지 산업 데일리 편집자다. 제공된 본문 검증 완료 기사 요약만 근거로 중요도를 선별한다. 10개 이하를 선택한다. 단일 제3자 언론 보도만으로 확정할 수 없는 주장은 고르지 않는다. 회사의 직접 발표·공시 또는 복수 보도로 확인된 사업·기술·생산·고객·재무 변화를 우선한다. 사용자 피드백은 편집 선호의 보조 신호로만 사용하며, 사실성·출처 검증·중요도보다 우선하지 않는다. sections는 셀·양극재·음극재·정책·공급망별 개조식 사실 요약이다. sections에 산업 총평이나 해석을 만들지 않는다. 근거 기사가 있는 카테고리만 만들고 없는 카테고리는 넣지 않는다. subject_ko에는 회사명이나 주체를 쓴다. 같은 주체의 사실은 절대 여러 항목으로 나누지 말고 반드시 하나의 항목으로 합쳐 fact_ko 안에서 이어 쓴다. fact_ko는 실적·출하·증설·기술 순으로 묶고 수치는 쉼표로 이어 쓰며, 필요하면 두 문장까지 쓴다(예: '26년 상반기 음극재 출하 22.99만 톤(+46.4%), 매출 52.1억 위안(+44%), 순이익 1.47억 위안(-46%). 윈난 2기·쓰촨 루저우·오만 프로젝트 건설 추진'). 주체명을 fact_ko 안에서 되풀이하지 않는다. 수식어와 군더더기를 쓰지 않는다. 사실만 쓰고 전망·인과·투자 의견은 쓰지 않는다. selection_reason_ko는 선택된 원문의 확인 가능한 변화만 설명한다. insight는 사실이 아니라 해석이며 sections와 목적이 다르다. 한국 배터리 셀사·양극재·음극재 소재사의 임원이자 시장 애널리스트의 눈으로, 오늘 수집된 사실들이 경쟁 구도·수요 구조·원가와 기술 흐름·공급망 위치에서 무엇을 뜻하는지 해석한다. headline_ko는 여러 회사의 사실을 연결하거나 대조해 오늘 산업의 공통 흐름과 변곡점을 두세 문장으로 종합한다. 단일 회사의 실적을 그대로 나열하지 않는다. points의 point_ko는 그 흐름의 사업적 의미를 두세 문장의 줄글로 쓴다. 사실을 되풀이하는 요약을 쓰지 않는다. '확인해야 한다', '점검이 필요하다', '대응해야 한다' 같은 행동 지시나 할 일 목록을 쓰지 않는다. 판단과 함의만 쓴다. basis_ko에는 그 판단의 근거가 된 오늘의 사실을 회사명과 수치로 한 문장에 담는다. 근거가 오늘 수집분에 없으면 그 항목을 만들지 않는다. points는 서로 다른 주제를 다루며 세 개를 넘기지 않는다. 오늘의 사실만으로 설명이 되는 범위 안에서만 추론한다. 근거에서 한 단계 정도 나아간 함의는 괜찮지만, 여러 단계를 건너뛰거나 오늘 근거로 설명할 수 없는 결론은 쓰지 않는다. 단정하기 어려운 대목은 가능성으로 표현하고 단정형을 쓰지 않는다. 주가·매수매도·목표주가·투자 추천은 어떤 형태로도 쓰지 않는다.";
 
+// 화면은 산업총평+사실, 한국 소재사 insight의 두 묶음으로 나뉜다. 사실과 해석의 저장 컬럼은
+// 계속 분리하되, 산업총평은 Daily 본문 안에서 사실 목록의 앞에 표시한다.
+export const DAILY_REPORT_STRUCTURE_INSTRUCTION = "출력 구조를 엄격히 지킨다. insight.headline_ko는 '산업 총평'이다. 여러 회사·분야의 오늘 사실을 연결한 산업 차원의 해석만 두세 문장으로 쓴다. insight.points는 '한국 소재사 insight'다. 한국의 양극재·음극재 소재사에 직접 관련되는 경쟁 구도, 수요 구조, 원가·기술 흐름, 공급망 위치의 함의만 쓴다. 한국 셀사 일반론이나 소재사와 무관한 해석은 넣지 않는다. 오늘의 근거만으로 소재사 관점의 해석을 만들 수 없으면 points는 빈 배열로 둔다. sections는 '사실들'이며 산업 총평이나 해석을 절대 넣지 않는다.";
+
 // daily_report.summary_ko는 text 컬럼이라 "## 카테고리 / - 항목" 형식으로 직렬화한다.
 // 화면이 이 형식을 파싱하고, 형식이 없는 예전 리포트도 그대로 표시된다.
 function serializeSections(sections = []) {
@@ -31,11 +35,11 @@ function serializeSections(sections = []) {
 
 // 해석은 사실과 분리해 저장한다. 화면도 두 영역을 나눠 표시한다.
 function serializeInsight(insight) {
-  if (!insight?.points?.length) return null;
+  if (!insight?.headline_ko && !insight?.points?.length) return null;
   const lines = [];
   if (insight.headline_ko) lines.push(`## 산업 총평\n- ${insight.headline_ko}`);
   // 판단과 근거를 각각 한 줄씩 끊어 두면 화면이 조각나 보인다. 한 항목으로 잇는다.
-  lines.push(`## 한국 기업 관점\n${insight.points.map((item) => `- [${item.segment}] ${item.point_ko} 근거: ${item.basis_ko}`).join("\n")}`);
+  if (insight.points?.length) lines.push(`## 한국 소재사 insight\n${insight.points.map((item) => `- [${item.segment}] ${item.point_ko} 근거: ${item.basis_ko}`).join("\n")}`);
   return lines.join("\n");
 }
 
@@ -61,7 +65,7 @@ async function selectTop10(candidates, preferenceExamples = []) {
         properties: {
           headline_ko: { type: "string" },
           points: {
-            type: "array", minItems: 2, maxItems: 3,
+            type: "array", minItems: 0, maxItems: 3,
             items: {
               type: "object", additionalProperties: false,
               required: ["point_ko", "basis_ko", "segment"],
@@ -87,7 +91,7 @@ async function selectTop10(candidates, preferenceExamples = []) {
   }));
   const { data } = await createJsonResponse({
     name: "daily_top10", schema,
-    instructions: DAILY_REPORT_PROMPT,
+    instructions: `${DAILY_REPORT_PROMPT} ${DAILY_REPORT_STRUCTURE_INSTRUCTION}`,
     input: JSON.stringify({ candidates: evidence, preference_examples: preferenceExamples })
   });
   return data;
