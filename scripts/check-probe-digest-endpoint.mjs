@@ -6,7 +6,9 @@ const backfill = fs.readFileSync(new URL("../lib/event-backfill.js", import.meta
 const provider = fs.readFileSync(new URL("../lib/llm-provider.js", import.meta.url), "utf8");
 
 assert.ok(admin.includes('"probe-digest": probeDigest'), "관리자 API에 보호된 dry-run 경로가 있어야 한다");
-assert.ok(admin.includes('"wanrun-2026h1"'), "진단 대상 보고서는 고정해야 한다");
+for (const preset of ["wanrun-2026h1", "xtc-2024h1", "farasis-2026h1", "minmetals-2024h1", "zhenhua-2024h1"]) {
+  assert.ok(admin.includes(`"${preset}"`), `${preset} 진단 대상 보고서는 고정해야 한다`);
+}
 assert.ok(admin.includes("diagnostic: true"), "dry-run은 진단 모드여야 한다");
 const probe = admin.slice(admin.indexOf("async function probeDigest"), admin.indexOf("// 파이프라인 명세"));
 assert.ok(!/query\.url/.test(probe), "사용자 URL을 내려받으면 안 된다");

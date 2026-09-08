@@ -35,6 +35,26 @@ const PROBE_REPORTS = {
     kind: "semiannual",
     url: "https://static.cninfo.com.cn/finalpage/2026-08-29/1225524978.PDF",
   },
+  "xtc-2024h1": {
+    company_id: "xtc-new-energy",
+    kind: "semiannual",
+    url: "https://static.cninfo.com.cn/finalpage/2024-08-03/1220787948.PDF",
+  },
+  "farasis-2026h1": {
+    company_id: "farasis",
+    kind: "semiannual",
+    url: "https://static.cninfo.com.cn/finalpage/2026-08-29/1225524341.PDF",
+  },
+  "minmetals-2024h1": {
+    company_id: "minmetals-new-energy",
+    kind: "semiannual",
+    url: "https://static.cninfo.com.cn/finalpage/2024-08-24/1220965149.PDF",
+  },
+  "zhenhua-2024h1": {
+    company_id: "zhenhua-new-material",
+    kind: "semiannual",
+    url: "https://static.cninfo.com.cn/finalpage/2024-08-24/1220963125.PDF",
+  },
 };
 
 export const config = { maxDuration: 300 };
