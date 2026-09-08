@@ -114,7 +114,7 @@ async function runTimelineReport(request, response) {
   if (!events.length) return response.status(400).json({ status: "no_evidence", message: "현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다." });
   try {
     const result = await buildTimelineReport({ companyName: company.name_ko, events });
-    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, events: events.length, turningPoints: result.report.turning_points.length }));
+    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, events: events.length, reportChars: result.report.markdown_ko.length }));
     return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, events, generated_at: new Date().toISOString(), ...result });
   } catch (error) {
     console.error("[TIMELINE_REPORT_FAILED]", JSON.stringify({ companyId, message: error.message }));

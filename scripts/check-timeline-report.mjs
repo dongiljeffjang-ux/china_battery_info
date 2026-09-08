@@ -18,6 +18,7 @@ assert.doesNotMatch(timeline, /webSearch\s*:\s*true/);
 assert.match(api, /mode\s*\|\|\s*""\)\s*===\s*"timeline_report"/);
 assert.match(api, /cleanTimelineEvents/);
 assert.match(api, /sourceUrl/);
+assert.doesNotMatch(api, /result\.report\.turning_points/, "Markdown 리포트에는 이전 turning_points 구조를 읽으면 안 된다");
 assert.match(timeline, /시장-실적\/생산기반/);
 assert.match(timeline, /function layerTable/);
 assert.match(html, /id="company-timeline-report"/);
