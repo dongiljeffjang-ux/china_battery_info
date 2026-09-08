@@ -46,7 +46,7 @@ const PROBE_REPORTS = {
     url: "https://static.cninfo.com.cn/finalpage/2026-08-29/1225524341.PDF",
   },
   "minmetals-2024h1": {
-    company_id: "minmetals-new-energy",
+    company_id: "changyuan-lico",
     kind: "semiannual",
     url: "https://static.cninfo.com.cn/finalpage/2024-08-24/1220965149.PDF",
   },
