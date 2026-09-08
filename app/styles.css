@@ -330,3 +330,7 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .traj-range:hover{border-color:var(--blue);color:var(--blue)}
 /* 거래소 데이터와 보고서 원문 발췌가 일치한 점. 두 출처가 서로를 검증했다는 표시다. */
 .traj-dot.verified{stroke:var(--good);stroke-width:2}
+/* 연도가 바뀌는 구간. 값이 누적에서 리셋된 자리라 실선으로 잇지 않는다. */
+.traj-line.link{stroke-dasharray:4 4;opacity:.45}
+/* 툴팁이 줄 단위로 정리돼 오므로 폭을 조금 넓히고 줄 간격을 준다. */
+.hover-tip{max-width:380px;line-height:1.6}

@@ -994,10 +994,12 @@ function digestItemText(event, companyId){
 // 하나의 연속 시간축을 지표 선과 사건 플래그가 나눠 쓴다. 축은 연도 칸이 아니라 날짜라
 // 사건이 실제 '월' 위치에 꽂히고, 플래그에 마우스를 올리면 그 사실이 툴팁으로 뜬다.
 // 재료는 정기보고서와 거래소 표준 손익 항목뿐이다(뉴스 제외).
+// 화면 라벨은 한국에서 쓰는 계정 이름으로 적는다. 중문 원문 표기(营业利润·扣非…)는
+// 툴팁의 '원문 계정'에만 남긴다 — 검산에는 필요하지만 칩에 중국어가 뜨면 읽기 어렵다.
 const METRIC_LABELS = {
   revenue_total: '매출', operating_profit: '영업이익', net_profit_attr: '지배주주 순이익',
-  net_profit_excl: '扣非 순이익', net_profit: '순이익', total_profit: '이익총액',
-  operating_cost: '영업비용', gross_profit: '매출총이익', rnd_expense: '연구개발비',
+  net_profit_excl: '순이익(비경상 제외)', net_profit: '순이익', total_profit: '세전이익',
+  operating_cost: '매출원가', gross_profit: '매출총이익', rnd_expense: '연구개발비',
   ocf: '영업활동 현금흐름', overseas_revenue: '해외 매출',
 };
 const METRIC_ORDER = ['revenue_total', 'operating_profit', 'net_profit_attr', 'net_profit_excl', 'net_profit', 'total_profit', 'operating_cost', 'gross_profit', 'rnd_expense', 'ocf', 'overseas_revenue'];
@@ -1036,18 +1038,34 @@ function convertedValue(row, currency, rate){
   if (currency !== 'USD') return value;
   return rate && rate > 0 ? value / rate : null;
 }
+// 툴팁을 한 줄로 이어 붙이면 읽히지 않는다. 머리줄과 항목줄로 나눈다.
 function metricTip(row, currency, rate){
-  const parts = [`${periodLabel(row)} · ${metricValueText(row, currency, rate)}`, `원문 계정 ${row.line_item_zh}`];
-  if (currency === 'USD' && rate) parts.push(`원래 값 ${Number(row.value).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}억 위안 · 기간 평균 환율 ${rate.toFixed(4)} CNY/USD`);
-  if (row.quantity_text) parts.push(`원문 표기 ${row.quantity_text}`);
-  if (row.yoy_pct_stated !== null && row.yoy_pct_stated !== undefined) parts.push(`전년 동기 대비 ${row.yoy_pct_stated}%`);
-  parts.push(row.verified ? '거래소 데이터와 보고서 원문 발췌가 일치' : row.source_kind === 'market' ? '거래소 표준 손익 항목' : '보고서 원문 발췌');
-  return parts.join(' · ');
+  const lines = [`${periodLabel(row)}  ${metricValueText(row, currency, rate)}`, ''];
+  if (currency === 'USD' && rate) {
+    lines.push(`원래 값   ${Number(row.value).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}억 위안`);
+    lines.push(`적용 환율  ${rate.toFixed(4)} CNY/USD (기간 평균)`);
+  }
+  lines.push(`원문 계정  ${row.line_item_zh}`);
+  if (row.quantity_text) lines.push(`원문 표기  ${row.quantity_text}`);
+  if (row.yoy_pct_stated !== null && row.yoy_pct_stated !== undefined) {
+    const yoy = Number(row.yoy_pct_stated);
+    lines.push(`전년 동기  ${yoy > 0 ? '+' : ''}${yoy}%`);
+  }
+  lines.push(`출처      ${row.verified ? '거래소 데이터 · 보고서 원문과 일치' : row.source_kind === 'market' ? '거래소 표준 손익 항목' : '보고서 원문 발췌'}`);
+  return lines.join('\n');
 }
+function clipText(text, limit){
+  const value = String(text || '').trim().replace(/\s+/g, ' ');
+  return value.length > limit ? `${value.slice(0, limit - 1).trimEnd()}…` : value;
+}
+// 제목과 사실은 같은 내용을 다르게 줄인 것이라 그대로 이어 붙이면 같은 말이 두 번 나온다.
+// 사실이 제목으로 시작하면 제목을 빼고, 길이도 잘라 툴팁이 화면을 덮지 않게 한다.
 function trajectoryFlagTip(event, companyId){
-  const title = stripCompanySubject(event.title, companyId).trim();
-  const fact = String(event.fact || '').trim();
-  return [`${event.date} · ${evidenceLabels[event.kind] || ''}`, title, fact].filter(Boolean).join('\n').slice(0, 420);
+  const title = clipText(stripCompanySubject(event.title, companyId), 70);
+  const fact = clipText(event.fact, 200);
+  const head = `${event.date}  ${evidenceLabels[event.kind] || ''}`;
+  const overlaps = fact && title && fact.startsWith(title.replace(/…$/, '').slice(0, 20));
+  return [head, '', ...(overlaps ? [fact] : [title, fact].filter(Boolean))].join('\n');
 }
 // 두 출처를 한 줄로 합친다. 거래소 표준 항목이 기본이고(전 기간·전 계정), 같은 칸에 보고서
 // 발췌값이 있으면 대조해 '원문 확인' 표시를 단다. 값이 어긋나면 그 사실을 툴팁에 남긴다.
@@ -1172,9 +1190,17 @@ function renderTrajectory(timeline){
   };
   const marketFlags = cluster(flags.filter(flag => flag.event.track !== 'tech'));
   const techFlags = cluster(flags.filter(flag => flag.event.track === 'tech'));
-  const clusterTip = (group) => group.events.length === 1
-    ? trajectoryFlagTip(group.events[0], timeline.companyId)
-    : [`${group.date} · ${group.events.length}건`, ...group.events.map(event => `· ${stripCompanySubject(event.title, timeline.companyId).trim()}`)].join('\n').slice(0, 460);
+  const CLUSTER_TIP_MAX = 5;
+  const clusterTip = (group) => {
+    if (group.events.length === 1) return trajectoryFlagTip(group.events[0], timeline.companyId);
+    const shown = group.events.slice(0, CLUSTER_TIP_MAX);
+    const rest = group.events.length - shown.length;
+    return [
+      `${group.date}  ${evidenceLabels[group.events[0].kind] || ''} ${group.events.length}건`, '',
+      ...shown.map(event => `· ${clipText(stripCompanySubject(event.title, timeline.companyId), 46)}`),
+      rest > 0 ? `  외 ${rest}건 — 눌러서 전부 보기` : '\n눌러서 근거 보기',
+    ].join('\n');
+  };
   const flagMark = (group, track, baseY) => {
     const py = baseY + group.row * TRAJ.laneGap;
     const many = group.events.length > 1;
@@ -1209,14 +1235,14 @@ function renderTrajectory(timeline){
       ${bottom < 0 ? `<line class="traj-zero" x1="${TRAJ.padX}" y1="${zeroY.toFixed(1)}" x2="${TRAJ.width - TRAJ.padX}" y2="${zeroY.toFixed(1)}"/>` : ''}
       <line class="traj-axis-line" x1="${TRAJ.padX - 12}" y1="${TRAJ.axisY}" x2="${TRAJ.width - TRAJ.padX + 12}" y2="${TRAJ.axisY}"/>
       ${trajectoryQuarterly
-        ? segments.filter(segment => segment.rows.length > 1).map(segment => `<path class="traj-line" d="${path(segment.rows)}"/>`).join('')
+        ? `${segments.slice(1).map((segment, index) => `<path class="traj-line link" d="${path([segments[index].rows.at(-1), segment.rows[0]])}"/>`).join('')}${segments.filter(segment => segment.rows.length > 1).map(segment => `<path class="traj-line" d="${path(segment.rows)}"/>`).join('')}`
         : (rows.length > 1 ? `<path class="traj-line" d="${annualOnlyPath}"/>` : '')}
       ${rows.map((row, index) => point(row, !trajectoryQuarterly || !row.at.interim || index === rows.length - 1)).join('')}
       ${marketFlags.map(item => flagMark(item, 'market', marketBase)).join('')}
       ${techFlags.map(item => flagMark(item, 'tech', techBase)).join('')}
     </svg>
     <p class="traj-note">가로축은 날짜, 선은 <strong>${escapeHtml(label)}</strong>입니다. ${trajectoryQuarterly
-      ? '중국 공시의 분기 실적은 <strong>연초부터의 누적</strong>이라 해가 바뀌면 1분기부터 다시 쌓입니다. 한 줄로 이으면 매년 초 급락으로 보이므로 <strong>연도마다 선을 끊어</strong> 그립니다. 단일 분기 값은 우리가 빼서 만들지 않습니다.'
+      ? '중국 공시의 분기 실적은 <strong>연초부터의 누적</strong>이라 해가 바뀌면 1분기부터 다시 쌓입니다. 그래서 해마다 실선을 따로 그리고 <strong>연도가 바뀌는 구간만 점선</strong>으로 이었습니다. 단일 분기 값은 우리가 빼서 만들지 않습니다.'
       : '연간 확정치만 표시하며, 아직 연간이 나오지 않은 당해는 누적치를 선 끝에 잇습니다.'}
       축 아래 점은 그 달에 공시된 사건입니다(위 줄 시장 · 아래 줄 기술). 점에 마우스를 올리면 내용과 원문 계정이 보이고, 누르면 근거가 아래에 열립니다.
       ${trajectoryCurrency === 'USD' ? '달러 값은 <strong>그 기간의 평균 환율</strong>(유럽중앙은행 기준)로 환산한 표시용 값이며, 원래 위안화 값과 적용 환율은 각 점의 툴팁에 있습니다.' : ''}
@@ -1296,7 +1322,8 @@ function renderCompanyEvents(timeline){
   }
   grid.innerHTML = [...years.entries()].map(([year, entries], index) => {
     const count = entries.reduce((sum, [, items]) => sum + items.length, 0);
-    return `<details class="digest-year"${index === 0 ? ' open' : ''}><summary><span class="digest-year-label">${escapeHtml(year)}년</span><span class="digest-year-meta">보고서 ${entries.length}건 · 사실 ${count}건</span></summary><div class="digest-year-body">${entries.map(card).join('')}</div></details>`;
+    // 위 궤적이 흐름을 보여 주므로 아래 사실 카드는 기본으로 접어 둔다. 필요할 때만 펼친다.
+    return `<details class="digest-year"><summary><span class="digest-year-label">${escapeHtml(year)}년</span><span class="digest-year-meta">보고서 ${entries.length}건 · 사실 ${count}건</span></summary><div class="digest-year-body">${entries.map(card).join('')}</div></details>`;
   }).join('');
   grid.querySelectorAll('.digest-toggle').forEach(button => button.addEventListener('click', () => {
     button.previousElementSibling.hidden = false;
