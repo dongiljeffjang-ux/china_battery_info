@@ -10,6 +10,7 @@ import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
+import { extractMetricsFromEvents } from "../lib/report-metrics.js";
 import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor } from '../lib/ingestion-guard.js';
 
 // Vercel Fluid compute(2025-04 이후 새 프로젝트 기본)에서 Hobby 함수 한도는 기본·최대 300초다.
@@ -259,6 +260,52 @@ async function runBackfill(response, companyId, sinceParam, mode) {
   }
 }
 
+// 정기보고서 발췌 → report_metric. LLM을 쓰지 않으므로 과금이 없고, 여러 번 돌려도 같은 결과다.
+//
+// 로컬 스크립트(scripts/backfill-report-metrics.mjs)와 같은 일을 하지만 이 경로가 운영용이다.
+// Vercel의 SUPABASE 키가 Sensitive라 로컬로 내려받을 수 없어(docs/HANDOFF-CODEX.md 8절),
+// 운영 DB에 쓰는 일회성 작업은 관리자 로그인 브라우저에서 URL을 여는 방식이 유일한 경로다.
+const METRIC_EVENT_SELECT = "id,company_id,evidence_kind,occurred_at,source_url,original_excerpt";
+const METRIC_PAGE = 500;
+async function runMetricBackfill(response, write) {
+  try {
+    const events = [];
+    for (let offset = 0; ; offset += METRIC_PAGE) {
+      const page = await supabaseRest(`event?select=${METRIC_EVENT_SELECT}&evidence_kind=in.(annual_report,periodic_report)&order=occurred_at.desc&limit=${METRIC_PAGE}&offset=${offset}`);
+      events.push(...page);
+      if (page.length < METRIC_PAGE) break;
+    }
+    const rows = extractMetricsFromEvents(events);
+    const byMetric = {};
+    for (const row of rows) byMetric[row.metric] = (byMetric[row.metric] || 0) + 1;
+    // 매출 커버리지는 PRD 8절의 게이트가 보는 수치다. 응답에 그대로 실어 눈으로 확인하게 한다.
+    const years = ["2023", "2024", "2025"];
+    const revenueCells = new Set(rows.filter((row) => row.metric === "revenue_total" && years.includes(row.period)).map((row) => `${row.company_id} ${row.period}`));
+    const companies = new Set(events.map((event) => event.company_id));
+    const summary = {
+      events: events.length, rows: rows.length, by_metric: byMetric,
+      revenue_cells: revenueCells.size, cells_total: companies.size * years.length, companies: companies.size,
+      sample: rows.slice(0, 8).map((row) => ({ company_id: row.company_id, period: row.period, metric: row.metric, value: row.value, line_item_zh: row.line_item_zh, quantity_text: row.quantity_text })),
+    };
+    if (!write) return response.status(200).json({ status: "preview", note: "DB에 쓰지 않았습니다. 실제로 채우려면 ?metrics=write", ...summary });
+    const payload = rows.map((row) => ({
+      company_id: row.company_id, period: row.period, metric: row.metric, value: row.value, unit: row.unit,
+      currency: row.currency, line_item_zh: row.line_item_zh, quantity_text: row.quantity_text,
+      yoy_pct_stated: row.yoy_pct_stated, excerpt: row.excerpt, event_id: row.event_id,
+      report_kind: row.report_kind, source_url: row.source_url, occurred_at: row.occurred_at,
+      extractor: "report-metrics/regex",
+    }));
+    for (let i = 0; i < payload.length; i += 200) {
+      await supabaseRest("report_metric?on_conflict=company_id,period,metric", { method: "POST", prefer: "return=minimal,resolution=merge-duplicates", body: payload.slice(i, i + 200) });
+    }
+    console.info("[METRIC_BACKFILL_DONE]", JSON.stringify({ events: events.length, rows: rows.length, revenue_cells: revenueCells.size }));
+    return response.status(200).json({ status: "ok", written: payload.length, ...summary });
+  } catch (error) {
+    console.error("[METRIC_BACKFILL_FAILED]", JSON.stringify({ write, message: error.message }));
+    return response.status(502).json({ status: "metric_backfill_failed", message: String(error.message || error).slice(0, 400) });
+  }
+}
+
 // 다음 단계를 같은 함수의 새 호출로 넘긴다.
 //
 // 수집·본문 처리·Daily 생성을 한 호출에 몰아 넣으면 60초에 잘려 Daily가 만들어지지 않았다.
@@ -504,6 +551,11 @@ async function handleRequest(request, response) {
   }
   const redateCompanyId = String(request.query?.redate || request.body?.redate || "").trim();
   if (redateCompanyId) return runRedate(response, redateCompanyId);
+  // 정기보고서 발췌에서 정량 지표를 뽑아 report_metric을 채운다. LLM을 쓰지 않는다.
+  // ?metrics=1은 미리보기(쓰지 않음), ?metrics=write는 실제 upsert. 기본이 미리보기인 이유는
+  // 무엇이 들어가는지 먼저 눈으로 보고 쓰기를 하기 위해서다.
+  const metricsMode = String(request.query?.metrics || request.body?.metrics || "").trim();
+  if (metricsMode) return runMetricBackfill(response, metricsMode === "write");
   // 브라우저가 한 홉씩 부르는 수동 백필. 서버가 자기 자신을 재귀 호출하지 않는다.
   if (request.method === "POST" && String(request.query?.curate_step || "") === "1") {
     if (!llmConfig("auto")) return response.status(503).json({ status: "llm_not_configured" });
