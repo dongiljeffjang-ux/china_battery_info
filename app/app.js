@@ -1008,7 +1008,9 @@ const TRAJ = { width: 1000, plotTop: 26, plotHeight: 108, axisY: 146, laneGap: 1
 // 전부 펼치면 최근 흐름이 왼쪽 빈 구간에 눌린다. 전체 보기는 버튼으로 연다.
 const TRAJ_RECENT_YEARS = 4;
 let trajectoryMetric = null;
-let trajectoryQuarterly = true;
+// 기본은 연간이다. 분기는 누적이라 한 해 안에서 네 점이 계단처럼 올라가는데, 처음 보는 화면이
+// 그 모양이면 실적이 계속 늘어나는 것처럼 읽힌다. 연간으로 흐름을 먼저 보이고 분기는 토글로 연다.
+let trajectoryQuarterly = false;
 let trajectoryCurrency = 'CNY';
 let trajectoryFullRange = false;
 
@@ -1157,7 +1159,10 @@ function renderTrajectory(timeline){
     else segments.push({ year: row.at.year, rows: [row] });
   }
   // 연간만 볼 때는 해마다 점이 하나라 끊으면 선이 사라진다. 그때는 한 줄로 잇는다.
-  const annualOnlyPath = !trajectoryQuarterly ? rows.map((row, index) => `${index ? 'L' : 'M'}${x(row.at.time).toFixed(1)} ${y(valueOf(row)).toFixed(1)}`).join(' ') : '';
+  // 연간 모드에서도 마지막 연간 이후의 당해 누적은 성격이 다르다. 확정된 연간 사이는 실선,
+  // 2025 연말에서 2026 분기 누적으로 넘어가는 구간은 점선으로 이어 확정 전임을 표시한다.
+  const annualPoints = rows.filter(row => !row.at.interim);
+  const tailPoints = rows.filter(row => row.at.interim);
   const path = (list) => list.map((row, index) => `${index ? 'L' : 'M'}${x(row.at.time).toFixed(1)} ${y(valueOf(row)).toFixed(1)}`).join(' ');
 
   const point = (row, showLabel) => {
@@ -1236,14 +1241,14 @@ function renderTrajectory(timeline){
       <line class="traj-axis-line" x1="${TRAJ.padX - 12}" y1="${TRAJ.axisY}" x2="${TRAJ.width - TRAJ.padX + 12}" y2="${TRAJ.axisY}"/>
       ${trajectoryQuarterly
         ? `${segments.slice(1).map((segment, index) => `<path class="traj-line link" d="${path([segments[index].rows.at(-1), segment.rows[0]])}"/>`).join('')}${segments.filter(segment => segment.rows.length > 1).map(segment => `<path class="traj-line" d="${path(segment.rows)}"/>`).join('')}`
-        : (rows.length > 1 ? `<path class="traj-line" d="${annualOnlyPath}"/>` : '')}
+        : `${tailPoints.length && annualPoints.length ? `<path class="traj-line link" d="${path([annualPoints.at(-1), ...tailPoints])}"/>` : ''}${annualPoints.length > 1 ? `<path class="traj-line" d="${path(annualPoints)}"/>` : ''}`}
       ${rows.map((row, index) => point(row, !trajectoryQuarterly || !row.at.interim || index === rows.length - 1)).join('')}
       ${marketFlags.map(item => flagMark(item, 'market', marketBase)).join('')}
       ${techFlags.map(item => flagMark(item, 'tech', techBase)).join('')}
     </svg>
     <p class="traj-note">가로축은 날짜, 선은 <strong>${escapeHtml(label)}</strong>입니다. ${trajectoryQuarterly
       ? '중국 공시의 분기 실적은 <strong>연초부터의 누적</strong>이라 해가 바뀌면 1분기부터 다시 쌓입니다. 그래서 해마다 실선을 따로 그리고 <strong>연도가 바뀌는 구간만 점선</strong>으로 이었습니다. 단일 분기 값은 우리가 빼서 만들지 않습니다.'
-      : '연간 확정치만 표시하며, 아직 연간이 나오지 않은 당해는 누적치를 선 끝에 잇습니다.'}
+      : '연간 확정치를 실선으로 잇고, 아직 연간이 나오지 않은 <strong>당해 누적치는 점선</strong>으로 그 끝에 이어 붙입니다.'}
       축 아래 점은 그 달에 공시된 사건입니다(위 줄 시장 · 아래 줄 기술). 점에 마우스를 올리면 내용과 원문 계정이 보이고, 누르면 근거가 아래에 열립니다.
       ${trajectoryCurrency === 'USD' ? '달러 값은 <strong>그 기간의 평균 환율</strong>(유럽중앙은행 기준)로 환산한 표시용 값이며, 원래 위안화 값과 적용 환율은 각 점의 툴팁에 있습니다.' : ''}
       ${missingRate ? '환율이 없는 기간은 표시하지 않았습니다.' : ''}</p>
