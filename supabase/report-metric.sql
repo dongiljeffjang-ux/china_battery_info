@@ -31,6 +31,11 @@ create table if not exists report_metric (
   constraint report_metric_line_item_present check (length(btrim(line_item_zh)) > 0)
 );
 
+-- Supabase는 새 테이블에 service_role 쓰기 권한을 자동으로 주지 않는다. 이걸 빼면 API가
+-- 42501 permission denied로 막힌다. 기존 표(event 등)와 같은 권한 모양으로 맞춘다.
+grant select, insert, update, delete on public.report_metric to service_role;
+revoke all on public.report_metric from anon, authenticated;
+
 create unique index if not exists report_metric_cell
   on report_metric (company_id, period, metric);
 create index if not exists report_metric_company_metric
