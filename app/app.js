@@ -2307,10 +2307,10 @@ async function runTimelineBackfill(){
     companyTimelineCache.clear();
     await renderCompany();
     window.alert(`시계열 백필을 완료했습니다.\n실행 ${completed}단계 · 마지막 작업 ${lastTask || '없음'}`);
-    button.disabled = false; button.textContent = '시계열 백필 1회 실행';
+    button.disabled = false; button.textContent = '정기보고서 재처리';
   } catch (error) {
     window.alert(`백필 실행 중 실패했습니다: ${error.message}`);
-    button.disabled = false; button.textContent = '시계열 백필 1회 실행';
+    button.disabled = false; button.textContent = '정기보고서 재처리';
   }
 }
 // 벡터DB(knowledge_chunk)에 아직 없는 event를 임베딩 API로 채운다. 남은 만큼 반복 호출한다.
