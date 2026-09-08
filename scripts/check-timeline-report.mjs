@@ -27,7 +27,8 @@ assert.match(app, /mode:\s*'timeline_report'/);
 assert.match(app, /period:\s*periodOf\(event\.date\)/);
 assert.match(app, /HTML로 저장/);
 assert.match(app, /new Blob\(\[.*text\/html;charset=utf-8/s);
-assert.match(app, /timeline-report-markdown/);
+assert.match(app, /function renderTimelineMarkdown/);
+assert.doesNotMatch(app, /<pre class="timeline-report-markdown">/, "리포트 Markdown 원문을 pre에 그대로 표시하면 안 된다");
 assert.match(app, /서버 히스토리나 DB에는 저장되지 않습니다/);
 
 console.log("timeline report checks passed");

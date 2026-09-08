@@ -820,19 +820,58 @@ async function renderCompany(){
   renderLayerMatrix(timeline);
 }
 
+// 리포트 출력은 제한된 Markdown(제목·불릿·표·문단)만 HTML로 바꾼다. 모델 문자열은 항상
+// escapeHtml을 거치므로 링크나 태그를 포함해도 실행 가능한 HTML이 되지 않는다.
+function renderTimelineMarkdown(markdown){
+  const lines = String(markdown || '').replace(/\r/g, '').split('\n');
+  const out = [];
+  const isTable = line => /^\s*\|.+\|\s*$/.test(line);
+  const cells = line => line.trim().split('|').slice(1, -1).map(cell => cell.trim());
+  for (let index = 0; index < lines.length;) {
+    const line = lines[index].trim();
+    if (!line) { index += 1; continue; }
+    const heading = line.match(/^##\s+(.+)$/);
+    if (heading) { out.push(`<h2>${escapeHtml(heading[1])}</h2>`); index += 1; continue; }
+    if (/^[-*]\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
+        items.push(`<li>${escapeHtml(lines[index].trim().replace(/^[-*]\s+/, ''))}</li>`);
+        index += 1;
+      }
+      out.push(`<ul class="timeline-report-list">${items.join('')}</ul>`);
+      continue;
+    }
+    if (isTable(line)) {
+      const tableLines = [];
+      while (index < lines.length && isTable(lines[index])) { tableLines.push(cells(lines[index])); index += 1; }
+      const rows = tableLines.filter((row, rowIndex) => rowIndex !== 1 || !row.every(cell => /^[\s:-]+$/.test(cell)));
+      if (rows.length) {
+        const [head, ...body] = rows;
+        out.push(`<div class="timeline-report-table-scroll"><table class="timeline-report-table"><thead><tr>${head.map(cell => `<th>${escapeHtml(cell)}</th>`).join('')}</tr></thead><tbody>${body.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+      }
+      continue;
+    }
+    const paragraph = [];
+    while (index < lines.length && lines[index].trim() && !/^##\s+/.test(lines[index].trim()) && !/^[-*]\s+/.test(lines[index].trim()) && !isTable(lines[index])) {
+      paragraph.push(lines[index].trim()); index += 1;
+    }
+    out.push(`<p>${escapeHtml(paragraph.join(' '))}</p>`);
+  }
+  return out.join('');
+}
+
 function timelineReportParts(payload){
   const report = payload.report || {};
   const title = `${payload.company_name_ko || '기업'} 시계열 리포트`;
   const generated = payload.generated_at ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(payload.generated_at)) : '';
-  // 표 중심 Markdown은 모델이 지정한 7개 섹션을 그대로 지키게 하며, HTML 삽입 없이 텍스트로 렌더링한다.
-  const markdown = escapeHtml(report.markdown_ko || '생성된 리포트가 비어 있습니다.');
-  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">화면에 표시된 시장·기술 이벤트 ${payload.events?.length || 0}건만 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><pre class="timeline-report-markdown">${markdown}</pre><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
+  const markdown = renderTimelineMarkdown(report.markdown_ko || '생성된 리포트가 비어 있습니다.');
+  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">화면에 표시된 시장·기술 이벤트 ${payload.events?.length || 0}건만 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
   return { title, body };
 }
 
 function downloadTimelineReportHtml(payload){
   const { title, body } = timelineReportParts(payload);
-  const styles = `body{margin:0;background:#fff;color:#172235;font-family:Arial,'Noto Sans KR',sans-serif}.report-doc{max-width:1100px;margin:0 auto;padding:32px;font-size:15px;line-height:1.75}.eyebrow,.meta,footer{color:#617187;font-size:13px}.timeline-report-markdown{white-space:pre-wrap;overflow-x:auto;font:14px/1.7 ui-monospace,Consolas,monospace}h1{font-size:28px;margin:4px 0}@media(max-width:700px){.report-doc{padding:20px}.timeline-report-markdown{font-size:12px}}`;
+  const styles = `body{margin:0;background:#fff;color:#172235;font-family:Arial,'Noto Sans KR',sans-serif}.report-doc{max-width:1100px;margin:0 auto;padding:32px;font-size:15px;line-height:1.75}.eyebrow,.meta,footer{color:#617187;font-size:13px}.timeline-report-markdown h2{font-size:19px;margin:30px 0 10px}.timeline-report-list{margin:0 0 18px;padding-left:22px}.timeline-report-list li{margin:7px 0}.timeline-report-table-scroll{overflow-x:auto;margin:10px 0 22px;border:1px solid #d7e0ea;border-radius:8px}.timeline-report-table{width:100%;border-collapse:collapse;min-width:780px;font-size:13px;line-height:1.55}.timeline-report-table th,.timeline-report-table td{padding:9px 11px;border-bottom:1px solid #e4eaf0;border-right:1px solid #e4eaf0;text-align:left;vertical-align:top}.timeline-report-table th{background:#edf4fa;color:#10365f;white-space:nowrap}.timeline-report-table td:last-child,.timeline-report-table th:last-child{border-right:0}h1{font-size:28px;margin:4px 0}@media(max-width:700px){.report-doc{padding:20px}.timeline-report-table{font-size:12px}}`;
   const blob = new Blob([`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${styles}</style></head><body>${body}</body></html>`], { type: 'text/html;charset=utf-8' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
