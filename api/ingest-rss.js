@@ -314,6 +314,71 @@ async function runMetricBackfill(response, write) {
 // 72 회사-연 중 3칸뿐이었다. 이 경로는 영업이익·扣非까지 분기 단위로 채우되 원문 발췌가 없다.
 // 두 출처가 같은 칸을 채우면 서로 검증이 된다.
 const FINANCIAL_GAP_MS = 400;
+// 자동 갱신 주기. 중국 정기보고서는 4·8·10월에 몰려 나오므로 분기에 한 번이면 충분하지만,
+// 한 번 실패하면 다음 분기까지 낡은 값을 보게 된다. 7일마다 확인해 그 사이 새 결산이 올라왔으면
+// 채운다. 이 경로는 LLM을 쓰지 않아 반복 실행 비용이 사실상 없다.
+const FINANCIAL_REFRESH_DAYS = 7;
+const FINANCIAL_STAGE = "financials";
+
+// 마지막 성공 이후 주기가 지났는지 본다. 기록을 못 읽으면 "돌 때가 됐다"로 본다 —
+// 갱신을 건너뛰어 낡은 값을 보여 주는 쪽이 한 번 더 도는 것보다 나쁘다.
+async function financialRefreshDue() {
+  try {
+    const rows = await supabaseRest(`pipeline_log?select=created_at,status&stage=eq.${FINANCIAL_STAGE}&status=eq.ok&order=created_at.desc&limit=1`);
+    const last = rows?.[0]?.created_at;
+    if (!last) return true;
+    return Date.now() - new Date(last).getTime() > FINANCIAL_REFRESH_DAYS * 86400000;
+  } catch {
+    return true;
+  }
+}
+
+// 크론이 부르는 자동 갱신. 실패해도 수집 파이프라인을 멈추지 않는다. 대신 실패를 로그에 남기고,
+// 화면이 그 로그를 읽어 "재무 데이터가 최신이 아니다"라고 알린다.
+async function refreshFinancialsIfDue({ force = false } = {}) {
+  if (!force && !(await financialRefreshDue())) return { skipped: "not_due" };
+  const started = Date.now();
+  const targets = COMPANIES.filter((company) => securityCodeOf(company));
+  const rows = [];
+  const failed = [];
+  for (const company of targets) {
+    try {
+      rows.push(...(await fetchCompanyFinancials(company)).rows);
+    } catch (error) {
+      failed.push({ company_id: company.id, message: String(error.message || error).slice(0, 120) });
+    }
+    await new Promise((resolve) => setTimeout(resolve, FINANCIAL_GAP_MS));
+  }
+  // 한 회사도 못 받았으면 쓰지 않는다. 부분 실패는 받은 만큼 채우고 실패 목록을 남긴다.
+  if (!rows.length) {
+    await logPipeline(FINANCIAL_STAGE, { companies: targets.length, rows: 0, failed }, { status: "failed", durationMs: Date.now() - started });
+    return { status: "failed", failed };
+  }
+  let fxRows = [];
+  try {
+    fxRows = await fetchPeriodRates([...new Set(rows.map((row) => row.period))]);
+  } catch (error) {
+    failed.push({ company_id: "fx", message: String(error.message || error).slice(0, 120) });
+  }
+  try {
+    for (let i = 0; i < rows.length; i += 300) {
+      await supabaseRest("market_financial?on_conflict=company_id,period,metric", {
+        method: "POST", prefer: "return=minimal,resolution=merge-duplicates", body: rows.slice(i, i + 300),
+      });
+    }
+    if (fxRows.length) {
+      await supabaseRest("fx_rate_period?on_conflict=period,base,quote", {
+        method: "POST", prefer: "return=minimal,resolution=merge-duplicates", body: fxRows,
+      });
+    }
+  } catch (error) {
+    await logPipeline(FINANCIAL_STAGE, { companies: targets.length, rows: rows.length, write_error: String(error.message || error).slice(0, 200), failed }, { status: "failed", durationMs: Date.now() - started });
+    return { status: "failed", message: error.message };
+  }
+  await logPipeline(FINANCIAL_STAGE, { companies: targets.length, rows: rows.length, fx_rows: fxRows.length, failed }, { status: failed.length ? "partial" : "ok", durationMs: Date.now() - started });
+  return { status: failed.length ? "partial" : "ok", rows: rows.length, fx_rows: fxRows.length, failed };
+}
+
 async function runFinancialBackfill(response, write, only) {
   const targets = COMPANIES.filter((company) => securityCodeOf(company)).filter((company) => !only || company.id === only);
   if (!targets.length) return response.status(404).json({ status: "no_target_company", only });
@@ -722,6 +787,12 @@ async function handleRequest(request, response) {
     // 본문 처리와 Daily 생성은 이 호출에서 하지 않는다. 60초 안에 다 못 끝나 Daily가 빠지던 원인이다.
     // 다음 단계를 새 호출로 넘기고 여기서는 수집 결과만 돌려준다.
     // 크론이 시작한 실행만 깊게 돈다(훅 6회). 화면 버튼은 한 훅만 돌아 1분 안팎에 끝난다.
+    // 재무 자동 갱신. 크론 실행에서만, 주기가 지났을 때만 돈다. LLM을 쓰지 않아 비용이 없고,
+    // 실패해도 수집 결과를 버리지 않는다(실패는 자기 로그에 남고 화면이 그것을 읽는다).
+    if (isCronRequest(request)) {
+      try { await refreshFinancialsIfDue(); }
+      catch (error) { console.error("[FINANCIAL_REFRESH_FAILED]", JSON.stringify({ message: error.message })); }
+    }
     const discovery = discoveryStats() || {};
     await logPipeline("collect", {
       run_id: runId, request_limits: searchBudget,

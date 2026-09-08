@@ -337,3 +337,5 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 /* 연도 구간 띠. 연간 값이 12/31에 찍혀 구간 오른쪽 끝에 서므로, 어느 해에 속한 점인지
    경계선 하나로 판단하지 않아도 되게 한 해씩 걸러 옅게 칠한다. */
 .traj-band{fill:var(--band);opacity:.5}
+/* 재무 자동 갱신 실패·지연 알림. 조용히 낡은 값을 보여 주지 않는다. */
+.traj-warn{margin:0 0 10px;padding:7px 11px;border-left:3px solid var(--alert);background:#fdf2f2;color:var(--ink);font-size:12px;line-height:1.6}

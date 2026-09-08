@@ -727,7 +727,8 @@ async function loadCompanyTimeline(companyId){
     // 정량 궤적의 재료. 비상장사는 셋 다 비어 궤적 영역이 통째로 숨는다.
     metrics: payload?.metrics || [],
     financials: payload?.financials || [],
-    fx: payload?.fx || []
+    fx: payload?.fx || [],
+    financialsStatus: payload?.financials_status || null
   };
   if (timeline.status === 'ok') companyTimelineCache.set(companyId, timeline);
   return timeline;
@@ -1099,6 +1100,22 @@ function mergeMetricSources(timeline){
   }
   return rows;
 }
+// 재무 자동 갱신은 야간 크론이 주기적으로 돌린다. 실패하거나 한동안 돌지 않았으면 화면에
+// 그 사실을 적는다 — 낡은 값을 조용히 최신인 척 보여 주지 않기 위해서다.
+const FINANCIAL_STALE_DAYS = 14;
+function financialFreshnessWarning(status){
+  if (!status) return '재무 데이터 자동 갱신 기록이 없습니다. 아래 값은 마지막으로 채워진 시점 기준입니다.';
+  const at = new Date(status.at);
+  const days = Number.isNaN(at.getTime()) ? null : Math.floor((Date.now() - at.getTime()) / 86400000);
+  const when = Number.isNaN(at.getTime()) ? '' : ` (마지막 시도 ${at.toISOString().slice(0, 10)})`;
+  if (status.status === 'failed') return `재무 데이터 자동 갱신이 실패했습니다${when}. 아래 값은 그 이전에 채워진 것입니다.`;
+  if (status.status === 'partial') {
+    const names = (status.failed || []).map(item => item.company_id).filter(Boolean);
+    return `재무 데이터 자동 갱신이 일부만 성공했습니다${when}. 못 받은 대상: ${names.length ? names.join(', ') : '일부'}.`;
+  }
+  if (days !== null && days > FINANCIAL_STALE_DAYS) return `재무 데이터가 ${days}일째 갱신되지 않았습니다${when}.`;
+  return '';
+}
 function renderTrajectory(timeline){
   const section = document.querySelector('#trajectory-block');
   const target = document.querySelector('#trajectory');
@@ -1253,9 +1270,12 @@ function renderTrajectory(timeline){
   }
 
   const chips = available.map(metric => `<button type="button" class="traj-chip${metric === trajectoryMetric ? ' active' : ''}" data-metric="${escapeHtml(metric)}">${escapeHtml(METRIC_LABELS[metric] || metric)}</button>`).join('');
+  // 재무 자동 갱신이 실패했거나 오래 안 돌았으면 그 사실을 화면에 적는다. 조용히 낡은 값을
+  // 보여 주면 사용자가 그것을 최신으로 믿는다.
+  const warning = financialFreshnessWarning(timeline.financialsStatus);
   const label = METRIC_LABELS[trajectoryMetric] || trajectoryMetric;
   const missingRate = trajectoryCurrency === 'USD' && all.filter(row => row.metric === trajectoryMetric && row.at.year >= cutoff).length > rows.length;
-  target.innerHTML = `<div class="traj-head"><div class="traj-chips">${chips}</div>
+  target.innerHTML = `${warning ? `<p class="traj-warn" role="status">${escapeHtml(warning)}</p>` : ''}<div class="traj-head"><div class="traj-chips">${chips}</div>
     <div class="traj-toggles">
       <div class="traj-switch" role="group" aria-label="표시 단위"><button type="button" data-toggle="quarterly" class="${trajectoryQuarterly ? 'on' : ''}">분기</button><button type="button" data-toggle="annual" class="${trajectoryQuarterly ? '' : 'on'}">연간</button></div>
       <div class="traj-switch" role="group" aria-label="통화"><button type="button" data-currency="CNY" class="${trajectoryCurrency === 'CNY' ? 'on' : ''}">CNY</button><button type="button" data-currency="USD" class="${trajectoryCurrency === 'USD' ? 'on' : ''}">USD</button></div>

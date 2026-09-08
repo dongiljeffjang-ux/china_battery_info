@@ -331,7 +331,7 @@ async function handleRequest(request, response) {
 
   try {
     // 정량 궤적은 정기보고서에서만 온다. 지표가 없는 회사(비상장)는 빈 배열이 오고 화면이 기존 카드만 그린다.
-    const [events, metrics, financials, fx] = await Promise.all([
+    const [events, metrics, financials, fx, financialRuns] = await Promise.all([
       supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&timeline_eligibility=neq.exclude&order=occurred_at.asc`),
       supabaseRest(`report_metric?select=${METRIC_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&order=period.asc`).catch((error) => {
         console.error("[COMPANY_METRICS_FAILED]", JSON.stringify({ companyId, message: error.message }));
@@ -342,9 +342,13 @@ async function handleRequest(request, response) {
         return [];
       }),
       supabaseRest(`fx_rate_period?select=${FX_SELECT}&base=eq.USD&quote=eq.CNY&order=period.asc`).catch(() => []),
+      // 재무 자동 갱신의 마지막 결과. 실패했거나 오래됐으면 화면이 그 사실을 알린다.
+      supabaseRest("pipeline_log?select=status,created_at,payload&stage=eq.financials&order=created_at.desc&limit=1").catch(() => []),
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
-    return response.status(200).json({ status: "ok", company, events, metrics, financials, fx });
+    const lastRun = financialRuns?.[0] || null;
+    return response.status(200).json({ status: "ok", company, events, metrics, financials, fx,
+      financials_status: lastRun ? { status: lastRun.status, at: lastRun.created_at, failed: lastRun.payload?.failed || [] } : null });
   } catch (error) {
     console.error("[COMPANY_QUERY_FAILED]", JSON.stringify({ companyId, message: error.message }));
     return response.status(502).json({ status: error.code || "db_error", company, events: [] });
