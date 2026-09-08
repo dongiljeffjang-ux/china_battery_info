@@ -279,7 +279,42 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
    색은 이미 있는 축 색을 그대로 쓴다(시장 --market, 기술 --tech, 적자 --alert). */
 .trajectory{border:1px solid var(--line);background:var(--card);padding:14px 16px 12px;margin-bottom:16px}
 .traj-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+/* 지표 선택 메뉴는 그래프 좌우에 하나씩 둔다. 왼쪽 재무(손익계산서 순), 오른쪽 물량.
+   위에 가로로 늘어놓으면 매출과 매출원가가 서로 다른 줄에 감겨 뺄셈 관계가 화면에서 사라지고,
+   그래프를 볼 때마다 눈이 위아래로 왕복한다. */
+.traj-stage{display:grid;grid-template-columns:minmax(140px,178px) minmax(0,1fr) minmax(130px,168px);
+  gap:14px;align-items:start;margin-top:6px}
+.traj-plot{min-width:0}
+.traj-col{min-width:0;border:1px solid var(--line);border-radius:9px;padding:9px 10px;background:#fcfdfe}
+.traj-col-title{margin:0 0 7px;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+.traj-col-title.sub{margin-top:11px}
+.traj-pl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.traj-pl-row{display:flex;align-items:flex-start;gap:4px}
+.traj-pl-row.depth-1{padding-left:10px}
+/* 관계 기호 칸을 고정 폭으로 둬야 −, =, ↓ 가 세로로 한 줄에 선다. */
+.traj-rel{flex:0 0 10px;text-align:center;font-size:11px;line-height:22px;color:#93a1ae}
+.traj-rel.exact{color:var(--blue);font-weight:700}
+.traj-col-note{margin:9px 0 0;font-size:10.5px;line-height:1.55;color:var(--muted)}
+.traj-col-note .traj-rel{display:inline-block;flex:none;line-height:1}
+.traj-col-note b{color:var(--ink);font-weight:600}
+.traj-empty{margin:0;font-size:11px;color:var(--muted)}
+.traj-group + .traj-group{margin-top:9px}
+.traj-group-title{margin:0 0 4px;font-size:10.5px;font-weight:700;color:var(--ink);opacity:.7}
+.traj-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.traj-current{margin:0;font-size:12px;color:var(--muted)}
+.traj-current strong{color:var(--ink)}
+/* 세로 목록에서는 알약이 글자 길이만큼만 커져 들쭉날쭉하다. 왼쪽을 맞추고 줄바꿈을 허용한다. */
+.traj-col .traj-chip{display:block;width:100%;text-align:left;border-radius:6px;padding:3px 7px;
+  font-size:11.5px;line-height:1.35;white-space:normal;word-break:keep-all}
+/* 좁은 화면에서는 그래프를 가로로 눌러 봐야 읽히지 않는다. 메뉴를 위아래로 돌린다. */
+@media (max-width:900px){
+  .traj-stage{grid-template-columns:1fr 1fr;grid-template-areas:"plot plot" "left right"}
+  .traj-plot{grid-area:plot}.traj-col-left{grid-area:left}.traj-col-right{grid-area:right}
+}
 .traj-chips{display:flex;flex-wrap:wrap;gap:6px}
+/* 세로 목록에서는 알약이 글자 길이만큼만 커져 들쭉날쭉해 보인다. 왼쪽을 맞춘다. */
+.traj-pl .traj-chip,.traj-list .traj-chip{text-align:left;border-radius:7px;padding:4px 9px}
+@media (max-width:720px){.traj-picker{grid-template-columns:1fr;gap:14px}}
 .traj-chip{border:1px solid var(--line);background:#fff;color:var(--muted);font-size:12px;padding:4px 11px;border-radius:999px;cursor:pointer}
 .traj-chip:hover{border-color:var(--blue);color:var(--blue)}
 .traj-chip.active{background:var(--pale);border-color:var(--blue);color:var(--blue);font-weight:700}

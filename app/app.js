@@ -1042,7 +1042,38 @@ const METRIC_LABELS = {
   operating_cost: '매출원가', gross_profit: '매출총이익', rnd_expense: '연구개발비',
   ocf: '영업활동 현금흐름', overseas_revenue: '해외 매출',
 };
-const MONEY_METRIC_ORDER = ['revenue_total', 'operating_profit', 'net_profit_attr', 'net_profit_excl', 'net_profit', 'total_profit', 'operating_cost', 'gross_profit', 'rnd_expense', 'ocf', 'overseas_revenue'];
+// 재무 지표는 손익계산서를 위에서 아래로 읽는 순서로 놓는다. 목록을 가나다순이나 데이터 건수순으로
+// 놓으면 매출과 매출원가가 떨어져 앉아 "무엇에서 무엇을 뺀 값인지"가 화면에서 사라진다.
+//
+// rel은 바로 윗 항목과의 관계다. 실제로 성립하는 관계만 적는다 — 화면이 없는 항등식을 만들면
+// 사용자가 그것을 근거로 계산한다.
+//   'sub'  이 항목을 뺀다(−). 뺄셈 항목이 이것 하나뿐이라는 뜻은 아니다.
+//   'eq'   윗 두 줄의 계산 결과다(=). 원문 계정 사이에 항등식이 성립하는 자리에만 쓴다.
+//   'next' 중간 항목이 생략된 구간(↓). 영업외손익·법인세처럼 우리가 안 가진 계정이 사이에 있다.
+//   'of'   윗 항목의 내역이다(└). 더하거나 빼는 관계가 아니라 쪼갠 것이다.
+const PL_ROWS = [
+  { metric: 'revenue_total', rel: null, depth: 0 },
+  { metric: 'overseas_revenue', rel: 'of', depth: 1 },
+  { metric: 'operating_cost', rel: 'sub', depth: 0 },
+  // 营业收入 − 营业成本 = 毛利. 원문 계정 사이에 정확히 성립하는 유일한 자리다.
+  { metric: 'gross_profit', rel: 'eq', depth: 0 },
+  { metric: 'rnd_expense', rel: 'sub', depth: 0 },
+  { metric: 'operating_profit', rel: 'next', depth: 0 },
+  { metric: 'total_profit', rel: 'next', depth: 0 },
+  { metric: 'net_profit', rel: 'next', depth: 0 },
+  { metric: 'net_profit_attr', rel: 'of', depth: 1 },
+  { metric: 'net_profit_excl', rel: 'of', depth: 1 },
+];
+// 현금흐름표는 손익계산서와 다른 표다. 같은 줄기에 이어 붙이면 위아래 관계를 오독한다.
+const CASHFLOW_ROWS = [{ metric: 'ocf', rel: null, depth: 0 }];
+const PL_REL_GLYPH = { sub: '−', eq: '=', next: '↓', of: '└' };
+const FINANCIAL_ROWS = [...PL_ROWS, ...CASHFLOW_ROWS];
+const MONEY_METRIC_ORDER = FINANCIAL_ROWS.map(row => row.metric);
+const FINANCIAL_METRICS = new Set(MONEY_METRIC_ORDER);
+
+// 물량은 종류(출하량·장착량·생산능력)로 묶고, 묶음 안에서는 품목 이름순으로 놓는다.
+// 누적·계획은 그 기간의 실적이 아니라 참고 값이라 각 묶음의 뒤로 보낸다.
+const VOLUME_KIND_ORDER = ['shipment', 'installed', 'capacity'];
 // 물량 지표는 '출하량 · 동력전지'처럼 품목이 붙는다. 품목을 특정하지 못한 값은 추출 단계에서
 // 이미 버려지므로 여기 오는 것은 전부 무엇의 물량인지 아는 값이다.
 // 누적·계획은 그 기간의 실적이 아니라 참고 값이라 지표를 따로 두고 목록 뒤에 놓는다.
@@ -1068,6 +1099,66 @@ function metricSortKey(metric){
   if (money >= 0) return money;
   return /_(cum|plan)_/.test(metric) ? 200 : 100;
 }
+function volumeMetricParts(metric){
+  const match = String(metric).match(/^(shipment|installed|capacity)_(?:(cum|plan)_)?(.+)$/);
+  if (!match) return null;
+  const [, kind, basis, item] = match;
+  const itemLabel = VOLUME_ITEM_LABEL[item];
+  if (!itemLabel) return null;
+  return { kind, basis: basis || null, item, itemLabel };
+}
+
+// text를 주면 그것으로 적는다. 묶음 안에서는 '출하량 · 동력전지'가 아니라 '동력전지'로 충분하다.
+// 묶음 제목이 이미 '출하량'이라 칩마다 되풀이하면 폭만 먹고 읽는 데 도움이 안 된다.
+// aria-label에는 항상 전체 이름을 남겨 화면 낭독기에서 묶음 맥락이 사라지지 않게 한다.
+function metricChip(metric, current, { extraClass = '', text = null } = {}){
+  const on = metric === current;
+  const full = metricLabel(metric);
+  return `<button type="button" class="traj-chip${extraClass ? ` ${extraClass}` : ''}${on ? ' active' : ''}" data-metric="${escapeHtml(metric)}"${text && text !== full ? ` aria-label="${escapeHtml(full)}"` : ''}${on ? ' aria-current="true"' : ''}>${escapeHtml(text || full)}</button>`;
+}
+
+// 좌측 재무(손익계산서 순 세로), 우측 그 외(물량·생산능력 세로). 선택지가 한 줄로 늘어서 있으면
+// 매출과 매출원가가 서로 다른 줄에 감겨 관계가 안 보인다.
+function metricPickerMarkup(available, current){
+  const has = new Set(available);
+  const plRows = PL_ROWS.filter(row => has.has(row.metric));
+  const cashRows = CASHFLOW_ROWS.filter(row => has.has(row.metric));
+  const ladder = (rows) => rows.map(row => `<li class="traj-pl-row depth-${row.depth}">
+    <span class="traj-rel${row.rel === 'eq' ? ' exact' : ''}" aria-hidden="true">${row.rel ? PL_REL_GLYPH[row.rel] : ''}</span>
+    ${metricChip(row.metric, current)}
+  </li>`).join('');
+
+  const volumes = available.filter(metric => !FINANCIAL_METRICS.has(metric))
+    .map(metric => ({ metric, parts: volumeMetricParts(metric) }))
+    .filter(entry => entry.parts);
+  const groups = VOLUME_KIND_ORDER.map(kind => {
+    const items = volumes.filter(entry => entry.parts.kind === kind)
+      .sort((a, b) => (a.parts.basis ? 1 : 0) - (b.parts.basis ? 1 : 0) || a.parts.itemLabel.localeCompare(b.parts.itemLabel, 'ko'));
+    if (!items.length) return '';
+    return `<div class="traj-group"><p class="traj-group-title">${escapeHtml(VOLUME_KIND_LABEL[kind])}</p>
+      <ul class="traj-list">${items.map(entry => `<li>${metricChip(entry.metric, current, {
+        extraClass: 'volume',
+        // 묶음 제목이 종류를 말하므로 칩에는 품목만 적는다. 누적·계획만 앞에 표시를 남긴다.
+        text: `${entry.parts.basis ? `(${VOLUME_BASIS_LABEL[entry.parts.basis]}) ` : ''}${entry.parts.itemLabel}`,
+      })}</li>`).join('')}</ul></div>`;
+  }).filter(Boolean).join('');
+
+  // 두 열을 하나로 묶어 돌려주지 않는다. 호출자가 차트 좌우에 하나씩 놓기 때문이다.
+  // 재무는 왼쪽, 그 외는 오른쪽. 사이에 그래프가 들어간다.
+  return {
+    financial: `<section class="traj-col traj-col-left" aria-label="재무 지표">
+      <p class="traj-col-title">재무 · 손익계산서 순</p>
+      ${plRows.length ? `<ul class="traj-pl">${ladder(plRows)}</ul>` : '<p class="traj-empty">이 회사는 손익 항목이 없습니다.</p>'}
+      ${cashRows.length ? `<p class="traj-col-title sub">현금흐름표</p><ul class="traj-pl">${ladder(cashRows)}</ul>` : ''}
+      ${plRows.some(row => row.rel === 'eq') ? '<p class="traj-col-note"><b><span class="traj-rel exact">=</span> 정확히 성립</b><br><b><span class="traj-rel">↓</span> 중간 계정 생략</b><br>영업외손익·법인세처럼 우리가 갖고 있지 않은 계정이 사이에 있습니다. 화면은 값을 계산하지 않습니다.</p>' : ''}
+    </section>`,
+    other: `<section class="traj-col traj-col-right" aria-label="물량과 생산능력">
+      <p class="traj-col-title">물량 · 생산능력</p>
+      ${groups || '<p class="traj-empty">이 회사는 물량 지표가 없습니다.</p>'}
+    </section>`,
+  };
+}
+
 const TRAJ = { width: 1000, plotTop: 26, plotHeight: 108, axisY: 146, laneGap: 14, height: 232, padX: 46 };
 // 축에 기본으로 담는 연도 수. 재무 데이터는 2011년치까지 있으나 사건 플래그는 2023년부터라,
 // 전부 펼치면 최근 흐름이 왼쪽 빈 구간에 눌린다. 전체 보기는 버튼으로 연다.
@@ -1348,20 +1439,21 @@ function renderTrajectory(timeline){
     yearTicks.push(`<g class="traj-tick"><text x="${Math.min(Math.max(labelX, left + 12), right - 12).toFixed(1)}" y="${TRAJ.height - 3}">${year}</text></g>`);
   }
 
-  const chips = available.map(metric => `<button type="button" class="traj-chip${metric === trajectoryMetric ? ' active' : ''}" data-metric="${escapeHtml(metric)}">${escapeHtml(metricLabel(metric))}</button>`).join('');
+  const label = metricLabel(trajectoryMetric);
+  const picker = metricPickerMarkup(available, trajectoryMetric);
   // 재무 자동 갱신이 실패했거나 오래 안 돌았으면 그 사실을 화면에 적는다. 조용히 낡은 값을
   // 보여 주면 사용자가 그것을 최신으로 믿는다.
   const warning = financialFreshnessWarning(timeline.financialsStatus);
-  const label = metricLabel(trajectoryMetric);
   // 물량은 통화 전환 대상이 아니라 스위치를 감추고 단위를 대신 적는다.
   const showCurrency = rows.some(isMoney);
   const missingRate = trajectoryCurrency === 'USD' && all.filter(row => row.metric === trajectoryMetric && row.at.year >= cutoff).length > rows.length;
-  target.innerHTML = `${warning ? `<p class="traj-warn" role="status">${escapeHtml(warning)}</p>` : ''}<div class="traj-head"><div class="traj-chips">${chips}</div>
+  target.innerHTML = `${warning ? `<p class="traj-warn" role="status">${escapeHtml(warning)}</p>` : ''}<div class="traj-head"><p class="traj-current">보는 지표 <strong>${escapeHtml(label)}</strong></p>
     <div class="traj-toggles">
       <div class="traj-switch" role="group" aria-label="표시 단위"><button type="button" data-toggle="quarterly" class="${trajectoryQuarterly ? 'on' : ''}">분기</button><button type="button" data-toggle="annual" class="${trajectoryQuarterly ? '' : 'on'}">연간</button></div>
       ${showCurrency ? `<div class="traj-switch" role="group" aria-label="통화"><button type="button" data-currency="CNY" class="${trajectoryCurrency === 'CNY' ? 'on' : ''}">CNY</button><button type="button" data-currency="USD" class="${trajectoryCurrency === 'USD' ? 'on' : ''}">USD</button></div>` : `<span class="traj-unit-note">단위 ${escapeHtml(rows[0].unit === 't' ? '만 톤' : rows[0].unit)}</span>`}
       ${years.length > TRAJ_RECENT_YEARS ? `<button type="button" class="traj-range" data-toggle="range">${trajectoryFullRange ? `최근 ${TRAJ_RECENT_YEARS}년만` : `전체 기간(${years[0]}~)`}</button>` : ''}
     </div></div>
+    <div class="traj-stage">${picker.financial}<div class="traj-plot">
     <svg class="traj-svg" viewBox="0 0 ${TRAJ.width} ${TRAJ.height}" role="img" aria-label="${escapeHtml(label)} 시계열과 정기보고서 사건 플래그">
       ${yearTicks.join('')}
       ${bottom < 0 ? `<line class="traj-zero" x1="${TRAJ.padX}" y1="${zeroY.toFixed(1)}" x2="${TRAJ.width - TRAJ.padX}" y2="${zeroY.toFixed(1)}"/>` : ''}
@@ -1372,7 +1464,7 @@ function renderTrajectory(timeline){
       ${rows.map((row, index) => point(row, !trajectoryQuarterly || !row.at.interim || index === rows.length - 1)).join('')}
       ${marketFlags.map(item => flagMark(item, 'market', marketBase)).join('')}
       ${techFlags.map(item => flagMark(item, 'tech', techBase)).join('')}
-    </svg>
+    </svg></div>${picker.other}</div>
     <p class="traj-note">가로축은 날짜, 선은 <strong>${escapeHtml(label)}</strong>입니다. ${trajectoryQuarterly
       ? '중국 공시의 분기 실적은 <strong>연초부터의 누적</strong>이라 해가 바뀌면 1분기부터 다시 쌓입니다. 그래서 해마다 실선을 따로 그리고 <strong>연도가 바뀌는 구간만 점선</strong>으로 이었습니다. 단일 분기 값은 우리가 빼서 만들지 않습니다.'
       : '연간 확정치를 실선으로 잇고, 아직 연간이 나오지 않은 <strong>당해 누적치는 점선</strong>으로 그 끝에 이어 붙입니다.'}
