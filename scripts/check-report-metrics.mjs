@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { extractMetricsFromExcerpt, extractMetricsFromEvents, parseAmountCny, periodOf } from "../lib/report-metrics.js";
+import { extractMetricsFromExcerpt, extractMetricsFromEvents, extractVolumesFromExcerpt, parseAmountCny, periodOf, VOLUME_METRIC_LABELS } from "../lib/report-metrics.js";
 
 // 지표 추출은 중문 발췌의 계정 이름만 근거로 삼는다. 아래 발췌는 전부 운영 DB의 실제 값이다.
 // 한국어 요약만 보고 매출을 잡으면 CATL 2024·2025년에 해외 매출이 전사 매출 자리에 들어갔다
@@ -152,5 +152,98 @@ assert.deepEqual(
   [],
   "기간을 모르면 시계열에 올리지 않는다",
 );
+
+
+// ── 10. 물량은 "무엇의" 물량인지가 값만큼 중요하다 ───────────────────────────
+// CATL 2025년 원문에는 세 가지 판매량이 함께 있다. 하나로 뭉개면 어느 값이 잡힐지
+// 정규식 순서가 정하게 된다 — 해외 매출을 전사 매출로 읽을 뻔한 것과 같은 사고다.
+const catlVolume = extractVolumesFromExcerpt(
+  "报告期内，公司实现锂离子电池销量 661GWh，同比增长 39.16%。公司实现动力电池销量 541GWh，同比增长 41.85%。公司实现储能电池销量 121GWh，同比增长 29.13%。",
+  { evidenceKind: "annual_report", occurredAt: "2025-12-31" },
+);
+close(pick(catlVolume, "shipment_cell").value, 661, "리튬이온전지 합계");
+close(pick(catlVolume, "shipment_power").value, 541, "동력전지");
+close(pick(catlVolume, "shipment_ess").value, 121, "ESS 전지");
+assert.equal(pick(catlVolume, "shipment_cell").unit, "GWh");
+assert.equal(pick(catlVolume, "shipment_power").yoy_pct_stated, 41.85);
+assert.equal(pick(catlVolume, "shipment_cell").line_item_zh, "锂离子电池销量", "품목과 표기를 함께 남긴다");
+
+// 소재사는 단위가 만 톤이다. 톤으로 맞추되 원문 표기는 그대로 남긴다.
+const anode = extractVolumesFromExcerpt(
+  "报告期内实现负极材料出货量 36.35 万吨，同比增长 55.66%。",
+  { evidenceKind: "annual_report", occurredAt: "2025-12-31" },
+);
+close(pick(anode, "shipment_anode").value, 363500, "만 톤을 톤으로 맞춘다");
+assert.equal(pick(anode, "shipment_anode").unit, "t");
+assert.equal(pick(anode, "shipment_anode").quantity_text, "36.35 万吨", "원문 표기는 그대로 남긴다");
+
+// 삼원과 인산철은 다른 제품이다. 둘 다 '正极材料'로 끝나므로 긴 표기가 먼저 잡혀야 한다.
+const cathode = extractVolumesFromExcerpt(
+  "公司三元正极材料销量 5.14 万吨。磷酸铁锂正极材料出货 12 万吨。",
+  { evidenceKind: "annual_report", occurredAt: "2024-12-31" },
+);
+close(pick(cathode, "shipment_cathode_ncm").value, 51400, "삼원계");
+close(pick(cathode, "shipment_cathode_lfp").value, 120000, "인산철리튬");
+assert.equal(pick(cathode, "shipment_cathode"), undefined, "구체적 품목이 일반 '양극재'로도 잡히면 안 된다");
+
+// 장착량은 제3자가 센 탑재 실적이라 출하량과 섞지 않는다.
+const installed = extractVolumesFromExcerpt(
+  "公司刀片电池装机量 200GWh。",
+  { evidenceKind: "annual_report", occurredAt: "2024-12-31" },
+);
+assert.equal(pick(installed, "installed_power").value, 200);
+assert.equal(pick(installed, "shipment_power"), undefined, "장착량을 출하량으로 싣지 않는다");
+
+// 누적(창사 이래)은 그 기간의 실적이 아니다.
+const cumulative = extractVolumesFromExcerpt(
+  "公司正极材料已累计出货 50 吨。", { evidenceKind: "periodic_report", occurredAt: "2026-06-30" },
+);
+assert.equal(pick(cumulative, "shipment_cathode"), undefined, "누적을 그 기간 실적으로 싣지 않는다");
+close(pick(cumulative, "shipment_cum_cathode").value, 50, "누적은 별도 지표로 남긴다");
+assert.equal(pick(cumulative, "shipment_cum_cathode").basis, "cumulative");
+// 계획 생산능력은 버리지 않되 실제 생산능력과 다른 지표로 남긴다.
+const planned = extractVolumesFromExcerpt(
+  "报告期内公司锂电池产能 772GWh，期末在建产能 321GWh。",
+  { evidenceKind: "annual_report", occurredAt: "2025-12-31" },
+);
+close(pick(planned, "capacity_cell").value, 772, "실제 생산능력");
+close(pick(planned, "capacity_plan_cell").value, 321, "건설 중은 계획으로 따로 둔다");
+assert.equal(pick(planned, "capacity_plan_cell").basis, "planned");
+assert.equal(pick(planned, "capacity_cell").basis, "period");
+// 실제로 지어진 생산능력은 싣는다.
+const capacity = extractVolumesFromExcerpt(
+  "公司已投产负极材料产能 78.25 万吨。",
+  { evidenceKind: "annual_report", occurredAt: "2025-12-31" },
+);
+close(pick(capacity, "capacity_anode").value, 782500, "투산한 음극재 생산능력");
+assert.equal(pick(capacity, "capacity_anode").unit, "t");
+
+// 품목을 특정하지 못하면 만들지 않는다. '주요 제품 합계'는 무엇인지 알 수 없다.
+assert.deepEqual(
+  extractVolumesFromExcerpt("主营产品销量 5.49 万吨。", { evidenceKind: "periodic_report", occurredAt: "2024-06-30" }),
+  [], "품목이 사전에 없으면 물량을 만들지 않는다",
+);
+assert.deepEqual(extractVolumesFromExcerpt("", {}), []);
+assert.deepEqual(extractVolumesFromExcerpt(null, {}), []);
+
+// 라벨은 한국어로 나오고 품목이 붙는다.
+assert.equal(VOLUME_METRIC_LABELS.shipment_power, "출하량 · 동력전지");
+assert.equal(VOLUME_METRIC_LABELS.capacity_anode, "생산능력 · 음극재");
+assert.equal(VOLUME_METRIC_LABELS.installed_power, "장착량 · 동력전지");
+
+// 모든 물량 행이 원문 표기를 발췌 안에 그대로 갖는다.
+assert.deepEqual(
+  extractVolumesFromExcerpt("高镍正极材料已实现吨级出货 10 吨。", { evidenceKind: "annual_report", occurredAt: "2025-12-31" }),
+  [], "'톤급'은 규모를 가리키는 말이지 수량이 아니다",
+);
+assert.equal(VOLUME_METRIC_LABELS.capacity_plan_cell, "생산능력(계획) · 리튬이온전지");
+assert.equal(VOLUME_METRIC_LABELS.shipment_cum_cathode, "출하량(누적) · 양극재");
+
+for (const rows of [catlVolume, anode, cathode, installed, capacity, planned, cumulative]) {
+  for (const row of rows) {
+    assert.ok(row.excerpt.includes(row.quantity_text), `원문 표기가 발췌에 없다: ${row.quantity_text}`);
+    assert.ok(row.unit === "GWh" || row.unit === "t", `물량 단위가 이상하다: ${row.unit}`);
+  }
+}
 
 console.log("report metric extraction checks passed");

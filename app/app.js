@@ -1003,7 +1003,32 @@ const METRIC_LABELS = {
   operating_cost: '매출원가', gross_profit: '매출총이익', rnd_expense: '연구개발비',
   ocf: '영업활동 현금흐름', overseas_revenue: '해외 매출',
 };
-const METRIC_ORDER = ['revenue_total', 'operating_profit', 'net_profit_attr', 'net_profit_excl', 'net_profit', 'total_profit', 'operating_cost', 'gross_profit', 'rnd_expense', 'ocf', 'overseas_revenue'];
+const MONEY_METRIC_ORDER = ['revenue_total', 'operating_profit', 'net_profit_attr', 'net_profit_excl', 'net_profit', 'total_profit', 'operating_cost', 'gross_profit', 'rnd_expense', 'ocf', 'overseas_revenue'];
+// 물량 지표는 '출하량 · 동력전지'처럼 품목이 붙는다. 품목을 특정하지 못한 값은 추출 단계에서
+// 이미 버려지므로 여기 오는 것은 전부 무엇의 물량인지 아는 값이다.
+// 누적·계획은 그 기간의 실적이 아니라 참고 값이라 지표를 따로 두고 목록 뒤에 놓는다.
+const VOLUME_KIND_LABEL = { shipment: '출하량', installed: '장착량', capacity: '생산능력' };
+const VOLUME_BASIS_LABEL = { cum: '누적', plan: '계획' };
+const VOLUME_ITEM_LABEL = {
+  cathode_lfp: '인산철리튬 양극재', cathode_ncm: '삼원계 양극재', cathode_lco: '코발트산리튬',
+  cathode_na: '나트륨 양극재', precursor: '전구체', cathode: '양극재', anode: '음극재',
+  ess: 'ESS 전지', power: '동력전지', cell: '리튬이온전지', battery: '전지(품목 미상)',
+};
+function volumeMetricLabel(metric){
+  const match = String(metric).match(/^(shipment|installed|capacity)_(?:(cum|plan)_)?(.+)$/);
+  if (!match) return null;
+  const [, kind, basis, item] = match;
+  const itemLabel = VOLUME_ITEM_LABEL[item];
+  if (!itemLabel) return null;
+  return `${VOLUME_KIND_LABEL[kind]}${basis ? `(${VOLUME_BASIS_LABEL[basis]})` : ''} · ${itemLabel}`;
+}
+function metricLabel(metric){ return METRIC_LABELS[metric] || volumeMetricLabel(metric) || metric; }
+// 기간 실적을 앞에, 누적·계획은 뒤에 둔다.
+function metricSortKey(metric){
+  const money = MONEY_METRIC_ORDER.indexOf(metric);
+  if (money >= 0) return money;
+  return /_(cum|plan)_/.test(metric) ? 200 : 100;
+}
 const TRAJ = { width: 1000, plotTop: 26, plotHeight: 108, axisY: 146, laneGap: 14, height: 232, padX: 46 };
 // 축에 기본으로 담는 연도 수. 재무 데이터는 2011년치까지 있으나 사건 플래그는 2023년부터라,
 // 전부 펼치면 최근 흐름이 왼쪽 빈 구간에 눌린다. 전체 보기는 버튼으로 연다.
@@ -1027,18 +1052,30 @@ const PERIOD_CAPTION = { Q1: '1분기', H1: '상반기', Q3: '3분기', Q4: '4�
 function periodLabel(row){
   return row.at.part ? `${row.at.year} ${PERIOD_CAPTION[row.at.part] || row.at.part} 누적` : `${row.at.year} 연간`;
 }
+const isMoney = (row) => row.unit === 'CNY_100M';
 function metricValueText(row, currency, rate){
   const value = convertedValue(row, currency, rate);
   if (value === null) return '';
+  // 물량은 통화 전환 대상이 아니다. 톤은 만 톤으로 줄여 읽고 GWh는 그대로 쓴다.
+  if (!isMoney(row)) {
+    if (row.unit === 't') {
+      const inTenK = value / 10000;
+      return inTenK >= 1
+        ? `${inTenK.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}만 톤`
+        : `${value.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}톤`;
+    }
+    return `${value.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}${row.unit || ''}`;
+  }
   const digits = Math.abs(value) >= 1000 ? 0 : Math.abs(value) >= 10 ? 1 : 2;
   const shown = value.toLocaleString('ko-KR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
   return currency === 'USD' ? `$${shown}억` : `${shown}억 위안`;
 }
 // 환산은 표시용이다. 원래 통화 값과 쓰인 환율을 툴팁에 같이 남겨 검산할 수 있게 한다.
+// 물량(GWh·톤)은 통화가 아니므로 환율을 대지 않는다.
 function convertedValue(row, currency, rate){
   const value = Number(row.value);
   if (!Number.isFinite(value)) return null;
-  if (currency !== 'USD') return value;
+  if (currency !== 'USD' || !isMoney(row)) return value;
   return rate && rate > 0 ? value / rate : null;
 }
 // 툴팁을 한 줄로 이어 붙이면 읽히지 않는다. 머리줄과 항목줄로 나눈다.
@@ -1131,14 +1168,17 @@ function renderTrajectory(timeline){
   }
   section.hidden = false;
   const rates = new Map((timeline.fx || []).map(row => [row.period, Number(row.rate_avg)]));
-  const available = METRIC_ORDER.filter(metric => all.some(row => row.metric === metric));
+  const available = [...new Set(all.map(row => row.metric))]
+    .filter(metric => METRIC_LABELS[metric] || volumeMetricLabel(metric))
+    .sort((a, b) => metricSortKey(a) - metricSortKey(b) || a.localeCompare(b));
   if (!available.includes(trajectoryMetric)) trajectoryMetric = available[0];
 
   let rows = all.filter(row => row.metric === trajectoryMetric).sort((a, b) => a.at.time - b.at.time);
   if (!trajectoryQuarterly) rows = rows.filter(row => !row.at.interim || Number(row.at.year) > Math.max(...rows.filter(item => !item.at.interim).map(item => Number(item.at.year)), -Infinity));
   // USD로 볼 때 그 기간 환율이 없으면 점을 만들지 않는다. 환산 못 한 값을 위안화로 섞으면
   // 축이 뒤섞여 크기를 오독한다.
-  if (trajectoryCurrency === 'USD') rows = rows.filter(row => rates.get(row.period) > 0);
+  // 환율이 없는 기간은 달러로 못 그린다. 물량(GWh·톤)은 통화가 아니라 이 필터 대상이 아니다.
+  if (trajectoryCurrency === 'USD') rows = rows.filter(row => !isMoney(row) || rates.get(row.period) > 0);
   const years = [...new Set(all.map(row => row.at.year))].sort();
   const cutoff = trajectoryFullRange ? years[0] : years.slice(-TRAJ_RECENT_YEARS)[0];
   rows = rows.filter(row => row.at.year >= cutoff);
@@ -1269,16 +1309,18 @@ function renderTrajectory(timeline){
     yearTicks.push(`<g class="traj-tick"><text x="${Math.min(Math.max(labelX, left + 12), right - 12).toFixed(1)}" y="${TRAJ.height - 3}">${year}</text></g>`);
   }
 
-  const chips = available.map(metric => `<button type="button" class="traj-chip${metric === trajectoryMetric ? ' active' : ''}" data-metric="${escapeHtml(metric)}">${escapeHtml(METRIC_LABELS[metric] || metric)}</button>`).join('');
+  const chips = available.map(metric => `<button type="button" class="traj-chip${metric === trajectoryMetric ? ' active' : ''}" data-metric="${escapeHtml(metric)}">${escapeHtml(metricLabel(metric))}</button>`).join('');
   // 재무 자동 갱신이 실패했거나 오래 안 돌았으면 그 사실을 화면에 적는다. 조용히 낡은 값을
   // 보여 주면 사용자가 그것을 최신으로 믿는다.
   const warning = financialFreshnessWarning(timeline.financialsStatus);
-  const label = METRIC_LABELS[trajectoryMetric] || trajectoryMetric;
+  const label = metricLabel(trajectoryMetric);
+  // 물량은 통화 전환 대상이 아니라 스위치를 감추고 단위를 대신 적는다.
+  const showCurrency = rows.some(isMoney);
   const missingRate = trajectoryCurrency === 'USD' && all.filter(row => row.metric === trajectoryMetric && row.at.year >= cutoff).length > rows.length;
   target.innerHTML = `${warning ? `<p class="traj-warn" role="status">${escapeHtml(warning)}</p>` : ''}<div class="traj-head"><div class="traj-chips">${chips}</div>
     <div class="traj-toggles">
       <div class="traj-switch" role="group" aria-label="표시 단위"><button type="button" data-toggle="quarterly" class="${trajectoryQuarterly ? 'on' : ''}">분기</button><button type="button" data-toggle="annual" class="${trajectoryQuarterly ? '' : 'on'}">연간</button></div>
-      <div class="traj-switch" role="group" aria-label="통화"><button type="button" data-currency="CNY" class="${trajectoryCurrency === 'CNY' ? 'on' : ''}">CNY</button><button type="button" data-currency="USD" class="${trajectoryCurrency === 'USD' ? 'on' : ''}">USD</button></div>
+      ${showCurrency ? `<div class="traj-switch" role="group" aria-label="통화"><button type="button" data-currency="CNY" class="${trajectoryCurrency === 'CNY' ? 'on' : ''}">CNY</button><button type="button" data-currency="USD" class="${trajectoryCurrency === 'USD' ? 'on' : ''}">USD</button></div>` : `<span class="traj-unit-note">단위 ${escapeHtml(rows[0].unit === 't' ? '만 톤' : rows[0].unit)}</span>`}
       ${years.length > TRAJ_RECENT_YEARS ? `<button type="button" class="traj-range" data-toggle="range">${trajectoryFullRange ? `최근 ${TRAJ_RECENT_YEARS}년만` : `전체 기간(${years[0]}~)`}</button>` : ''}
     </div></div>
     <svg class="traj-svg" viewBox="0 0 ${TRAJ.width} ${TRAJ.height}" role="img" aria-label="${escapeHtml(label)} 시계열과 정기보고서 사건 플래그">
@@ -1296,7 +1338,7 @@ function renderTrajectory(timeline){
       ? '중국 공시의 분기 실적은 <strong>연초부터의 누적</strong>이라 해가 바뀌면 1분기부터 다시 쌓입니다. 그래서 해마다 실선을 따로 그리고 <strong>연도가 바뀌는 구간만 점선</strong>으로 이었습니다. 단일 분기 값은 우리가 빼서 만들지 않습니다.'
       : '연간 확정치를 실선으로 잇고, 아직 연간이 나오지 않은 <strong>당해 누적치는 점선</strong>으로 그 끝에 이어 붙입니다.'}
       축 아래 점은 그 달에 공시된 사건입니다(위 줄 시장 · 아래 줄 기술). 점에 마우스를 올리면 내용과 원문 계정이 보이고, 누르면 근거가 아래에 열립니다.
-      ${trajectoryCurrency === 'USD' ? '달러 값은 <strong>그 기간의 평균 환율</strong>(유럽중앙은행 기준)로 환산한 표시용 값이며, 원래 위안화 값과 적용 환율은 각 점의 툴팁에 있습니다.' : ''}
+      ${trajectoryCurrency === 'USD' && showCurrency ? '달러 값은 <strong>그 기간의 평균 환율</strong>(유럽중앙은행 기준)로 환산한 표시용 값이며, 원래 위안화 값과 적용 환율은 각 점의 툴팁에 있습니다.' : ''}
       ${missingRate ? '환율이 없는 기간은 표시하지 않았습니다.' : ''}</p>
     <div id="traj-detail" class="traj-detail" hidden></div>`;
 
