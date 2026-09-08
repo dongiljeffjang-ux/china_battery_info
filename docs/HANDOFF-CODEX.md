@@ -155,7 +155,33 @@
 
 # Claude → codex 인수인계
 
-마지막 갱신: 2026-09-07 밤 (커밋 `24e2d92`까지 + 대화 중 SQL 작업·수동 백필 3회, 커밋 없음)
+마지막 갱신: 2026-09-08 (커밋 `aad96ee`까지, Production 배포 확인)
+
+## 2026-09-08 후속 검증 — 관리자 게이트와 크론 체인
+
+### 관리자 입장 코드 게이트: 정상 (코드 변경 없음)
+
+- 쿠키를 보내지 않은 `GET https://china-battery-lens.vercel.app/api/access`는 실제 Production에서
+  **401 `access_required`**를 반환했다.
+- 관리자 페이지가 게이트 없이 열린 기존 Chrome/in-app 탭은 이전에 발급된 `cbl_access` HttpOnly
+  쿠키를 재사용한 상태였다. `document.cookie`가 비어 보이는 것은 HttpOnly 쿠키의 정상 동작이라
+  쿠키 부재의 근거가 아니다.
+- 따라서 `app/access-gate.js`의 GET 확인 → 폼 표시, `api/access.js`/`api/admin.js`의
+  `isAccessAllowed`/`requireAccess` 경로는 Production에서 의도대로 동작한다.
+
+### 크론 유지 훅: 실전 로그에서 체인 깊이 부족을 발견해 수정·배포
+
+- 2026-09-07 23:19~23:29 KST 크론 로그는 collect → process 훅 1~6 → daily까지 수행했으나,
+  이어진 curate는 `depth: 5`, `message: "chain depth cap"`으로 skipped였다. 즉 유지 훅은 실제로
+  돌지 않았고, Reshine·Kaijin의 90일 웹 백필 순환도 이 실행으로는 검증되지 않았다.
+- 원인: 본문 처리의 `MAX_PROCESS_HOPS=6`가 60~90초짜리 훅을 여러 내부 호출로 이어 Daily 직전에
+  체인 깊이를 4까지 썼다. Daily가 curate를 넘길 때 Vercel이 금지하는 다섯 번째 내부 호출이 됐다.
+- `aad96ee`는 야간 본문 처리 상한을 2회로 낮춰 collect → process → daily → curate가 깊이 3 안에서
+  끝나게 하고, `scripts/check-chain-depth.mjs`에 이 불변조건을 추가했다. `npm run check`,
+  `scripts/check-*.mjs` 20개, `git diff --check`가 통과했고, Vercel Production Ready와 별칭 연결을
+  확인했다.
+- **다음 확인**: 다음 23:00 KST 크론 뒤 `pipeline_log`에서 `curate`의 `skipped/depth cap`이 아닌
+  실제 훅 기록이 남았는지, Reshine·Kaijin web 원장이 90일 재실행 대상에서 빠졌는지 확인한다.
 
 이 문서는 **가장 최근 세션의 변경과 다음에 할 일**만 모은다. 이전 세션(509fb25까지)의 상세 구조 설명은
 git 히스토리와 `docs/HANDOFF.md`에 남아 있다. 지침은 `CLAUDE.md` 하나이며 `AGENTS.md`는 그 포인터다.
