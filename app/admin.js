@@ -578,6 +578,7 @@
     await api({ view: 'benchmark-case-save', method: 'POST', body: { title: $('#eb-title').value, question: $('#eb-question').value, reference_answer: $('#eb-reference').value, reference_chunk_ids: ids, company_id: $('#eb-company').value || null, include_unverified: $('#eb-unverified').checked } });
     $('#eb-title').value = ''; $('#eb-question').value = ''; $('#eb-reference').value = ''; $('#eb-chunks').value = ''; await loadEvalBenchmark();
   }));
+  $('#eb-run').addEventListener('click', () => runEval(async () => { $('#eb-meta').textContent = '검색 평가 실행 중…'; const result = await api({ view: 'benchmark-run', method: 'POST', body: {} }); const m = result.metrics || {}; $('#eb-meta').textContent = `완료 · Hit@10 ${Number(m.hit_rate_at_10 || 0).toFixed(2)} · MRR ${Number(m.mrr || 0).toFixed(2)} · Recall@10 ${m.recall_at_10 == null ? '—' : Number(m.recall_at_10).toFixed(2)}`; }));
   for (const id of ['#ec-type', '#ec-company', '#ec-state', '#ec-novector']) $(id).addEventListener('change', () => runEval(() => loadEvalChunks(false)));
   $('#ec-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#ec-load').click(); });
   $('#er-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#er-load').click(); });

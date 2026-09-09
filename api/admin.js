@@ -456,6 +456,28 @@ async function benchmarkCaseSave(body) {
     : await supabaseRest("rag_eval_case?select=*", { method: "POST", body: row });
   return { case: saved?.[0] || null };
 }
+async function benchmarkRun() {
+  const cases = await supabaseRest("rag_eval_case?select=*&active=eq.true&order=updated_at.desc&limit=50");
+  if (!cases?.length) return { error: "no_benchmark_cases" };
+  const [run] = await supabaseRest("rag_eval_run?select=*", { method: "POST", body: { mode: "retrieval", status: "running", case_count: cases.length, retriever_config: { limit: 10, engine: "hybrid" } } });
+  const scores = []; const results = [];
+  for (const item of cases) {
+    try {
+      const rows = await searchKnowledge({ question: item.question, companyId: item.company_id || null, limit: 10, includeUnverified: item.include_unverified });
+      const ids = rows.map((row) => row.id); const expected = new Set(item.reference_chunk_ids || []);
+      const ranks = ids.map((id, index) => expected.has(id) ? index + 1 : null).filter(Boolean);
+      const hit = ranks.length > 0 ? 1 : 0; const first = ranks[0] || null;
+      const recall = expected.size ? ranks.length / expected.size : null;
+      scores.push({ hit, reciprocal_rank: first ? 1 / first : 0, recall });
+      results.push({ run_id: run.id, case_id: item.id, retrieved_chunk_ids: ids, retrieved_contexts: rows.map((row) => String(row.content_ko || "").slice(0, 4000)), retrieval_metrics: { hit_rate: hit, mrr: first ? 1 / first : 0, recall_at_10: recall, first_rank: first } });
+    } catch (error) { results.push({ run_id: run.id, case_id: item.id, error_message: String(error.message || error).slice(0, 400) }); }
+  }
+  if (results.length) await supabaseRest("rag_eval_result", { method: "POST", body: results });
+  const average = key => { const values = scores.map(row => row[key]).filter(Number.isFinite); return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null; };
+  const metrics = { hit_rate_at_10: average("hit"), mrr: average("reciprocal_rank"), recall_at_10: average("recall"), evaluated: scores.length, failed: results.length - scores.length };
+  await supabaseRest(`rag_eval_run?id=eq.${enc(run.id)}`, { method: "PATCH", body: { status: "completed", metrics, finished_at: new Date().toISOString() } });
+  return { run_id: run.id, metrics };
+}
 
 export default async function handler(request, response) {
   if (!requireAccess(request, response)) return;
@@ -464,7 +486,7 @@ export default async function handler(request, response) {
 
   // 쓰기는 평가 저장·취소 두 가지뿐이다. 나머지 화면은 GET 전용으로 남긴다.
   if (request.method === "POST") {
-    const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave, "benchmark-case-save": benchmarkCaseSave };
+    const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave, "benchmark-case-save": benchmarkCaseSave, "benchmark-run": benchmarkRun };
     const write = writers[view];
     if (!write) return response.status(400).json({ status: "unknown_view", view });
     const body = typeof request.body === "string" ? JSON.parse(request.body || "{}") : (request.body || {});
