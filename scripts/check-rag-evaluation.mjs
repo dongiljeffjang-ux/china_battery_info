@@ -140,7 +140,7 @@ assert.equal(topRanks.total, 2, "1–3위 구간에 두 건");
 
 // --- 5) lib와 SQL 제약이 갈리지 않는다 ----------------------------------------
 
-const sql = readFileSync(new URL("../supabase/rag-evaluation.sql", import.meta.url), "utf8");
+const sql = readFileSync(new URL("../supabase/rag-evaluation.sql", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 for (const verdict of VERDICTS) {
   assert.ok(sql.includes(`'${verdict.id}'`), `SQL의 verdict 제약에 ${verdict.id}가 있어야 한다`);
 }
@@ -157,7 +157,8 @@ for (const list of Object.values(ISSUE_TAGS)) {
 
 // --- 6) API 쓰기는 평가와 추적 대상 설정으로 제한한다 --------------------------
 
-const adminSource = readFileSync(new URL("../api/admin.js", import.meta.url), "utf8");
+// CRLF로 체크아웃돼도 글자 대조가 깨지지 않게 줄바꿈을 맞춘다(2026-09-09).
+const adminSource = readFileSync(new URL("../api/admin.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 assert.ok(adminSource.includes('const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave };'),
   "POST로 열린 경로는 평가 저장·취소와 추적 대상 설정뿐이어야 한다");
 assert.ok(adminSource.includes('COMPANIES.some((company) => company.id === companyId)'),

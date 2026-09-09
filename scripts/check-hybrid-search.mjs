@@ -11,7 +11,7 @@ process.env.OPENAI_API_KEY = "test-key";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test";
 
-const { buildLexicalQuery, expandDomainQuestion, fuseByRrf, searchKnowledge } = await import("../lib/knowledge-search.js");
+const { buildLexicalQuery, expandDomainQuestion, fuseByRrf, questionCompanyTerms, searchKnowledge } = await import("../lib/knowledge-search.js");
 
 // --- 1) 질의 조립 -----------------------------------------------------------
 
@@ -43,6 +43,42 @@ for (const term of ["소금", "소듐", "나트륨", "sodium-ion", "钠电", "�
   assert.ok(sodiumQuery.includes(term), `소금 배터리 질문에 ${term} 동의어가 포함돼야 한다`);
 }
 assert.equal(expandDomainQuestion("업황 흐름"), "업황 흐름", "사전에 없는 질문은 바꾸지 않는다");
+
+// --- 1.5) 회사를 짚은 질문은 그 회사 표기를 단어 검색의 필수 조건으로 건다 ------------
+//
+// 2026-09-09 RAG 평가 기준선: 못 씀 25건 중 12건이 "다른 회사"였다. 낱말을 전부 OR로 이으면
+// 회사 별칭까지 OR에 섞여 전 산업에서 아무거나 올라온다. 실측(운영 DB)에서 완룬·파라시스 질문은
+// 상위 10건에 회사가 6곳씩 섞여 있었는데, 필수 조건을 걸면 정답 회사 한 곳만 남았다.
+
+// 한국어로 회사를 불러도 잡혀야 한다. 추적 32개사 중 16개사는 name_ko가 영문이라
+// search_aliases(lib/china-sources.js)가 없으면 회사가 아예 인식되지 않는다.
+for (const [question, expected] of [["파라시스 2026년 상반기 신규 고객", "孚能科技"], ["완룬신에너지 나트륨이온 정극재", "万润新能"]]) {
+  const terms = questionCompanyTerms(question);
+  assert.ok(terms.includes(expected), `${question} → 회사 표기(${expected})를 잡아야 한다: ${terms.join(",")}`);
+}
+// 회사를 짚지 않은 질문은 예전 그대로 둔다. 이 유형은 기준선에서 정밀도 1.00이었다.
+assert.deepEqual(questionCompanyTerms("전고체 배터리 양산 시점"), [], "회사가 없으면 필수 조건도 없다");
+assert.equal(buildLexicalQuery("전고체 배터리 양산 시점", { requiredTerms: [] }),
+  buildLexicalQuery("전고체 배터리 양산 시점"), "필수 조건이 없으면 질의가 예전과 같아야 한다");
+
+const scoped = buildLexicalQuery(expandDomainQuestion("파라시스 2026년 상반기 신규 고객"),
+  { requiredTerms: questionCompanyTerms("파라시스 2026년 상반기 신규 고객") });
+assert.match(scoped, /^\+\([^)]+\) \(/, `필수 그룹이 앞에 오고 선택 그룹이 뒤따라야 한다: ${scoped}`);
+// 선택 그룹에도 회사 표기가 남아야 한다. PGroonga는 공백을 AND로 읽으므로, 선택 그룹에서 회사
+// 표기를 빼면 주제어가 사실상 필수가 되어 회사만 언급한 청크가 전부 탈락한다.
+const optionalPart = scoped.slice(scoped.indexOf(") (") + 3);
+assert.ok(optionalPart.includes("파라시스"), `선택 그룹에 회사 표기가 남아야 한다: ${optionalPart}`);
+
+// 공백·하이픈·전각 괄호가 든 표기는 구절로 감싼다. 안 그러면 New·Energy가 따로 떨어져
+// 아무 회사나 필수 조건을 통과한다.
+const phrased = buildLexicalQuery("매출", { requiredTerms: ["Wanrun New Energy", "万润新能", "鲁北万润智慧能源科技（山东）有限公司"] });
+assert.ok(phrased.includes('"Wanrun New Energy"'), `여러 낱말 표기는 구절이어야 한다: ${phrased}`);
+assert.ok(phrased.includes('"鲁北万润智慧能源科技（山东）有限公司"'), "괄호가 든 표기도 구절로 감싼다");
+assert.ok(phrased.includes("OR 万润新能"), "한자만 있는 표기는 그대로 둔다");
+
+// 필수 조건도 사용자 입력을 타고 연산자가 들어오면 안 된다.
+const injectedRequired = buildLexicalQuery("매출", { requiredTerms: ['A" OR B) (', "정상표기"] });
+assert.equal((injectedRequired.match(/\(/g) || []).length, 2, `괄호는 필수·선택 그룹 두 개뿐이어야 한다: ${injectedRequired}`);
 
 const industryQueries = [
   ["전고체 양산", ["固态电池", "mass production", "量产"]],

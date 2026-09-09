@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const admin = fs.readFileSync(new URL("../api/admin.js", import.meta.url), "utf8");
-const backfill = fs.readFileSync(new URL("../lib/event-backfill.js", import.meta.url), "utf8");
-const provider = fs.readFileSync(new URL("../lib/llm-provider.js", import.meta.url), "utf8");
-const adminHtml = fs.readFileSync(new URL("../app/admin.html", import.meta.url), "utf8");
-const adminApp = fs.readFileSync(new URL("../app/admin.js", import.meta.url), "utf8");
+// 소스를 글자로 대조하는 검사다. Windows에서 git이 CRLF로 체크아웃하면 줄바꿈을 담은 기대값이
+// 전부 어긋나 실제 코드는 멀쩡한데 검사만 깨진다(2026-09-09 실제로 발생). 읽을 때 줄바꿈을 맞춘다.
+const read = (name) => fs.readFileSync(new URL(name, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
+const admin = read("../api/admin.js");
+const backfill = read("../lib/event-backfill.js");
+const provider = read("../lib/llm-provider.js");
+const adminHtml = read("../app/admin.html");
+const adminApp = read("../app/admin.js");
 
 assert.ok(admin.includes('"probe-digest": probeDigest'), "관리자 API에 보호된 dry-run 경로가 있어야 한다");
 for (const preset of ["wanrun-2026h1", "xtc-2024h1", "farasis-2026h1", "minmetals-2024h1", "zhenhua-2024h1"]) {
