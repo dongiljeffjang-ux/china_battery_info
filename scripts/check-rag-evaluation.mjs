@@ -159,8 +159,10 @@ for (const list of Object.values(ISSUE_TAGS)) {
 
 // CRLF로 체크아웃돼도 글자 대조가 깨지지 않게 줄바꿈을 맞춘다(2026-09-09).
 const adminSource = readFileSync(new URL("../api/admin.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
-assert.ok(adminSource.includes('const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave };'),
-  "POST로 열린 경로는 평가 저장·취소와 추적 대상 설정뿐이어야 한다");
+assert.ok(adminSource.includes('"benchmark-case-save": benchmarkCaseSave'),
+  "RAGAS 평가세트 저장 경로가 명시적으로 열려 있어야 한다");
+assert.ok(adminSource.includes('supabaseRest("rag_eval_case?select=*"'),
+  "평가세트 쓰기는 평가 테이블에만 저장해야 한다");
 assert.ok(adminSource.includes('COMPANIES.some((company) => company.id === companyId)'),
   "추적 대상 설정은 검증된 마스터 회사만 받아야 한다");
 assert.ok(adminSource.includes('if (request.method !== "GET") return response.status(405)'),

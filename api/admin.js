@@ -437,6 +437,26 @@ async function evalDelete(body) {
   return { deleted: (removed || []).length };
 }
 
+// RAGAS 문제지는 검색 결과 판정과 별도로 관리한다. 기준 답변·정답 청크를 사람이 확정한 뒤에만
+// 배치 평가가 읽으므로, 운영 지식과 모델 점수를 섞지 않는다.
+async function benchmarkCases() {
+  return { cases: await supabaseRest("rag_eval_case?select=*&order=updated_at.desc&limit=200") };
+}
+async function benchmarkCaseSave(body) {
+  const title = String(body.title || "").trim().slice(0, 160);
+  const question = String(body.question || "").trim().slice(0, 600);
+  const referenceAnswer = String(body.reference_answer || "").trim().slice(0, 6000);
+  if (!title || !question || !referenceAnswer) return { error: "invalid_benchmark_case" };
+  const companyId = body.company_id ? safeToken(body.company_id) : null;
+  const chunkIds = [...new Set((Array.isArray(body.reference_chunk_ids) ? body.reference_chunk_ids : []).filter(safeId))];
+  const row = { title, question, reference_answer: referenceAnswer, reference_chunk_ids: chunkIds, company_id: companyId, include_unverified: body.include_unverified === true, active: body.active !== false, note: String(body.note || "").trim().slice(0, 1000), updated_at: new Date().toISOString() };
+  const id = safeId(body.id);
+  const saved = id
+    ? await supabaseRest(`rag_eval_case?id=eq.${enc(id)}&select=*`, { method: "PATCH", body: row })
+    : await supabaseRest("rag_eval_case?select=*", { method: "POST", body: row });
+  return { case: saved?.[0] || null };
+}
+
 export default async function handler(request, response) {
   if (!requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
@@ -444,7 +464,7 @@ export default async function handler(request, response) {
 
   // 쓰기는 평가 저장·취소 두 가지뿐이다. 나머지 화면은 GET 전용으로 남긴다.
   if (request.method === "POST") {
-    const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave };
+    const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave, "benchmark-case-save": benchmarkCaseSave };
     const write = writers[view];
     if (!write) return response.status(400).json({ status: "unknown_view", view });
     const body = typeof request.body === "string" ? JSON.parse(request.body || "{}") : (request.body || {});
@@ -466,7 +486,7 @@ export default async function handler(request, response) {
 
   const handlers = {
     overview, audit, runs, articles, article, events, chunks, search, pipeline, "probe-digest": probeDigest,
-    "eval-summary": evalSummary, "eval-chunks": evalChunks, "eval-search": evalSearch, companies: companyTracking,
+    "eval-summary": evalSummary, "eval-chunks": evalChunks, "eval-search": evalSearch, "benchmark-cases": benchmarkCases, companies: companyTracking,
   };
   const run = handlers[view];
   if (!run) return response.status(400).json({ status: "unknown_view", view });

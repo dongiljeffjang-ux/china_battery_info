@@ -507,7 +507,13 @@
     $('#es-meta').textContent = `평가 ${num(chunk.evaluated + retrieval.evaluated)}건 집계`;
   }
 
-  const evalLoaders = { 'eval-chunks': () => loadEvalChunks(false), 'eval-retrieval': loadEvalRetrieval, 'eval-summary': loadEvalSummary };
+  async function loadEvalBenchmark() {
+    const payload = await api({ view: 'benchmark-cases' });
+    const rows = payload.cases || [];
+    $('#eb-list').innerHTML = rows.length ? `<div class="tbl-wrap"><table class="admin"><thead><tr><th>제목</th><th>질문</th><th>회사</th><th>정답 청크</th><th>상태</th></tr></thead><tbody>${rows.map(row => `<tr><td>${esc(row.title)}</td><td>${esc(row.question)}</td><td>${esc(companyName(row.company_id) || '전체')}</td><td class="num">${num((row.reference_chunk_ids || []).length)}</td><td>${row.active ? '사용' : '중지'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">아직 평가 문제가 없습니다.</p>';
+  }
+
+  const evalLoaders = { 'eval-chunks': () => loadEvalChunks(false), 'eval-retrieval': loadEvalRetrieval, 'eval-summary': loadEvalSummary, 'eval-benchmark': loadEvalBenchmark };
   const evalLoaded = new Set();
   async function showEvalSub(sub, force = false) {
     evalSub.current = sub;
@@ -533,7 +539,7 @@
       const list = payload.companies || [];
       for (const c of list) companies.set(c.id, c.name_ko);
       const options = `<option value="">전체</option>${list.map((c) => `<option value="${esc(c.id)}">${esc(c.name_ko)}</option>`).join('')}`;
-      for (const id of ['#art-company', '#ev-company', '#ch-company', '#se-company', '#audit-company', '#ec-company', '#er-company']) $(id).innerHTML = options;
+      for (const id of ['#art-company', '#ev-company', '#ch-company', '#se-company', '#audit-company', '#ec-company', '#er-company', '#eb-company']) $(id).innerHTML = options;
     } catch {}
   }
   async function loadCompanyTracking() {
@@ -567,6 +573,11 @@
   $('#ec-more').addEventListener('click', () => runEval(() => loadEvalChunks(true)));
   $('#er-load').addEventListener('click', () => runEval(loadEvalRetrieval));
   $('#es-load').addEventListener('click', () => runEval(loadEvalSummary));
+  $('#eb-save').addEventListener('click', () => runEval(async () => {
+    const ids = $('#eb-chunks').value.split(',').map(value => value.trim()).filter(Boolean);
+    await api({ view: 'benchmark-case-save', method: 'POST', body: { title: $('#eb-title').value, question: $('#eb-question').value, reference_answer: $('#eb-reference').value, reference_chunk_ids: ids, company_id: $('#eb-company').value || null, include_unverified: $('#eb-unverified').checked } });
+    $('#eb-title').value = ''; $('#eb-question').value = ''; $('#eb-reference').value = ''; $('#eb-chunks').value = ''; await loadEvalBenchmark();
+  }));
   for (const id of ['#ec-type', '#ec-company', '#ec-state', '#ec-novector']) $(id).addEventListener('change', () => runEval(() => loadEvalChunks(false)));
   $('#ec-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#ec-load').click(); });
   $('#er-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#er-load').click(); });
