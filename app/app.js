@@ -604,6 +604,15 @@ function isPrimaryEvidence(event){
 function visibleEvents(timeline){
   return includeSupporting ? timeline.events : timeline.events.filter(isPrimaryEvidence);
 }
+// 보조 데이터는 같은 시계열을 넓혀 보는 옵션일 뿐, 사용자를 페이지 맨 위로 보내면 안 된다.
+// 기업 프로필·차트가 다시 그려져도 토글의 화면상 위치를 기준으로 스크롤을 되돌린다.
+async function refreshSupportingViews(anchor){
+  const topBefore = anchor?.getBoundingClientRect().top;
+  await Promise.all([renderCompany(), renderComparison()]);
+  if (!Number.isFinite(topBefore) || !anchor?.isConnected) return;
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  window.scrollBy(0, anchor.getBoundingClientRect().top - topBefore);
+}
 // 리포트는 화면 토글 상태를 암묵적으로 따라가지 않는다. 생성 직전에 사용자가 핵심 근거만
 // 볼지, 아직 공시로 확정되지 않은 참고 기사·웹 백필까지 넓힐지를 설명과 함께 고른다.
 async function chooseReportSupporting(){
@@ -611,7 +620,7 @@ async function chooseReportSupporting(){
   if (includeSupporting === selected) return selected;
   includeSupporting = selected;
   [document.querySelector('#include-supporting'), document.querySelector('#include-supporting-compare')].filter(Boolean).forEach(box => { box.checked = selected; });
-  await Promise.all([renderCompany(), renderComparison()]);
+  await refreshSupportingViews(document.querySelector('#include-supporting'));
   return selected;
 }
 // 드롭다운 대신 밸류체인 탭 → 회사 칩으로 고른다. 칩의 아이콘은 중문 법인명 첫 글자다.
@@ -2372,8 +2381,7 @@ async function initialize(){
     box.addEventListener('change', async () => {
       includeSupporting = box.checked;
       supportingToggles.forEach(other => { other.checked = includeSupporting; });
-      await renderCompany();
-      await renderComparison();
+      await refreshSupportingViews(box);
     });
   });
   document.querySelector('#export-raw-news').addEventListener('click', exportRawNews);
