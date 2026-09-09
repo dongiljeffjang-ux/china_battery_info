@@ -86,7 +86,7 @@ assert.match(app, /서버 히스토리나 DB에는 저장되지 않습니다/);
 
 // 모델이 실제로 받는 입력을 조립해 본다. 리포트가 "이 회사가 어디로 가는지"를 못 읽던 원인은
 // 정량 시계열을 아예 안 주고 사건 조각만 최신순으로 준 데 있었다. 그 구조를 여기서 고정한다.
-const { buildTimelineInput, metricTable } = await import("../lib/timeline-report.js");
+const { buildTimelineInput, metricTable, selectTimelineEvidence } = await import("../lib/timeline-report.js");
 const sampleMetrics = [
   { period: "2023", metric: "revenue_total", value: 4009.17, unit: "CNY_100M", yoy_pct: 22.01 },
   { period: "2024", metric: "revenue_total", value: 3620.13, unit: "CNY_100M", yoy_pct: -9.7 },
@@ -111,7 +111,7 @@ assert.ok(!input.includes("a45f53f5"), "이벤트 UUID를 모델 입력에 넣�
 assert.match(input, /이벤트 식별자는 제공하지 않았으므로/, "식별자를 만들어 넣지 말라고 적어야 한다");
 assert.ok(!input.includes("<br>"), "입력에 <br>이 있으면 모델이 따라 뱉는다");
 // 방향은 숫자에서 먼저 읽는다. 정량 표가 사건 표보다 앞에 온다.
-assert.ok(input.indexOf("정량 시계열") < input.indexOf("원시 시계열 이벤트"), "정량 표가 사건 표보다 앞이어야 한다");
+assert.ok(input.indexOf("정량 시계열") < input.indexOf("화면 이벤트 3건"), "정량 표가 사건 표보다 앞이어야 한다");
 assert.match(input, /읽는 순서: 먼저 정량 시계열에서/);
 // 사건은 과거 → 최근. 최신순이면 흐름을 거꾸로 읽는다.
 assert.ok(input.indexOf("2023 하반기") < input.indexOf("2025 하반기") && input.indexOf("2025 하반기") < input.indexOf("2026 Q2"), "사건 표는 과거 → 최근 순이어야 한다");
@@ -127,6 +127,26 @@ assert.ok(input.includes("생산능력(계획) · 리튬이온전지(GWh)"), "�
 assert.ok(input.includes("| 출하량 · 음극재(만 톤) | 자료 없음 | 자료 없음 | 36.35 (+55.7%) | 자료 없음 |"), "톤은 만 톤으로 줄여 적는다");
 assert.equal(metricTable([]), "", "지표가 없으면 표를 만들지 않는다");
 assert.match(buildTimelineInput({ companyName: "x", events: sampleEvents, metrics: [] }), /정량 시계열: 없음/, "지표가 없으면 없다고 적는다");
+// 보조 데이터를 켜면 수백 건이 화면에 보일 수 있다. 모든 원문을 한 호출에 넘기면 모델 입력이
+// 커져 시간 초과하므로, 기간·레이어의 양 끝을 대표 근거로 남기고 전체는 상한 안에 압축한다.
+const denseEvents = Array.from({ length: 90 }, (_, index) => ({
+  id: `dense-${index}`,
+  date: `202${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, "0")}-01`,
+  period: `202${Math.floor(index / 12)}년`,
+  layer: index % 2 ? "supply-performance" : "technology-development",
+  title: `[사건-${index}]`,
+  fact: `반복된 보조 사실 ${index}`,
+  sourceName: "출처",
+  sourceUrl: "",
+}));
+const selectedEvidence = selectTimelineEvidence(denseEvents);
+assert.ok(selectedEvidence.length <= 48, "모델 입력 이벤트는 48건을 넘기면 안 된다");
+assert.equal(selectedEvidence[0].id, "dense-0", "가장 이른 근거는 보존해야 한다");
+assert.equal(selectedEvidence.at(-1).id, "dense-89", "가장 최근 근거는 보존해야 한다");
+const compactInput = buildTimelineInput({ companyName: "CATL", events: denseEvents });
+assert.match(compactInput, /화면 이벤트 90건 중 기간·레이어별 대표 근거 48건/, "압축 사실을 모델에 알려야 한다");
+const omittedEvidence = denseEvents.find(event => !selectedEvidence.some(selected => selected.id === event.id));
+assert.ok(omittedEvidence && !compactInput.includes(omittedEvidence.title), "선택되지 않은 반복 근거를 모델 입력에 넣으면 안 된다");
 // 기업 API가 실제로 두 표를 읽어 넘기는지.
 assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
 assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
