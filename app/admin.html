@@ -74,6 +74,8 @@
       .eval-note{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;min-width:220px;flex:1 1 220px}
       .eval-state{font-size:11.5px;color:var(--muted);white-space:nowrap}
       .eval-state.saved{color:var(--good)}.eval-state.failed{color:#9b1c1c}
+      .er-pick{border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none;white-space:nowrap}
+      .er-pick.is-on{background:#f1f5fb;border-color:var(--blue);color:var(--blue);font-weight:650}
       .eval-card.is-done{border-left:3px solid var(--good)}
       .eval-card.is-bad{border-left:3px solid #d97070}
       .eval-card.is-partial{border-left:3px solid #c9922b}
@@ -283,8 +285,10 @@
               <label>미검증 헤드라인<select id="er-unverified"><option value="0">제외(기본)</option><option value="1">포함</option></select></label>
               <label>근거 수<select id="er-limit"><option value="10">10건(실제 답변과 동일)</option><option value="20">20건</option></select></label>
               <button id="er-load" class="secondary-button" type="button">검색</button>
+              <button id="er-to-benchmark" class="secondary-button" type="button">정답으로 고른 근거를 평가 세트로</button>
               <span id="er-meta" class="muted small"></span>
             </div>
+            <p class="muted small" style="margin:0 0 12px">근거 카드의 <b>정답</b>을 체크하면 그 청크 ID를 평가 세트의 정답 칸으로 옮깁니다. 평가 세트에 정답 청크가 없으면 Hit@10·MRR이 0으로만 나옵니다.</p>
             <div id="er-list"></div>
           </section>
 
@@ -306,6 +310,6 @@
       <aside id="drawer" class="drawer" hidden aria-label="기사 상세"></aside>
     </div>
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./admin.js?v=20260908-evidence"></script>
+    <script src="./admin.js?v=20260909-benchmark-pick"></script>
   </body>
 </html>

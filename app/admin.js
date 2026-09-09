@@ -432,7 +432,7 @@
     const by = row.retrieved_by || [];
     const byLabel = by.length > 1 ? '의미+단어' : by[0] === 'lexical' ? '단어 검색' : by[0] === 'vector' ? '의미 검색' : '미상';
     return `<div class="chunk eval-card${verdictClass(row.evaluation)}" data-eval-subject="retrieval" data-chunk-id="${esc(row.id)}" data-chunk-type="${esc(row.source_type)}" data-company="${esc(row.company_id || '')}" data-rank="${esc(row.rank)}" data-retrieved-by="${esc(by.join(','))}" data-similarity="${esc(row.similarity ?? '')}">
-      <header><span class="sim">${Number(row.similarity || 0).toFixed(3)}</span> #${row.rank} <span class="tag">${esc(byLabel)}</span> ${tag(row.source_type)} ${esc(companyName(row.company_id))} · ${fmtDay(row.published_at)} · ${esc(row.source_name || '')} ${row.article_id ? `· <a class="link" data-article="${esc(row.article_id)}">기사</a>` : ''} ${row.source_url ? `· <a class="link" href="${esc(row.source_url)}" target="_blank" rel="noopener">원문</a>` : ''}</header>
+      <header><label class="er-pick"><input type="checkbox" data-pick="${esc(row.id)}" /> 정답</label> <span class="sim">${Number(row.similarity || 0).toFixed(3)}</span> #${row.rank} <span class="tag">${esc(byLabel)}</span> ${tag(row.source_type)} ${esc(companyName(row.company_id))} · ${fmtDay(row.published_at)} · ${esc(row.source_name || '')} ${row.article_id ? `· <a class="link" data-article="${esc(row.article_id)}">기사</a>` : ''} ${row.source_url ? `· <a class="link" href="${esc(row.source_url)}" target="_blank" rel="noopener">원문</a>` : ''}</header>
       <pre>${esc(row.content_ko)}</pre>
       ${row.original_excerpt ? `<details><summary class="small muted">원문 발췌</summary><pre>${esc(row.original_excerpt)}</pre></details>` : ''}
       ${evalBar('retrieval', row.evaluation)}
@@ -572,6 +572,22 @@
   $('#ec-load').addEventListener('click', () => runEval(() => loadEvalChunks(false)));
   $('#ec-more').addEventListener('click', () => runEval(() => loadEvalChunks(true)));
   $('#er-load').addEventListener('click', () => runEval(loadEvalRetrieval));
+  // 검색 정밀도에서 고른 정답 청크를 평가 세트로 옮긴다. 청크 ID는 화면에 글자로 보이지 않아
+  // 사람이 옮겨 적을 수 없었고, 정답 청크가 없으면 Hit@10·MRR이 0으로만 나온다.
+  // 검색 조건이 다르면 같은 질문이라도 다른 근거가 나오므로 회사·보조 데이터도 함께 옮긴다.
+  $('#er-to-benchmark').addEventListener('click', () => runEval(async () => {
+    const picked = [...document.querySelectorAll('#er-list [data-pick]')].filter((input) => input.checked).map((input) => input.dataset.pick);
+    if (!picked.length) { $('#er-meta').textContent = '정답으로 쓸 근거를 먼저 체크하세요.'; return; }
+    const context = retrievalContext || {};
+    const question = context.question || $('#er-q').value.trim();
+    $('#eb-question').value = question;
+    if (!$('#eb-title').value.trim()) $('#eb-title').value = question.slice(0, 160);
+    $('#eb-chunks').value = picked.join(', ');
+    $('#eb-company').value = context.company || '';
+    $('#eb-unverified').checked = context.include_unverified === true;
+    await showEvalSub('eval-benchmark');
+    $('#eb-meta').textContent = `정답 청크 ${picked.length}건을 옮겼습니다. 기준 답변을 적고 저장하세요.`;
+  }));
   $('#es-load').addEventListener('click', () => runEval(loadEvalSummary));
   $('#eb-save').addEventListener('click', () => runEval(async () => {
     const ids = $('#eb-chunks').value.split(',').map(value => value.trim()).filter(Boolean);
@@ -597,6 +613,8 @@
     if (clearButton) clearEvaluation(clearButton.closest('.eval-card'), clearButton.dataset.evalClear);
   });
   document.addEventListener('change', (e) => {
+    const pick = e.target.closest('[data-pick]');
+    if (pick) { pick.closest('label').classList.toggle('is-on', pick.checked); return; }
     const tagInput = e.target.closest('[data-eval-tag]');
     if (!tagInput) return;
     tagInput.closest('label').classList.toggle('is-on', tagInput.checked);
