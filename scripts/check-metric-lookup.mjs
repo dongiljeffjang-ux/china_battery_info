@@ -125,6 +125,7 @@ const app = fs.readFileSync(new URL("../app/app.js", import.meta.url), "utf8");
 assert.match(app, /source\.metric_grade === 'provider' \? ' <span class="ask-grade provider">거래소 집계값 · 원문 발췌 없음<\/span>'/, "화면이 발췌 없는 행을 배지로 구분한다");
 assert.match(app, /by\[0\] === 'metric' \? ' <span class="ask-route metric">정량 조회<\/span>'/, "화면이 정량 조회 경로를 표시한다");
 const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
-assert.match(html, /app\.js\?v=20260909-metric-lookup/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
+// 정확한 태그를 고정하지 않는다 — 뒤에 오는 화면 변경이 버전을 또 올린다. 이 기능 이전 태그(0908)만 아니면 된다.
+assert.match(html, /app\.js\?v=(?!20260908)\d{8}-/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
 
 console.log("ok  check-metric-lookup: 파싱 12케이스 · 발동 조건 · 등급 라벨 · 칸 중복 제거 · 주입 조회 · 배선 확인");

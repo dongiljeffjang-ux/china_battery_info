@@ -1033,11 +1033,36 @@ function shortTitle(title){
 }
 const DIGEST_PREVIEW = 4;
 const DIGEST_ITEM_CHARS = 300;
-function digestItemText(event, companyId){
+// 설명이 제목을 그대로 되풀이하며 시작하는 경우가 많다("보고기간 투자액" / "보고기간 투자액은 3,223억…").
+// 제목 뒤에 붙은 조사까지 떼고 남은 내용만 돌려준다. 남는 게 없으면 빈 문자열이다(제목만 보여준다).
+// 사용자 요청(2026-09-09): 제목과 중복된 앞머리는 없애고 내용은 불릿으로.
+const TITLE_PARTICLE = '(?:은|는|이|가|의|을|를|도|에서|으로|로)?';
+function factWithoutTitle(title, fact, rawTitle){
+  let text = String(fact || '').replace(/\s+/g, ' ').trim();
+  for (const head of [String(title || '').trim(), String(rawTitle || '').trim()].filter(Boolean).sort((a, b) => b.length - a.length)) {
+    const escaped = head.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+    const stripped = text.replace(new RegExp(`^${escaped}\\s*${TITLE_PARTICLE}\\s*[:：,，-]?\\s*`), '');
+    if (stripped !== text) { text = stripped; break; }
+  }
+  return text === String(title || '').trim() ? '' : text;
+}
+// 남은 설명을 문장 단위 불릿으로. 한 문장이면 불릿 하나다. 300자 상한은 전체 합에 건다.
+function digestItemParts(event, companyId){
   const title = stripCompanySubject(event.title, companyId).trim();
-  const fact = String(event.fact || '').trim();
-  const combined = fact && fact !== title ? `${title}\n${fact}` : title || fact;
-  return combined.length > DIGEST_ITEM_CHARS ? `${combined.slice(0, DIGEST_ITEM_CHARS - 1).trimEnd()}…` : combined;
+  const detail = factWithoutTitle(title, event.fact, event.title);
+  let budget = DIGEST_ITEM_CHARS - title.length;
+  const points = [];
+  for (const sentence of splitSentences(detail)) {
+    if (budget <= 0) break;
+    const clipped = sentence.length > budget ? `${sentence.slice(0, Math.max(0, budget - 1)).trimEnd()}…` : sentence;
+    points.push(clipped);
+    budget -= clipped.length;
+  }
+  return { title, points };
+}
+function digestItemText(event, companyId){
+  const { title, points } = digestItemParts(event, companyId);
+  return [title, ...points].join('\n');
 }
 // ── 정량 궤적 ───────────────────────────────────────────────────────────────
 // 하나의 연속 시간축을 지표 선과 사건 플래그가 나눠 쓴다. 축은 연도 칸이 아니라 날짜라
@@ -1598,7 +1623,7 @@ function renderTrajectory(timeline){
   const detailCard = (event) => `<article class="traj-detail-item">
     <h4>${escapeHtml(stripCompanySubject(event.title, timeline.companyId))}</h4>
     <p class="traj-detail-meta">${escapeHtml(displayDate(event))} · ${escapeHtml(evidenceLabels[event.kind] || '')}${event.sourceUrl ? ` · <a href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문 ↗</a>` : ''}</p>
-    <p>${escapeHtml(event.fact || '')}</p>
+    ${(() => { const points = splitSentences(factWithoutTitle(stripCompanySubject(event.title, timeline.companyId), event.fact, event.title)); return points.length ? `<ul class="digest-points">${points.map(point => `<li>${escapeHtml(point)}</li>`).join('')}</ul>` : ''; })()}
     ${event.excerpt ? `<blockquote>${escapeHtml(String(event.excerpt).slice(0, 400))}</blockquote>` : ''}
   </article>`;
   target.querySelectorAll('.traj-flag').forEach(node => node.addEventListener('click', () => {
@@ -1636,8 +1661,8 @@ function renderCompanyEvents(timeline){
     groups.get(label).push(event);
   });
   const line = event => {
-    const [title, ...details] = digestItemText(event, timeline.companyId).split('\n');
-    return `<li class="digest-line" data-tip="${escapeHtml(eventTip(event))}"><span class="digest-title">${escapeHtml(title)}</span>${details.length ? `<span class="digest-detail">${escapeHtml(details.join(' '))}</span>` : ''}</li>`;
+    const { title, points } = digestItemParts(event, timeline.companyId);
+    return `<li class="digest-line" data-tip="${escapeHtml(eventTip(event))}"><span class="digest-title">${escapeHtml(title)}</span>${points.length ? `<ul class="digest-points">${points.map(point => `<li>${escapeHtml(point)}</li>`).join('')}</ul>` : ''}</li>`;
   };
   const column = (name, list, cls) => {
     if (!list.length) return '';

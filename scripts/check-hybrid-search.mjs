@@ -101,6 +101,24 @@ assert.equal(demoted[1], "supplier", "메타데이터가 아니라 본문 표기
 const untouched = [{ id: "x", company_id: "byd", content_ko: "전고체" }, { id: "y", company_id: "calb", content_ko: "양산" }];
 assert.deepEqual(demoteUnrelatedCompanies(untouched, []), untouched, "회사 조건이 없으면 순서를 바꾸지 않는다");
 
+// --- 1.65) 한 기사가 프롬프트를 독점하지 못한다 ------------------------------------------
+//
+// 2026-09-09: "전고체 배터리 준비중인 회사들"에 근거 10건 중 6건이 같은 SMM 기사였다. 21개 청크가
+// 같은 요약 머리말을 달고 있어 검색기 둘 다에 전부 걸렸고, 답변 모델은 회사 두 곳만 보고 "근거 부족"이라
+// 답했다. 같은 기사에서는 상위 두 청크만 앞에 두고 나머지는 뒤로 민다. 버리지는 않는다.
+const { collapseByArticle } = await import("../lib/knowledge-search.js");
+const flooded = [
+  { id: "a1", source_type: "article_chunk", article_id: "A" }, { id: "a2", source_type: "article_chunk", article_id: "A" },
+  { id: "a3", source_type: "article_chunk", article_id: "A" }, { id: "b1", source_type: "article_chunk", article_id: "B" },
+  { id: "ea", source_type: "event_fact", article_id: "A" }, { id: "a4", source_type: "article_chunk", article_id: "A" },
+  { id: "m", source_type: "metric_row", article_id: null },
+];
+const collapsed = collapseByArticle(flooded).map((row) => row.id);
+assert.deepEqual(collapsed, ["a1", "a2", "b1", "ea", "m", "a3", "a4"], `기사 A는 두 청크만 앞, 나머지는 뒤: ${collapsed}`);
+assert.equal(collapsed.length, flooded.length, "버리지 않고 순서만 바꾼다");
+// event_fact와 article_chunk는 같은 기사여도 서로 다른 사실이라 따로 센다.
+assert.ok(collapsed.indexOf("ea") < collapsed.indexOf("a3"), "같은 기사의 event_fact는 article_chunk 상한과 무관하게 살아남는다");
+
 // --- 1.7) 융합 상수는 기준선 실측에 맞춘 값이어야 한다 -------------------------------------
 const searchSource = (await import("node:fs")).readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8");
 assert.match(searchSource, /const RRF_K = 10;/, "k는 후보 규모(검색기당 10~20건)에 맞춘 10이어야 한다. 60이면 1~20위 점수 차가 1.3배뿐이다");
