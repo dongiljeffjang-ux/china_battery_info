@@ -1746,7 +1746,9 @@ async function askKnowledge(event){
 function renderAskResult(payload, scoped){
   const parts = [];
   const unverified = payload.unverified_matched || 0;
-  const gradeNote = unverified ? ` (그중 미검증 헤드라인 ${unverified}건)` : '';
+  const providerRows = payload.provider_metric_matched || 0;
+  const gradeNote = (unverified ? ` (그중 미검증 헤드라인 ${unverified}건)` : '')
+    + (providerRows ? ` (거래소 집계값·원문 발췌 없음 ${providerRows}건 포함)` : '');
   // 하이브리드 검색이 무엇을 얼마나 건졌는지 밝힌다. 단어 검색이 없었으면 근거가 얇은 이유가
   // 질문 탓인지 색인 탓인지 사용자가 구분할 수 없다.
   const r = payload.retrieval;
@@ -1754,7 +1756,9 @@ function renderAskResult(payload, scoped){
     : r.lexical_available === false ? ` 단어 검색은 색인이 준비되지 않아 건너뛰었고 의미 검색 결과만 씁니다.`
     : r.vector_available === false ? ` 의미 검색(임베딩)이 응답하지 않아 단어 검색 ${r.lexical_matched}건만 씁니다. 뜻이 비슷한 표현은 이번 결과에서 빠져 있습니다.`
     : ` 의미 검색 ${r.vector_matched}건 + 단어 검색 ${r.lexical_matched}건을 합쳐 후보 ${r.candidates}건, 그중 ${r.overlapped}건은 양쪽에 모두 걸렸습니다.`;
-  const scopeNote = (scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`) + gradeNote + hybridNote;
+  // 정량 사전조회가 발동했으면 그것부터 밝힌다. 검색이 아니라 표에서 바로 읽은 값이라는 뜻이다.
+  const metricNote = r?.metric_rows ? ` 회사·지표를 짚은 질문이라 정량 표에서 ${r.metric_rows}칸을 먼저 읽어 근거 앞에 두었습니다.` : '';
+  const scopeNote = (scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`) + gradeNote + metricNote + hybridNote;
   if (payload.sufficient && payload.answer_ko) {
     parts.push(`<p class="ask-answer">${escapeHtml(payload.answer_ko)}</p>`);
   }
@@ -1772,11 +1776,16 @@ function renderAskResult(payload, scoped){
       const head = [displayName(source.company_id), source.published_at, source.source_name].filter(Boolean).join(' · ');
       const link = source.source_url ? ` <a href="${escapeHtml(source.source_url)}" target="_blank" rel="noreferrer">원문</a>` : '';
       // 본문 대조를 거치지 않은 근거는 눈에 띄게 구분한다. 사실과 헤드라인이 섞여 읽히면 안 된다.
-      const grade = source.verified === false ? ' <span class="ask-grade">미검증 헤드라인</span>' : '';
+      // 정량 행은 보고서 발췌가 있는 것과 거래소 집계값(발췌 없음)을 나눠 보인다. 사용자 결정(2026-09-09):
+      // 발췌 없는 값도 근거로 쓰되 등급을 숨기지 않는다.
+      const grade = source.verified === false ? ' <span class="ask-grade">미검증 헤드라인</span>'
+        : source.metric_grade === 'provider' ? ' <span class="ask-grade provider">거래소 집계값 · 원문 발췌 없음</span>'
+        : source.metric_grade === 'excerpt' ? ' <span class="ask-grade excerpt">보고서 발췌</span>' : '';
       // 어느 검색기가 찾았는지. 양쪽에 걸린 근거가 가장 믿을 만하고, 단어 검색만 찾은 근거는
       // 의미 검색으로는 못 건졌을 것이라 하이브리드가 무슨 일을 했는지 그대로 드러난다.
       const by = source.retrieved_by || [];
-      const route = by.length > 1 ? ' <span class="ask-route both">의미+단어</span>'
+      const route = by[0] === 'metric' ? ' <span class="ask-route metric">정량 조회</span>'
+        : by.length > 1 ? ' <span class="ask-route both">의미+단어</span>'
         : by[0] === 'lexical' ? ' <span class="ask-route lex">단어 검색</span>'
         : by[0] === 'vector' ? ' <span class="ask-route vec">의미 검색</span>' : '';
       return `<li><span class="n">${source.n}</span>${escapeHtml(head)}${grade}${route}${link}<br>${escapeHtml(source.excerpt)}</li>`;

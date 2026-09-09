@@ -224,6 +224,11 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
    양쪽에 다 걸린 근거만 진하게 채워 눈에 먼저 들어오게 한다. */
 .ask-route{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;border:1px solid var(--line);color:var(--muted);background:transparent}
 .ask-route.both{border-color:var(--ink);background:var(--ink);color:#fff}
+/* 정량 사전조회. 검색이 아니라 표에서 읽은 값이라 경로 칩을 따로 둔다. 등급은 발췌 유무로 갈린다 —
+   거래소 집계값은 원문 발췌가 없으므로 헤드라인과 같은 붉은 계열로 눈에 띄게, 보고서 발췌는 차분하게. */
+.ask-route.metric{border-color:#2f6fdb;color:#2f6fdb}
+.ask-grade.excerpt{background:#e8f1ff;color:#2f6fdb}
+.ask-grade.provider{background:#fff3e0;color:#b26a00}
 
 .compare-history-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 6px}.compare-history-toolbar .secondary-button{padding:6px 11px;font-size:12px}.compare-history-toolbar .secondary-button:disabled{opacity:.5;cursor:default}.compare-history-note{font-size:11px;color:var(--muted)}.compare-report-history li{display:flex;align-items:flex-start;gap:8px}.compare-report-history li input[type=checkbox]{margin:4px 0 0;flex:0 0 auto;cursor:pointer}.compare-report-history li .link-button{flex:1;min-width:0}.hist-kind{display:inline-block;margin-right:6px;padding:0 6px;border-radius:9px;font-size:10px;font-weight:800;background:var(--tech-bg);color:var(--tech);vertical-align:1px}.hist-ref{display:inline-block;margin-right:4px;padding:0 5px;border-radius:9px;font-size:9.5px;font-weight:800;background:#eef2f6;color:var(--muted);vertical-align:1px}.hist-more{margin:8px 0 0;padding:6px 11px;font-size:12px}
 

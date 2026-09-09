@@ -1,5 +1,46 @@
 # Codex → Claude Code 인수인계
 
+> **2026-09-09 — U1(`vercel env pull`) 원인 발견, 사용자 요청으로 중단. 아직 안 끝났다.**
+>
+> ## 무엇을 확인했나
+>
+> `npx vercel env pull .env.local`(인자 없음 → 기본 `development` 환경)을 실행하면 CLI가
+> `OPENAI_API_KEY`·`SUPABASE_URL`·`SUPABASE_SERVICE_ROLE_KEY`·`DEEPSEEK_API_KEY` 등을
+> **"Kept ... (defined locally, not found in the development Environment)"**로 보고한다. 즉 이
+> Vercel 프로젝트의 **Development 환경에는 이 값들이 아예 설정돼 있지 않고**, 로컬에 있던 기존
+> 플레이스홀더가 그대로 유지된다. 실제로 갱신된 건 `VERCEL_OIDC_TOKEN` 하나뿐이었다.
+>
+> `T0.1`(`scripts/probe-digest.mjs wanrun-new-energy semiannual https://static.cninfo.com.cn/finalpage/2026-08-29/1225524978.PDF`)을
+> 재실행해 재확인했다. 결과는 09-08과 동일한 실패다.
+> - `Error: OPENAI_401: Incorrect API key provided`
+> - `[PIPELINE_LOG_FAILED] Failed to parse URL from [SENSITIVE]/rest/v1/pipeline_log`
+>   (`SUPABASE_URL`이 유효한 URL이 아니라는 뜻 — 여전히 플레이스홀더)
+>
+> **결론: U1은 아직 안 끝났다.** `vercel env pull` 자체는 성공(exit 0)했지만 원하는 값을 못
+> 받아왔으므로 "실행함"과 "완료됨"을 구분해야 한다.
+>
+> ## 다음에 시도하려던 것 (사용자가 실행 직전 멈춰 달라고 해서 중단)
+>
+> `npx vercel env pull .env.local --environment=production`으로 **Production 환경 변수**를 받으려
+> 했으나 실행하지 않았다. 이 명령은 운영 시크릿을 로컬 파일로 내려받는 것이라 사용자 승인이 먼저
+> 필요하다고 판단해 중단한 상태다.
+>
+> - `.env.local`은 `.gitignore`에 걸려 있음을 확인했다(`grep '^\.env' .gitignore` → 매치, `git status
+>   --short`에도 안 잡힘). 지금 상태로도 커밋 위험은 없다.
+> - Bash 도구가 API 키 등 민감값을 자동으로 `[SENSITIVE]`로 마스킹해서 파일 내용을 육안으로 대조
+>   검증할 수 없었다(길이 11자 `[SENSITIVE]` 문자열만 보임). 값 자체의 정오는 스크립트 실행 성공/
+>   실패로만 판단 가능하다.
+>
+> ## 다음 사람이 할 일
+>
+> 1. 사용자에게 **`vercel env pull ... --environment=production`을 실행해도 되는지** 확인한다.
+>    동시에 Vercel 대시보드(Settings → Environment Variables)에서 이 변수들이 애초에 Development
+>    체크박스 없이 Production 전용으로만 등록돼 있는지도 확인하면 원인이 명확해진다.
+> 2. 승인되면 재실행 후 **`T0.1`을 다시 돌려** `OPENAI_401`/`SUPABASE_URL` 오류가 사라지는지로
+>    성공 여부를 판정한다(파일 내용 육안 확인이 안 되므로 이게 유일한 검증 방법이다).
+> 3. U1이 실제로 끝나야 `T0.1`의 `verdict`가 나오고 T1 범위가 정해진다. 그 전까지 진단 전체가 막혀
+>    있다 — U2도 같은 이유로 막혀 있을 가능성이 높다(같은 Supabase 접근이 필요).
+
 > **2026-09-08 밤 — 기업 궤적 그래프의 지표 선택 UI 개편. 배포·실화면 확인 완료.**
 >
 > 사용자 요청으로 궤적 그래프의 지표 선택을 **그래프 좌우 메뉴**로 바꿨다. 왼쪽은 재무를
