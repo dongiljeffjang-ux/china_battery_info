@@ -6,7 +6,7 @@ const SANKEY_COMPANY_LIMIT = 12;
 const CHAIN_COLORS = { cell: '#10365f', cathode: '#5b3d94', anode: '#7d5010' };
 const CHAIN_BG = { cell: '#cfe0f2', cathode: '#e2d9f3', anode: '#f7e3c4' };
 const marketLayerLabels = {
-  'supply-performance': '수급·실적',
+  'supply-performance': '수급·사업성과',
   'investment-production': '투자·생산기반',
   'customer-commercialization': '고객·상업화',
   'regional-overseas': '지역·해외전략'

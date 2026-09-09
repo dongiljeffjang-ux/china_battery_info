@@ -6,6 +6,7 @@ import { groupSummary } from "../lib/company-groups.js";
 import { answerFromKnowledge } from "../lib/knowledge-search.js";
 import { buildCompareReport, applyVerifiedFacts, buildReportSynthesis } from "../lib/compare-report.js";
 import { buildTimelineReport } from "../lib/timeline-report.js";
+import { filterTimelineEvents } from "../lib/timeline-visibility.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증), 함의 종합은 긴 입력 한 번을 부른다. `api/*.js` Node 함수는
 // `export const config = { maxDuration }` 형식만 읽으므로(예전 `export const maxDuration`은 무시됐다)
@@ -363,7 +364,7 @@ async function handleRequest(request, response) {
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
     const lastRun = financialRuns?.[0] || null;
-    return response.status(200).json({ status: "ok", company, events, metrics, financials, fx,
+    return response.status(200).json({ status: "ok", company, events: filterTimelineEvents(events), metrics, financials, fx,
       financials_status: lastRun ? { status: lastRun.status, at: lastRun.created_at, failed: lastRun.payload?.failed || [] } : null });
   } catch (error) {
     console.error("[COMPANY_QUERY_FAILED]", JSON.stringify({ companyId, message: error.message }));
