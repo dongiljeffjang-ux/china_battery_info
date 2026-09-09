@@ -1715,7 +1715,7 @@ function renderLayerMatrix(timeline){
   target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><colgroup><col class="matrix-layer-col"><col class="matrix-layer-col"><col class="matrix-time-col"><col class="matrix-layer-col"><col class="matrix-layer-col"></colgroup><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 자세한 사실과 원래 레이어는 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
 
-// 벡터 지식에 질문한다. 근거가 없으면 답을 만들지 않고 무엇을 확인할지 안내받는다.
+// 벡터 지식에서 근거를 찾는다. 생성형 답변은 만들지 않고 저장된 근거를 그대로 보여준다.
 async function askKnowledge(event){
   event.preventDefault();
   const input = document.querySelector('#ask-input');
@@ -1738,7 +1738,7 @@ async function askKnowledge(event){
     if (!result.ok) throw new Error([payload.status, payload.message].filter(Boolean).join(' · ') || `HTTP ${result.status}`);
     target.innerHTML = renderAskResult(payload, scoped);
   } catch (error) {
-    target.innerHTML = `<p class="ask-empty">${escapeHtml(`답변을 가져오지 못했습니다: ${error.message}`)}</p>`;
+    target.innerHTML = `<p class="ask-empty">${escapeHtml(`근거를 가져오지 못했습니다: ${error.message}`)}</p>`;
   } finally {
     button.disabled = false; button.textContent = '찾기';
   }
@@ -1755,15 +1755,7 @@ function renderAskResult(payload, scoped){
     : r.vector_available === false ? ` 의미 검색(임베딩)이 응답하지 않아 단어 검색 ${r.lexical_matched}건만 씁니다. 뜻이 비슷한 표현은 이번 결과에서 빠져 있습니다.`
     : ` 의미 검색 ${r.vector_matched}건 + 단어 검색 ${r.lexical_matched}건을 합쳐 후보 ${r.candidates}건, 그중 ${r.overlapped}건은 양쪽에 모두 걸렸습니다.`;
   const scopeNote = (scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`) + gradeNote + hybridNote;
-  if (payload.sufficient && payload.answer_ko) {
-    parts.push(`<p class="ask-answer">${escapeHtml(payload.answer_ko)}</p>`);
-  }
-  if (payload.conflicts_ko) {
-    parts.push(`<div class="ask-block"><p class="ask-label conflict">상충하는 근거</p><p class="ask-answer">${escapeHtml(payload.conflicts_ko)}</p></div>`);
-  }
-  if (payload.guidance_ko) {
-    parts.push(`<div class="ask-block"><p class="ask-label guide">${payload.sufficient ? '더 확인할 것' : '근거가 부족합니다 · 확인할 것'}</p><p class="ask-answer">${escapeHtml(payload.guidance_ko)}</p></div>`);
-  }
+  if (!payload.matched) parts.push('<p class="ask-empty">관련 근거를 찾지 못했습니다. 회사명·기간·핵심 용어를 좁혀 다시 검색해 보세요.</p>');
   if (payload.completeness_warning) {
     parts.push(`<div class="ask-block"><p class="ask-label conflict">PDF 완전성 경고</p><p class="ask-answer">${escapeHtml(payload.completeness_warning)}</p></div>`);
   }

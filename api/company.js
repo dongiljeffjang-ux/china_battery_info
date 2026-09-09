@@ -63,7 +63,7 @@ const FINANCIAL_SELECT = "period,metric,value,unit,currency,item_zh,raw_amount,y
 // 기간별 평균 환율. 화면의 USD 전환에만 쓰는 표시용 계수라 회사와 무관하게 전체를 보낸다.
 const FX_SELECT = "period,base,quote,rate_avg,sample_days,window_start,window_end,source";
 
-// 근거 인용 질의응답. 새 함수 파일을 만들지 않으려고 기업 API에 붙였다.
+// 벡터 근거 검색. 새 함수 파일을 만들지 않으려고 기업 API에 붙였다.
 async function runAsk(request, response) {
   const question = String(request.body?.question || request.query?.question || "").trim();
   if (question.length < 2) return response.status(400).json({ status: "invalid_request", message: "질문을 입력해 주세요." });

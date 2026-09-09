@@ -195,13 +195,14 @@ await assert.rejects(
   "두 검색기가 모두 실패하면 조용히 빈 결과를 내지 말고 실패를 알려야 한다",
 );
 
-// --- 4) 상한 -----------------------------------------------------------------
+// --- 4) 검색 전용 계약 --------------------------------------------------------
 
-// 프롬프트에 넣는 근거 수는 ANSWER_SCHEMA의 used_sources 상한과 같아야 한다.
-// 여기가 어긋나면 모델이 존재하지 않는 번호를 인용하거나 스키마 검증에서 막힌다.
+// 이 화면은 근거를 LLM 프롬프트에 넣어 종합하지 않는다. Luna 설정 오류가 검색 결과를
+// 막지 않도록, 검색 모듈에 생성 호출이 다시 들어오지 않게 고정한다.
 const source = await import("node:fs").then((fs) => fs.readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8"));
 const matchCount = Number(source.match(/const MATCH_COUNT = (\d+)/)?.[1]);
-const schemaMax = Number(source.match(/used_sources: \{ type: "array", maxItems: (\d+)/)?.[1]);
-assert.equal(matchCount, schemaMax, "프롬프트에 넣는 근거 수와 used_sources 상한이 같아야 한다");
+assert.equal(matchCount, 10, "화면에 돌려줄 근거 수 상한은 10건이다");
+assert.ok(!source.includes("createJsonResponse"), "근거 검색에서 텍스트 생성 모델을 호출하면 안 된다");
+assert.ok(!source.includes("knowledge_answer"), "근거를 생성형 답변 프롬프트로 넘기면 안 된다");
 
 console.log("hybrid search checks passed");
