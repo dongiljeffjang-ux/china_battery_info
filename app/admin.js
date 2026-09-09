@@ -591,9 +591,18 @@
   $('#es-load').addEventListener('click', () => runEval(loadEvalSummary));
   $('#eb-save').addEventListener('click', () => runEval(async () => {
     const ids = $('#eb-chunks').value.split(',').map(value => value.trim()).filter(Boolean);
+    const question = $('#eb-question').value.trim();
+    const reference = $('#eb-reference').value.trim();
+    // 서버는 제목·질문·기준 답변이 모두 있어야 저장하고, 하나라도 비면 invalid_benchmark_case를
+    // 돌려준다. 무엇이 비었는지 화면에서 먼저 알려준다.
+    if (!question || !reference) { $('#eb-meta').textContent = !question ? '질문을 입력하세요.' : '기준 답변을 입력하세요.'; return; }
+    // 제목은 목록에서 문항을 알아보는 이름일 뿐이라, 비면 질문으로 채운다.
+    const title = $('#eb-title').value.trim() || question.slice(0, 160);
+    if (!ids.length) $('#eb-meta').textContent = '정답 청크가 없습니다. 저장은 되지만 Hit@10·MRR은 0으로 나옵니다.';
     // api()는 GET 전용이라 method·body를 무시한다. 쓰기는 반드시 postApi()로 보낸다 —
     // 예전에는 api()에 method를 넘겨 GET으로 나갔고 서버가 unknown_view로 되돌렸다.
-    await postApi('benchmark-case-save', { title: $('#eb-title').value, question: $('#eb-question').value, reference_answer: $('#eb-reference').value, reference_chunk_ids: ids, company_id: $('#eb-company').value || null, include_unverified: $('#eb-unverified').checked });
+    await postApi('benchmark-case-save', { title, question, reference_answer: reference, reference_chunk_ids: ids, company_id: $('#eb-company').value || null, include_unverified: $('#eb-unverified').checked });
+    if (ids.length) $('#eb-meta').textContent = `저장했습니다 · 정답 청크 ${ids.length}건`;
     $('#eb-title').value = ''; $('#eb-question').value = ''; $('#eb-reference').value = ''; $('#eb-chunks').value = ''; await loadEvalBenchmark();
   }));
   // 실패해도 "실행 중…"이 남으면 사용자가 계속 기다린다. 어떤 경로로 끝나든 문구를 바꾼다.
