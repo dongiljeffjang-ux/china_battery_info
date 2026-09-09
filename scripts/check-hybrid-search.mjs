@@ -11,7 +11,7 @@ process.env.OPENAI_API_KEY = "test-key";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test";
 
-const { buildLexicalQuery, expandDomainQuestion, fuseByRrf, questionCompanyTerms, searchKnowledge } = await import("../lib/knowledge-search.js");
+const { buildLexicalQuery, demoteUnrelatedCompanies, expandDomainQuestion, fuseByRrf, questionCompanyTerms, searchKnowledge } = await import("../lib/knowledge-search.js");
 
 // --- 1) 질의 조립 -----------------------------------------------------------
 
@@ -80,6 +80,45 @@ assert.ok(phrased.includes("OR 万润新能"), "한자만 있는 표기는 그�
 const injectedRequired = buildLexicalQuery("매출", { requiredTerms: ['A" OR B) (', "정상표기"] });
 assert.equal((injectedRequired.match(/\(/g) || []).length, 2, `괄호는 필수·선택 그룹 두 개뿐이어야 한다: ${injectedRequired}`);
 
+// --- 1.6) 융합 뒤 후처리: 질문이 짚은 회사 이야기가 아닌 근거를 뒤로 민다 ------------------
+//
+// 회사 조건은 단어 검색에만 걸 수 있고 의미 검색은 회사를 자주 틀린다(기준선: 의미 검색만 건진
+// 못 씀 5건 중 4건이 다른 회사). 그래서 두 검색기를 합친 뒤 한 번 더 본다.
+const farasisTerms = questionCompanyTerms("파라시스 2026년 상반기 신규 고객");
+const demoted = demoteUnrelatedCompanies([
+  { id: "byd", company_id: "byd", content_ko: "비야디 블레이드 배터리 증설" },
+  { id: "f", company_id: "farasis", content_ko: "Farasis Energy 상반기 고객 확보" },
+  { id: "supplier", company_id: "reshine", content_ko: "孚能科技에 양극재 공급 계약" },
+  { id: "shanshan", company_id: "shanshan", content_ko: "샨샨 음극재 출하" },
+], farasisTerms).map((row) => row.id);
+assert.deepEqual(demoted, ["f", "supplier", "byd", "shanshan"], `회사 언급 근거가 앞, 나머지는 뒤: ${demoted}`);
+// 지우지 않는다. 회사 이름이 본문에 없어도 맞는 근거일 수 있어 상한을 못 채우면 따라 들어온다.
+assert.equal(demoted.length, 4, "후처리는 순서만 바꾸고 버리지 않는다");
+// 공급사 기사는 상대 회사(reshine)로 귀속돼 있어도 본문에 회사 이름이 있으면 통과한다.
+// company_id로 걸렀다면 이 근거가 뒤로 밀렸을 것이다 — "CATL에 납품하는 업체" 류 질문이 죽는다.
+assert.equal(demoted[1], "supplier", "메타데이터가 아니라 본문 표기로 판단해야 한다");
+// 회사를 짚지 않은 질문은 손대지 않는다(기준선에서 이 유형은 1.00이었다).
+const untouched = [{ id: "x", company_id: "byd", content_ko: "전고체" }, { id: "y", company_id: "calb", content_ko: "양산" }];
+assert.deepEqual(demoteUnrelatedCompanies(untouched, []), untouched, "회사 조건이 없으면 순서를 바꾸지 않는다");
+
+// --- 1.7) 융합 상수는 기준선 실측에 맞춘 값이어야 한다 -------------------------------------
+const searchSource = (await import("node:fs")).readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8");
+assert.match(searchSource, /const RRF_K = 10;/, "k는 후보 규모(검색기당 10~20건)에 맞춘 10이어야 한다. 60이면 1~20위 점수 차가 1.3배뿐이다");
+assert.match(searchSource, /const VECTOR_WEIGHT = 0\.7;/, "의미 검색 비중 0.7 (기준선: 의미 0.46 vs 단어 0.17)");
+assert.match(searchSource, /const LEXICAL_WEIGHT = 0\.3;/, "단어 검색은 확인용으로 남긴다. 0이면 겹침 보너스가 사라진다");
+// k=10·0.7/0.3에서 실제로 달라지는 성질. 양쪽 상위 겹침이 여전히 1등인 것은 맞다(기준선에서 겹침이
+// 0.50으로 최고). 달라지는 건 (1) 의미 1위 단독(0.7/11)이 단어 1위 단독(0.3/11)을 이기고 — 0.5/0.5에서는
+// 동점이었다 — (2) 의미 1위 단독이 8위쯤의 어중간한 겹침(1.0/18)을 이긴다 — k=60에서는 겹치기만 하면
+// 순위와 무관하게 단독 1위를 눌렀다.
+const eight = Array.from({ length: 7 }, (_, i) => ({ id: `pad${i}` }));
+const rankMatters = fuseByRrf([
+  { rows: [{ id: "vec1" }, ...eight, { id: "both8" }], weight: 0.7, label: "vector" },
+  { rows: [{ id: "lex1" }, ...eight.map((r) => ({ id: `${r.id}b` })), { id: "both8" }], weight: 0.3, label: "lexical" },
+], { k: 10 });
+const order = rankMatters.map((row) => row.id);
+assert.ok(order.indexOf("vec1") < order.indexOf("lex1"), `의미 1위 단독이 단어 1위 단독보다 앞이어야 한다: ${order}`);
+assert.ok(order.indexOf("vec1") < order.indexOf("both8"), `의미 1위 단독이 8위 겹침보다 앞이어야 한다: ${order}`);
+
 const industryQueries = [
   ["전고체 양산", ["固态电池", "mass production", "量产"]],
   ["LFP 양극재 증설", ["磷酸铁锂", "cathode material", "扩产"]],
@@ -114,14 +153,16 @@ assert.deepEqual(fused[0].ranks, { vector: 2, lexical: 3 });
 assert.deepEqual([fused[1].id, fused[2].id].sort(), ["A", "D"], "두 1위가 나란히 뒤따라야 한다");
 
 // 가중치를 한쪽으로 몰면 그쪽 1위가 반대쪽 1위를 앞선다.
-// 단, 겹침 보너스는 가중치보다 세다. 아래에서 B는 어느 쪽 1위도 아니고 단어 검색 가중치가
-// 9배인데도 여전히 최상위다. 양쪽에 다 걸렸다는 사실이 가중치 기울이기로 뒤집히지 않는다는 뜻이고,
-// 이것이 RRF를 쓰는 이유다. 가중치는 겹치지 않은 것들 사이의 순서만 흔든다.
+// 겹침 보너스는 운영 가중치(0.7/0.3)에서는 여전히 가중치보다 세다. 아래에서 B는 어느 쪽 1위도
+// 아닌데 최상위다. 양쪽에 다 걸렸다는 사실이 이 정도 기울이기로는 뒤집히지 않는다는 뜻이다.
+// 단, 예전(k=60)에는 0.1/0.9처럼 극단으로 기울여도 B가 이겼다. k=10(2026-09-09)부터는 9배 가중치의
+// 1위가 2·3위 겹침을 앞선다 — 그것이 k를 줄인 목적이다(순위가 신호를 싣게). 그래서 이 검사는 극단값이
+// 아니라 운영 가중치로 겹침 우위를 확인한다.
 const lexHeavy = fuseByRrf([
-  { rows: [row("A"), row("B"), row("C")], weight: 0.1, label: "vector" },
-  { rows: [row("D"), row("E"), row("B")], weight: 0.9, label: "lexical" },
+  { rows: [row("A"), row("B"), row("C")], weight: 0.3, label: "vector" },
+  { rows: [row("D"), row("E"), row("B")], weight: 0.7, label: "lexical" },
 ]);
-assert.equal(lexHeavy[0].id, "B", "겹친 청크는 가중치를 기울여도 최상위를 지킨다");
+assert.equal(lexHeavy[0].id, "B", "운영 가중치(0.7/0.3)에서는 2·3위 겹침이 어느 쪽 1위보다 앞이다");
 assert.ok(
   lexHeavy.findIndex((item) => item.id === "D") < lexHeavy.findIndex((item) => item.id === "A"),
   "가중치를 몰면 그쪽 1위가 반대쪽 1위를 앞선다",
