@@ -60,9 +60,17 @@ const marketRow = {
   company_id: "catl", period: "2025", metric: "revenue_total", value: "4237.01834", unit: "CNY_100M",
   currency: "CNY", item_zh: "营业总收入", yoy_pct: 17.04, report_date: "2025-12-31", source: "eastmoney:income_statement",
 };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const fromReport = m.chunkFromReportMetric(reportRow);
 assert.equal(fromReport.source_type, "metric_row");
 assert.equal(fromReport.metric_grade, "excerpt");
+// id는 실제 knowledge_chunk 행이 아니므로 UUID 형식이기만 하면 된다(rag_evaluation.chunk_id가
+// 이 값을 받는다 — 2026-09-09, "저장 실패: invalid_chunk_id" 재현 후 판정 대상 포함으로 수정).
+// 같은 칸을 두 번 만들면 항상 같은 id여야 재평가가 새 행을 쌓지 않고 덮어쓴다.
+assert.match(fromReport.id, UUID, "정량 행 id는 UUID 형식이어야 한다");
+assert.equal(fromReport.id, m.chunkFromReportMetric(reportRow).id, "같은 칸은 항상 같은 id");
+assert.notEqual(fromReport.id, m.chunkFromReportMetric({ ...reportRow, period: "2024" }).id, "다른 칸은 다른 id");
 assert.match(fromReport.content_ko, /닝더스다이\(CATL\) 2023년 매출 4,009\.2억 위안, 전년 대비 \+22\.01%/, "값·단위·증감률이 한국어로 읽혀야 한다");
 assert.match(fromReport.content_ko, /보고서 발췌/);
 assert.equal(fromReport.original_excerpt, reportRow.excerpt, "원문 발췌를 그대로 싣는다");
@@ -70,6 +78,8 @@ assert.equal(fromReport.source_url, reportRow.source_url);
 
 const fromMarket = m.chunkFromMarketFinancial(marketRow);
 assert.equal(fromMarket.metric_grade, "provider");
+assert.match(fromMarket.id, UUID, "제공자 값도 UUID 형식이어야 한다");
+assert.notEqual(fromMarket.id, fromReport.id, "같은 칸이어도 report/market 출처가 다르면 id가 다르다");
 assert.match(fromMarket.content_ko, /원문 발췌 없음/, "발췌 없는 행은 본문에 등급을 밝힌다");
 assert.match(fromMarket.source_name, /원문 발췌 없음/, "출처명에도 밝힌다");
 assert.match(fromMarket.content_ko, /4,237억 위안, 전년 대비 \+17\.04%/, "100 이상은 소수 첫째 자리까지, 끝의 .0은 뗀다");
@@ -79,7 +89,7 @@ assert.equal(fromMarket.source_url, null);
 // (4) 같은 칸은 report_metric이 이긴다. 다른 칸은 둘 다 남고 최신순이다.
 const merged = m.mergeMetricRows([reportRow], [marketRow, { ...marketRow, period: "2023", value: "4009.17045" }]);
 assert.equal(merged.length, 2, "같은 칸(2023 매출)은 하나만 남는다");
-assert.equal(merged[0].id, "metric:market:catl:2025:revenue_total", "최신 기간이 앞");
+assert.equal(merged[0].id, fromMarket.id, "최신 기간(2025, market)이 앞");
 assert.equal(merged[1].metric_grade, "excerpt", "겹친 칸은 발췌 있는 쪽이 남는다");
 assert.equal(m.mergeMetricRows([reportRow, reportRow], [], { limit: 1 }).length, 1, "상한을 지킨다");
 

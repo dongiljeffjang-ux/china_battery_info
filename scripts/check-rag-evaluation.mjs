@@ -167,4 +167,21 @@ assert.ok(adminSource.includes('if (request.method !== "GET") return response.st
 assert.ok(adminSource.includes("rag_evaluation?id=eq."), "삭제는 평가 행 하나만 지운다");
 assert.ok(!/knowledge_chunk\?[^`\n]*`, \{ method: "DELETE"/.test(adminSource), "청크를 지우는 경로가 생기면 안 된다");
 
+// --- 7) 스키마 미적용 판정은 실제 PostgREST 신호만 본다 -------------------------
+//
+// 2026-09-09: 이 판정이 message.includes("rag_evaluation")로 넓게 잡던 시절, 존재하는
+// chunk_id(REPT BATTERO article_chunk)에 대한 판정 저장이 다른 제약 위반으로 실패했는데도
+// "supabase/rag-evaluation.sql을 아직 실행하지 않았습니다"로 잘못 안내됐다. 이 테이블의 제약
+// 이름이 전부 "rag_evaluation_..."로 시작해 FK·체크·유니크 위반 메시지가 전부 그 substring을
+// 포함하기 때문이다. 실제 원인이 화면에 안 뜨면 사람이 잘못된 곳(SQL 미실행)을 고치려 든다.
+// 주석에는 예전 코드를 그대로 인용해 두었으니, 실행문(return 줄)만 뽑아서 검사한다.
+const isSchemaMissingReturn = adminSource.match(/function isSchemaMissing\(error\) \{[\s\S]*?\n\s*return ([^\n]+);\n\}/)?.[1] || "";
+assert.ok(isSchemaMissingReturn, "isSchemaMissing 함수의 return 문을 찾아야 한다");
+assert.ok(!isSchemaMissingReturn.includes('"rag_evaluation"'),
+  "테이블 이름 전체를 부분 문자열로 보면 이 테이블의 모든 제약 위반이 '스키마 없음'으로 오판된다");
+assert.ok(!isSchemaMissingReturn.includes("404"),
+  "무관한 404도 '스키마 없음'으로 잡으면 안 된다 — PGRST205만 그 신호다");
+assert.ok(isSchemaMissingReturn.includes('"PGRST205"'),
+  "PostgREST가 실제로 테이블을 못 찾을 때 내는 코드만 봐야 한다");
+
 console.log("ok  rag-evaluation");

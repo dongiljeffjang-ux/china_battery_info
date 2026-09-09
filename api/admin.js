@@ -278,7 +278,15 @@ const EVAL_SELECT = "id,subject_type,chunk_id,chunk_source_type,company_id,quest
 // 이 화면은 새 테이블에 의존하므로, 적용 전에 여는 것이 정상적인 경로다.
 function isSchemaMissing(error) {
   const message = String(error?.message || "");
-  return error?.status === 404 || message.includes("PGRST205") || message.includes("rag_evaluation");
+  // PostgREST가 스키마 캐시에서 테이블을 못 찾을 때만 낸다(PGRST205, "Could not find the table
+  // ... in the schema cache"). 예전에는 message.includes("rag_evaluation")로 넓게 잡았는데,
+  // 이 테이블의 제약 이름이 전부 "rag_evaluation_..."로 시작해 FK·체크·유니크 위반 에러 메시지도
+  // 이 substring을 그대로 포함한다. 그래서 chunk_id가 knowledge_chunk에 없어서 나는 외래키 위반
+  // 같은 실제 원인이 전부 "SQL을 아직 실행하지 않았습니다"로 가려졌다(2026-09-09, REPT BATTERO
+  // 근거 판정 저장 실패로 발견 — 그 chunk_id는 실재했고 원인은 다른 제약 위반이었다). error?.status
+  // === 404 단독 체크도 뺐다 — PostgREST는 존재하지 않는 행 필터에도 빈 배열과 200을 주지만, 다른
+  // 404 사유(오탈자 경로 등)까지 "스키마 없음"으로 넓게 잡을 이유가 없다.
+  return message.includes("PGRST205") || message.includes("schema cache");
 }
 
 async function allEvaluations(subjectType = null) {
