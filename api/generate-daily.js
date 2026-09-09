@@ -94,6 +94,7 @@ async function selectTop10(candidates, preferenceExamples = []) {
     title_ko: article.title_ko, summary_ko: article.summary_ko
   }));
   const { data } = await createJsonResponse({
+    provider: "openai_report",
     name: "daily_top10", schema,
     instructions: `${DAILY_REPORT_PROMPT} ${DAILY_REPORT_STRUCTURE_INSTRUCTION}`,
     input: JSON.stringify({ candidates: evidence, preference_examples: preferenceExamples }),

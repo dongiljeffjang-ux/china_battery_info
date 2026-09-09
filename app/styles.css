@@ -411,3 +411,5 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .timeline-report-markdown h3{margin:16px 0 6px}
 .timeline-report-markdown h4{margin:14px 0 6px;font-size:14px}
 .timeline-report-markdown a{color:var(--blue)}
+/* 뉴스 사실 본문도 제목과 같은 카드 본문 폭을 쓴다. */
+.news-fact{max-width:none}
