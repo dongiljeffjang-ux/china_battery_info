@@ -182,7 +182,10 @@ async function runCompareReport(request, response) {
   const includeSupporting = request.body?.includeSupporting === true;
   if (!eventsA.length && !eventsB.length) return response.status(400).json({ status: "no_evidence", message: "비교 화면에 근거로 쓸 이벤트가 없습니다." });
   try {
-    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB, pairContext: pairContextValue });
+    // 두 회사의 정량 시계열도 같은 기간·단위 기준으로 넣어, 사건 나열만으로 비교하지 않는다.
+    // 숫자 조회가 한쪽에서 실패해도 해당 회사의 이벤트 근거로 리포트는 계속 만든다.
+    const [metricsA, metricsB] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id)]);
+    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB, metricsA, metricsB, pairContext: pairContextValue });
     // 웹 검증이 확인한 것은 리포트에만 두지 않고 DB에 되돌린다. 실패해도 리포트는 그대로 낸다.
     let dbUpdates = null;
     try {
