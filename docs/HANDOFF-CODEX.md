@@ -16,6 +16,22 @@
 >
 > ## 운영 배포
 >
+> ### 같은 세션의 누락 커밋과 운영 상태
+>
+> - `ed20309` — 관리자 RAG 평가 **평가 세트** 화면과 `supabase/rag-eval-benchmark.sql` 추가.
+>   `rag_eval_case`, `rag_eval_run`, `rag_eval_result` 3개 테이블을 만들며, 운영 Supabase 프로젝트
+>   `dtgtzkfapuwddtinixdk`에 migration name `rag_eval_benchmark`로 **적용 완료**했다. 세 테이블은 RLS를
+>   켰고 anon/authenticated 접근을 회수했으며 service_role만 API에서 사용한다. 따라서 관리자 `benchmark-cases`
+>   및 `benchmark-case-save`가 스키마 미적용으로 500이 되는 상태는 아니다.
+> - `c2905de` — 관리자 평가 세트의 **무료 검색 평가 실행**(`POST view=benchmark-run`) 추가.
+>   활성 케이스를 검색해 Hit@10·MRR·Recall@10과 검색 결과를 `rag_eval_run/result`에 저장한다. LLM 호출은 없다.
+> - `fb3d740` — 근거 검색 relevance 개선과 운영 키를 사용하는 `api/ingest-rss.js?article_chunks=1|write` 추가.
+>   `write`는 기사별 새 청크·임베딩을 먼저 성공시킨 뒤 옛 청크를 지우는 안전한 재구성 경로다. **엔드포인트는
+>   우회됐지만 기존 227건에 실제 write를 실행했다는 뜻은 아니다.** 실행 전 dry-run과 범위를 확인한다.
+> - `11b4c78` — 시계열 리포트 생성 시 LLM에 전달하는 이벤트 상한과 timeout 예산 조정.
+> - `5836fd6` — 비교 리포트에도 두 기업의 `report_metric`/`market_financial` 정량 표를 주입.
+> - `0dff981` — 시계열 리포트 OpenAI timeout에 한해 1회 재시도.
+>
 > - `f2922eb` — 기간 범위 + 검색 재작성 fallback 1차 배포
 > - `f0e0f82` — 재작성 회사 범위 이탈 차단(최신)
 > - 최신 Production 배포는 Vercel `Ready`, alias `https://china-battery-lens.vercel.app`에 연결됨.
@@ -35,7 +51,9 @@
 >    근거에 BTR·CALB가 섞이지 않아야 한다.
 > 3. 기간 없는 `BYD 매출`은 최신순 상한 동작이므로 범위 질문과 혼동하지 않는다.
 > 4. 재작성 fallback을 실제로 검증할 때는 정답이 1차 상위 검색에 없는 질문을 사용하고, 운영 로그/비용을 확인한다.
->    재작성은 최대 3개 질의 + 최종 답변 호출로 비용과 지연이 늘어난다.
+>    `sufficient=false` 한 건은 1차 답변 LLM 1회 뒤 재작성 LLM 1회, 재작성 검색 최대 3회(각각 임베딩·단어 검색),
+>    최종 답변 LLM 1회가 추가된다. 즉 fallback 추가분만 **LLM 2회 + 검색 3회**이며, 근거가 얇은 회사에서 상시 발동하면
+>    지연·비용이 눈에 띄게 늘 수 있다.
 >
 > ## 주의
 >
@@ -67,7 +85,7 @@
 >
 > ## 다음 사람이 바로 할 일
 >
-> ### 1. 기존 기사 청크 재구성 — **가장 중요하고, 막혀 있다**
+> ### 1. 기존 기사 청크 재구성 — 엔드포인트 우회 완료, 실제 실행은 미완료
 >
 > `7e5f155`가 저장 규칙을 고쳤지만 기존 227건은 그대로다. 재구성 스크립트가 있다.
 >
@@ -76,7 +94,9 @@
 > node --env-file=.env.local scripts/restructure-article-chunks.mjs --apply
 > ```
 >
-> - **막힌 이유**: 재임베딩에 실제 `OPENAI_API_KEY`가 필요한데 로컬은 플레이스홀더다(U1과 같은 막힘).
+> - `fb3d740`의 `?article_chunks=write`가 Vercel 운영 키로 재임베딩하므로 **로컬 키 플레이스홀더 때문에 막히던
+>   문제는 해결됐다.** 다만 운영 데이터에 실제 write를 실행했다는 기록은 아직 없으므로, 먼저 읽기 전용 preview와
+>   소량 limit으로 검증한다.
 > - **추가 확인 필요**: 사용자가 "로컬에 키를 넣었더니 유출됐다고 한 적 있다"고 했다. 저장소 기록에
 >   유출 사고는 **없고**, `[SENSITIVE]`는 Bash 도구와 `vercel env pull`이 값을 **가리는** 표시다.
 >   이전 세션이 그걸 유출로 오판했을 가능성이 있으나 확인되지 않았다. **키 재발급 여부를 사용자와
