@@ -1688,9 +1688,13 @@ function renderLayerMatrix(timeline){
     return matched.map(event => {
       const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
       const unclassified = event.layer === UNCLASSIFIED_LAYER ? '<span class="matrix-entity">미분류</span>' : '';
+      // 생산기지·증설은 제목만으로는 어느 지역·어느 단계인지 알 수 없다. 같은 사실의
+      // 앞부분을 바로 보이고, 전체 근거는 기존 툴팁에서 확인한다.
+      const detail = event.layer === 'investment-production' && event.fact
+        ? `<span class="matrix-detail">${escapeHtml(clipText(event.fact, 110))}</span>` : '';
       // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다.
       const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
-      return `<div class="matrix-item${supporting}" data-tip="${escapeHtml(tip)}"><span class="matrix-title">${escapeHtml(shortTitle(stripCompanySubject(event.title, timeline.companyId || currentCompany)))}</span>${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+      return `<div class="matrix-item${supporting}" data-tip="${escapeHtml(tip)}"><span class="matrix-title">${escapeHtml(shortTitle(stripCompanySubject(event.title, timeline.companyId || currentCompany)))}</span>${detail}${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
     }).join('');
   };
   const head = MATRIX_GROUPS.map(group => `<th class="matrix-head ${group.track}">${group.label}</th>`);

@@ -206,6 +206,7 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .matrix-item,.digest-line{position:relative;padding-left:11px}
 .matrix-item::before,.digest-line::before{content:"";position:absolute;left:0;top:7px;width:4px;height:4px;border-radius:50%;background:#b8c9d9}
 .matrix-item.is-supporting::before,.digest-line.is-supporting::before{background:#cbd4de}
+.matrix-detail{display:block;margin-top:3px;color:#526277;font-size:12px;line-height:1.5}
 
 /* 비교 화면 — 기업 A와 B가 같은 모양이라 어느 쪽을 고르는지 헷갈렸다.
    A는 채운 배지, B는 테두리 배지로 갈라 두고 각 묶음에 면과 좌측 선을 준다. */
