@@ -591,10 +591,27 @@
   $('#es-load').addEventListener('click', () => runEval(loadEvalSummary));
   $('#eb-save').addEventListener('click', () => runEval(async () => {
     const ids = $('#eb-chunks').value.split(',').map(value => value.trim()).filter(Boolean);
-    await api({ view: 'benchmark-case-save', method: 'POST', body: { title: $('#eb-title').value, question: $('#eb-question').value, reference_answer: $('#eb-reference').value, reference_chunk_ids: ids, company_id: $('#eb-company').value || null, include_unverified: $('#eb-unverified').checked } });
+    // api()는 GET 전용이라 method·body를 무시한다. 쓰기는 반드시 postApi()로 보낸다 —
+    // 예전에는 api()에 method를 넘겨 GET으로 나갔고 서버가 unknown_view로 되돌렸다.
+    await postApi('benchmark-case-save', { title: $('#eb-title').value, question: $('#eb-question').value, reference_answer: $('#eb-reference').value, reference_chunk_ids: ids, company_id: $('#eb-company').value || null, include_unverified: $('#eb-unverified').checked });
     $('#eb-title').value = ''; $('#eb-question').value = ''; $('#eb-reference').value = ''; $('#eb-chunks').value = ''; await loadEvalBenchmark();
   }));
-  $('#eb-run').addEventListener('click', () => runEval(async () => { $('#eb-meta').textContent = '검색 평가 실행 중…'; const result = await api({ view: 'benchmark-run', method: 'POST', body: {} }); const m = result.metrics || {}; $('#eb-meta').textContent = `완료 · Hit@10 ${Number(m.hit_rate_at_10 || 0).toFixed(2)} · MRR ${Number(m.mrr || 0).toFixed(2)} · Recall@10 ${m.recall_at_10 == null ? '—' : Number(m.recall_at_10).toFixed(2)}`; }));
+  // 실패해도 "실행 중…"이 남으면 사용자가 계속 기다린다. 어떤 경로로 끝나든 문구를 바꾼다.
+  $('#eb-run').addEventListener('click', () => runEval(async () => {
+    $('#eb-meta').textContent = '검색 평가 실행 중…';
+    try {
+      const result = await postApi('benchmark-run', {});
+      if (result.error) {
+        $('#eb-meta').textContent = result.error === 'no_benchmark_cases' ? '평가 문제가 없습니다. 먼저 문제를 저장하세요.' : `실행 실패: ${result.error}`;
+        return;
+      }
+      const m = result.metrics || {};
+      $('#eb-meta').textContent = `완료 · Hit@10 ${Number(m.hit_rate_at_10 || 0).toFixed(2)} · MRR ${Number(m.mrr || 0).toFixed(2)} · Recall@10 ${m.recall_at_10 == null ? '—' : Number(m.recall_at_10).toFixed(2)} · 평가 ${num(m.evaluated || 0)}문항${m.failed ? ` · 실패 ${num(m.failed)}문항` : ''}`;
+    } catch (error) {
+      $('#eb-meta').textContent = `실행 실패: ${error.message || error}`;
+      throw error;
+    }
+  }));
   for (const id of ['#ec-type', '#ec-company', '#ec-state', '#ec-novector']) $(id).addEventListener('change', () => runEval(() => loadEvalChunks(false)));
   $('#ec-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#ec-load').click(); });
   $('#er-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#er-load').click(); });
