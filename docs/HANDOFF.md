@@ -1,6 +1,6 @@
 # China Battery Lens 인수인계
 
-기준일: 2026-09-08
+기준일: 2026-09-09
 
 **가장 최근 변경 요약과 다음 할 일은 `docs/HANDOFF-CODEX.md`에 있다. 먼저 읽는다.**
 (그 앞 세션 분은 `docs/HANDOFF-2026-09-08-CLAUDE.md`에 남아 있다. 두 문서가 겹치면 `HANDOFF-CODEX.md`가 최신이다.)
