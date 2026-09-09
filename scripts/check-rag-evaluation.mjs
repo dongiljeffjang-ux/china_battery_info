@@ -155,11 +155,13 @@ for (const list of Object.values(ISSUE_TAGS)) {
   assert.equal(new Set(list.map((tag) => tag.id)).size, list.length, "사유 id는 목록 안에서 유일해야 한다");
 }
 
-// --- 6) API가 쓰기를 평가 두 경로로만 연다 ------------------------------------
+// --- 6) API 쓰기는 평가와 추적 대상 설정으로 제한한다 --------------------------
 
 const adminSource = readFileSync(new URL("../api/admin.js", import.meta.url), "utf8");
-assert.ok(adminSource.includes('const writers = { "eval-save": evalSave, "eval-delete": evalDelete };'),
-  "POST로 열린 경로는 평가 저장·취소 두 가지뿐이어야 한다");
+assert.ok(adminSource.includes('const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave };'),
+  "POST로 열린 경로는 평가 저장·취소와 추적 대상 설정뿐이어야 한다");
+assert.ok(adminSource.includes('COMPANIES.some((company) => company.id === companyId)'),
+  "추적 대상 설정은 검증된 마스터 회사만 받아야 한다");
 assert.ok(adminSource.includes('if (request.method !== "GET") return response.status(405)'),
   "POST 외의 메서드는 계속 막아야 한다");
 assert.ok(adminSource.includes("rag_evaluation?id=eq."), "삭제는 평가 행 하나만 지운다");

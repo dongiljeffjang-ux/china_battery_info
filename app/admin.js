@@ -536,7 +536,12 @@
       for (const id of ['#art-company', '#ev-company', '#ch-company', '#se-company', '#audit-company', '#ec-company', '#er-company']) $(id).innerHTML = options;
     } catch {}
   }
-  const loaders = { overview: loadOverview, audit: loadAudit, runs: loadRuns, articles: loadArticles, events: loadEvents, chunks: loadChunks, search: loadSearch, pipeline: loadPipeline, eval: loadEval };
+  async function loadCompanyTracking() {
+    const payload = await api({ view: 'companies' });
+    const rows = payload.companies || [];
+    $('#company-tracking-table').innerHTML = `<thead><tr><th>기업</th><th>중국어명</th><th>밸류체인</th><th>코드</th><th>상태</th><th></th></tr></thead><tbody>${rows.map((company) => `<tr><td><b>${esc(company.name_ko)}</b></td><td>${esc(company.name_zh || '—')}</td><td>${esc((company.type_tags || []).join(' · '))}</td><td>${esc(company.ticker || '비상장')}</td><td>${company.active ? '<span class="tag ok">활성</span>' : '<span class="tag">비활성</span>'}</td><td><button class="secondary-button" data-company-toggle="${esc(company.id)}" data-company-active="${company.active}">${company.active ? '비활성화' : '활성화'}</button></td></tr>`).join('')}</tbody>`;
+  }
+  const loaders = { overview: loadOverview, companies: loadCompanyTracking, audit: loadAudit, runs: loadRuns, articles: loadArticles, events: loadEvents, chunks: loadChunks, search: loadSearch, pipeline: loadPipeline, eval: loadEval };
   const loaded = new Set();
   let current = 'overview';
   async function show(panel, force = false) {
@@ -595,6 +600,15 @@
   $('#se-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#se-load').click(); });
   $('#art-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#art-load').click(); });
   document.addEventListener('click', (e) => {
+    const companyToggle = e.target.closest('[data-company-toggle]');
+    if (companyToggle) {
+      e.preventDefault();
+      const active = companyToggle.dataset.companyActive !== 'true';
+      companyToggle.disabled = true;
+      postApi('company-tracking-save', { company_id: companyToggle.dataset.companyToggle, is_active: active })
+        .then(() => loadCompanyTracking()).catch(showError).finally(() => { companyToggle.disabled = false; });
+      return;
+    }
     const link = e.target.closest('[data-article]');
     if (link) { e.preventDefault(); openArticle(link.dataset.article); return; }
     if (e.target.closest('[data-close]')) $('#drawer').hidden = true;

@@ -167,7 +167,7 @@ export async function generateDailyReport(articleIds = []) {
   const insightKo = serializeInsight(result.insight);
   await supabaseRest("daily_report?on_conflict=report_date", {
     method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
-    body: { report_date: reportDate, summary_ko: serializeSections(result.sections), insight_ko: insightKo, model_name: llmConfig()?.model || null, generated_at: new Date().toISOString(), status: "published" }
+    body: { report_date: reportDate, summary_ko: serializeSections(result.sections), insight_ko: insightKo, model_name: llmConfig("openai_report")?.model || null, generated_at: new Date().toISOString(), status: "published" }
   });
   // 한 번 만든 리포트는 벡터에 올려 두고 재생성 없이 검색·재사용한다.
   let embedded = 0;

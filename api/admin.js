@@ -12,7 +12,7 @@ import { searchKnowledge } from "../lib/knowledge-search.js";
 import { chunkArticleBody } from "../lib/vector-ingestion.js";
 import { pipelineManifest } from "../lib/pipeline-manifest.js";
 import { buildDataAudit } from "../lib/data-audit.js";
-import { COMPANIES } from "../lib/china-sources.js";
+import { COMPANIES, TRACKED_COMPANY_IDS } from "../lib/china-sources.js";
 import { digestReport } from "../lib/event-backfill.js";
 import {
   ISSUE_TAGS, VERDICTS, buildEvaluationRow, buildRetrievalSessions, questionKey, summarizeEvaluations,
@@ -23,6 +23,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ARTICLE_LIST_LIMIT = 200;
 const AUDIT_PAGE_SIZE = 500;
 const AUDIT_MAX_ROWS = 10000;
+const COMPANY_ID = /^[a-z0-9-]{1,80}$/;
 // 평가 화면이 한 번에 훑는 청크 수와 한 번에 돌려주는 수.
 // '미평가만'을 걸면 앞쪽이 전부 평가돼 있을 수 있으므로, 한 페이지를 채울 때까지 뒤로 더 훑는다.
 const EVAL_PAGE_SIZE = 40;
@@ -64,6 +65,30 @@ function nextDay(value) { const d = new Date(`${value}T00:00:00Z`); d.setUTCDate
 function enc(value) { return encodeURIComponent(String(value)); }
 function safeId(value) { return UUID.test(String(value || "")) ? String(value) : null; }
 function safeToken(value) { return /^[a-z0-9_+\-]{1,40}$/i.test(String(value || "")) ? String(value) : null; }
+
+// 정적 마스터는 별칭·공시코드까지 검증돼 있어, 여기서는 그 후보만 켜고 끈다.
+// 기록 삭제 없이 다음 수집·재무 갱신 대상만 바뀐다.
+async function companyTracking() {
+  const rows = await supabaseRest("company_tracking?select=company_id,is_active,updated_at");
+  const settings = new Map((rows || []).map((row) => [row.company_id, row]));
+  return { companies: COMPANIES.map((company) => ({
+    id: company.id, name_ko: company.name_ko, name_zh: company.name_zh, type_tags: company.type_tags,
+    ticker: company.cninfo?.codes?.[0] || company.hkex?.code || null,
+    active: settings.has(company.id) ? settings.get(company.id).is_active : TRACKED_COMPANY_IDS.has(company.id),
+    updated_at: settings.get(company.id)?.updated_at || null,
+  })) };
+}
+
+async function companyTrackingSave(body) {
+  const companyId = String(body.company_id || "");
+  if (!COMPANY_ID.test(companyId) || !COMPANIES.some((company) => company.id === companyId)) return { error: "unknown_company" };
+  if (typeof body.is_active !== "boolean") return { error: "invalid_active" };
+  await supabaseRest("company_tracking?on_conflict=company_id", {
+    method: "POST", prefer: "return=minimal,resolution=merge-duplicates",
+    body: { company_id: companyId, is_active: body.is_active, updated_at: new Date().toISOString() },
+  });
+  return { company_id: companyId, active: body.is_active };
+}
 
 async function overview() {
   const data = await supabaseRest("rpc/admin_overview", { method: "POST", body: {} });
@@ -411,7 +436,7 @@ export default async function handler(request, response) {
 
   // 쓰기는 평가 저장·취소 두 가지뿐이다. 나머지 화면은 GET 전용으로 남긴다.
   if (request.method === "POST") {
-    const writers = { "eval-save": evalSave, "eval-delete": evalDelete };
+    const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave };
     const write = writers[view];
     if (!write) return response.status(400).json({ status: "unknown_view", view });
     const body = typeof request.body === "string" ? JSON.parse(request.body || "{}") : (request.body || {});
@@ -424,8 +449,8 @@ export default async function handler(request, response) {
       console.error("[ADMIN_WRITE_FAILED]", JSON.stringify({ view, message: error.message }));
       const missing = isSchemaMissing(error);
       return response.status(missing ? 409 : 502).json({
-        status: missing ? "eval_schema_missing" : "admin_write_failed", view,
-        message: missing ? "supabase/rag-evaluation.sql을 아직 실행하지 않았습니다." : String(error.message || error).slice(0, 400),
+        status: missing ? "schema_missing" : "admin_write_failed", view,
+        message: missing ? (view === "company-tracking-save" ? "supabase/company-tracking.sql을 아직 실행하지 않았습니다." : "supabase/rag-evaluation.sql을 아직 실행하지 않았습니다.") : String(error.message || error).slice(0, 400),
       });
     }
   }
@@ -433,7 +458,7 @@ export default async function handler(request, response) {
 
   const handlers = {
     overview, audit, runs, articles, article, events, chunks, search, pipeline, "probe-digest": probeDigest,
-    "eval-summary": evalSummary, "eval-chunks": evalChunks, "eval-search": evalSearch,
+    "eval-summary": evalSummary, "eval-chunks": evalChunks, "eval-search": evalSearch, companies: companyTracking,
   };
   const run = handlers[view];
   if (!run) return response.status(400).json({ status: "unknown_view", view });

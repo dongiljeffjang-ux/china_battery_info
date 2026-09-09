@@ -5,7 +5,7 @@ import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { waitUntil } from "@vercel/functions";
 import { runCurationHop, runReportRenewal } from "../lib/curation.js";
-import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats, plannedSearchRequests } from "../lib/china-sources.js";
+import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats, plannedSearchRequests, trackedCompanies } from "../lib/china-sources.js";
 import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
 import { retryOnceOnTimeout } from "../lib/timeout-retry.js";
@@ -339,7 +339,7 @@ async function financialRefreshDue() {
 async function refreshFinancialsIfDue({ force = false } = {}) {
   if (!force && !(await financialRefreshDue())) return { skipped: "not_due" };
   const started = Date.now();
-  const targets = COMPANIES.filter((company) => securityCodeOf(company));
+  const targets = (await trackedCompanies()).filter((company) => securityCodeOf(company));
   const rows = [];
   const failed = [];
   for (const company of targets) {
@@ -381,7 +381,7 @@ async function refreshFinancialsIfDue({ force = false } = {}) {
 }
 
 async function runFinancialBackfill(response, write, only) {
-  const targets = COMPANIES.filter((company) => securityCodeOf(company)).filter((company) => !only || company.id === only);
+  const targets = (await trackedCompanies()).filter((company) => securityCodeOf(company)).filter((company) => !only || company.id === only);
   if (!targets.length) return response.status(404).json({ status: "no_target_company", only });
   const rows = [];
   const failed = [];
@@ -763,11 +763,12 @@ async function handleRequest(request, response) {
     const isPilot = request.query?.pilot === '1';
     // 파일럿(3개사 검증)은 bootstrap을 켜지 않는다. 검증 대상이 정해져 있어 과거 백필이 필요 없다.
     const bootstrapIds = isPilot ? [] : await bootstrapCompanyIds();
-    const searchBudget = searchBudgetFor(plannedSearchRequests(isPilot, bootstrapIds));
+    const activeCompanies = await trackedCompanies();
+    const searchBudget = searchBudgetFor(plannedSearchRequests(isPilot, bootstrapIds, activeCompanies));
     const candidates = await withSearchBudget(() => discoverChinaSources({pilot: isPilot, bootstrapCompanyIds: bootstrapIds}), searchBudget);
     stage = "company_matching";
     const matchedCandidates = candidates
-      .map((candidate) => ({ candidate, companies: companiesFor(candidate) }))
+      .map((candidate) => ({ candidate, companies: companiesFor(candidate, activeCompanies) }))
       .filter(({ companies }) => companies.length);
     const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
@@ -823,7 +824,7 @@ async function handleRequest(request, response) {
       new_articles: storedArticles.length, existing: existingUrls.length,
       new_by_via: storedArticles.reduce((acc, row) => ({ ...acc, [row.discovered_via || "other"]: (acc[row.discovered_via || "other"] || 0) + 1 }), {}),
       new_titles: storedArticles.slice(0, 80).map((row) => ({ id: row.id, via: row.discovered_via, source: row.source_name, title: String(row.title_original || "").slice(0, 120) })),
-      unmatched_sample: candidates.filter((c) => !companiesFor(c).length).slice(0, 30).map((c) => ({ via: discoveredVia(c), source: c.source, title: String(c.title || "").slice(0, 120) })),
+      unmatched_sample: candidates.filter((c) => !companiesFor(c, activeCompanies).length).slice(0, 30).map((c) => ({ via: discoveredVia(c), source: c.source, title: String(c.title || "").slice(0, 120) })),
       process_started: Boolean(shouldProcess && llmReady),
     }, { durationMs: Date.now() - collectStarted });
     if (shouldProcess && llmReady) await chainStage(request, "process", 1, { curate: isCronRequest(request), deep: isCronRequest(request) });

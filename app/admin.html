@@ -122,6 +122,7 @@
         <div id="admin-error" class="error" hidden></div>
         <nav class="admin-nav" aria-label="관리자 화면">
           <button data-panel="overview" class="is-active">개요</button>
+          <button data-panel="companies">추적 기업</button>
           <button data-panel="audit">데이터 감사</button>
           <button data-panel="runs">실행 이력</button>
           <button data-panel="articles">수집 기사 · 검색 결과</button>
@@ -131,6 +132,12 @@
           <button data-panel="eval">RAG 평가</button>
           <button data-panel="pipeline">파이프라인 · 소스와 프롬프트</button>
         </nav>
+
+        <section id="panel-companies" class="panel">
+          <h2>추적 기업 관리</h2>
+          <p class="muted small">활성화하면 다음 Daily 수집·공시·재무 갱신 대상에 포함됩니다. 비활성화해도 기존 기사·이벤트·임베딩은 삭제하지 않습니다. 검증된 마스터 후보만 관리합니다.</p>
+          <div class="tbl-wrap"><table class="admin" id="company-tracking-table"></table></div>
+        </section>
 
         <section id="panel-overview" class="panel is-visible">
           <div id="overview-cards" class="cards"></div>
