@@ -11,7 +11,7 @@ process.env.OPENAI_API_KEY = "test-key";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test";
 
-const { buildLexicalQuery, demoteUnrelatedCompanies, expandDomainQuestion, fuseByRrf, questionCompanyTerms, searchKnowledge } = await import("../lib/knowledge-search.js");
+const { buildLexicalQuery, demotePeriodMismatches, demoteUnrelatedCompanies, expandDomainQuestion, fuseByRrf, questionCompanyTerms, questionPeriods, searchKnowledge } = await import("../lib/knowledge-search.js");
 
 // --- 1) 질의 조립 -----------------------------------------------------------
 
@@ -100,6 +100,30 @@ assert.equal(demoted[1], "supplier", "메타데이터가 아니라 본문 표기
 // 회사를 짚지 않은 질문은 손대지 않는다(기준선에서 이 유형은 1.00이었다).
 const untouched = [{ id: "x", company_id: "byd", content_ko: "전고체" }, { id: "y", company_id: "calb", content_ko: "양산" }];
 assert.deepEqual(demoteUnrelatedCompanies(untouched, []), untouched, "회사 조건이 없으면 순서를 바꾸지 않는다");
+
+// --- 1.63) 명시 기간과 맞는 근거를 앞에 둔다 ---------------------------------
+//
+// 일반 검색은 DB에서 기간 필터를 걸 수 없다. [시점]이 질문의 기간과 맞는 청크를 우선하되,
+// 날짜가 없는 기존 기사와 보고서 공시일이 이듬해인 연간 데이터는 성급히 버리지 않는다.
+assert.deepEqual(questionPeriods("파라시스 2026년 상반기 신규 고객"), ["2026H1"]);
+const periodOrdered = demotePeriodMismatches([
+  { id: "wrong", content_ko: "[시점] 2025년\n[사실] 이전 해 고객" },
+  { id: "unknown", content_ko: "[사실] 시점 미기재 기사", published_at: null },
+  { id: "right", content_ko: "[시점] 2026년 상반기 (반기보고서 기준)\n[사실] 신규 고객" },
+  { id: "day", content_ko: "[시점] 2026-05-14\n[사실] 고객 인증" },
+], ["2026H1"]).map((row) => row.id);
+assert.deepEqual(periodOrdered, ["right", "day", "unknown", "wrong"], `질문 기간 일치 → 시점 불명 → 명백한 불일치 순서여야 한다: ${periodOrdered}`);
+// [시점]이 없으면 published_at은 마지막 보조 신호다. 보고서의 [시점] 2025년은 2026년 공시일보다 우선한다.
+const reportPeriod = demotePeriodMismatches([
+  { id: "report-2025", content_ko: "[시점] 2025년 (연차보고서 기준)", published_at: "2026-03-30" },
+  { id: "article-2026", content_ko: "본문에 시점 없음", published_at: "2026-02-01" },
+], ["2025"]).map((row) => row.id);
+assert.deepEqual(reportPeriod, ["report-2025", "article-2026"], "[시점]이 공시일보다 우선해야 한다");
+const halfYear = demotePeriodMismatches([
+  { id: "h2", content_ko: "[시점] 2026년 하반기\n[사실] 양산" },
+  { id: "h1", content_ko: "[시점] 2026년 상반기\n[사실] 개발" },
+], ["2026H2"]).map((row) => row.id);
+assert.deepEqual(halfYear, ["h2", "h1"], "반기 표기는 해당 반기만 맞아야 한다");
 
 // --- 1.65) 한 기사가 프롬프트를 독점하지 못한다 ------------------------------------------
 //
@@ -285,6 +309,26 @@ assert.ok(hybrid.some((item) => item.id === "L1"), "단어 검색만 찾은 근�
 // 두 검색기의 점수는 척도가 달라 섞이면 안 된다. 각자 제 필드에 남는다.
 assert.equal(hybrid[0].similarity, 0.8);
 assert.equal(hybrid[0].lexical_score, 8);
+
+// 기간을 명시한 서술 질문에서는 같은 회사의 오래된 사건이 새 사건보다 앞에 남으면 안 된다.
+// 이 검사는 DB의 벡터/단어 후보가 이미 나온 뒤 실제 searchKnowledge가 적용하는 순서를 확인한다.
+globalThis.fetch = async (url) => {
+  const target = String(url);
+  if (target.includes("openai.com")) return jsonResponse({ data: [{ embedding: EMBEDDING }] });
+  if (target.includes("rpc/lexical_knowledge_chunks")) return jsonResponse([
+    { id: "old", content_ko: "[시점] 2024년\\n[사실] 과거 고객", lexical_score: 20 },
+    { id: "current", content_ko: "[시점] 2026년 상반기\\n[사실] 신규 고객", lexical_score: 5 },
+  ]);
+  if (target.includes("rpc/match_knowledge_chunks")) return jsonResponse([
+    { id: "old", content_ko: "[시점] 2024년\\n[사실] 과거 고객", similarity: 0.9 },
+    { id: "current", content_ko: "[시점] 2026년 상반기\\n[사실] 신규 고객", similarity: 0.7 },
+  ]);
+  if (target.includes("report_metric?") || target.includes("market_financial?")) return jsonResponse([]);
+  throw new Error(`unexpected fetch: ${target}`);
+};
+const periodSearch = await searchKnowledge({ question: "파라시스 2026년 상반기 신규 고객" });
+assert.deepEqual(periodSearch.slice(0, 2).map((item) => item.id), ["current", "old"], "명시 기간과 맞는 근거가 검색 결과에서 앞서야 한다");
+assert.deepEqual(periodSearch.retrieval.question_periods, ["2026H1"], "적용한 기간 조건을 검색 통계에 남겨야 한다");
 
 // --- 3-2) 임베딩이 끊겨도 단어 검색만으로 버틴다 -----------------------------
 

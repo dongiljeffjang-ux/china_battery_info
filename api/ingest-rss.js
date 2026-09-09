@@ -10,7 +10,8 @@ import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
 import { retryOnceOnTimeout } from "../lib/timeout-retry.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
-import { embedEvents } from "../lib/vector-ingestion.js";
+import { ARTICLE_BODY_LABELS, buildArticleChunkTexts, embedEvents, splitArticleChunkText } from "../lib/vector-ingestion.js";
+import crypto from "node:crypto";
 import { extractMetricsFromEvents } from "../lib/report-metrics.js";
 import { fetchCompanyFinancials, securityCodeOf } from "../lib/market-financials.js";
 import { fetchPeriodRates } from "../lib/fx-rates.js";
@@ -260,6 +261,111 @@ async function runBackfill(response, companyId, sinceParam, mode) {
   } catch (error) {
     console.error("[BACKFILL_FAILED]", JSON.stringify({ companyId, mode, message: error.message }));
     return response.status(502).json({ status: "backfill_failed", mode, company_id: companyId, message: error.message });
+  }
+}
+
+// 기사 청크를 현행 형식으로 다시 만든다. 예전에는 긴 기사 본문 조각마다 같은 요약을 복사해
+// 검색 결과를 독점했다. 새 형식은 요약을 첫 조각에만 두고, 나머지는 제목과 본문만 넣는다.
+//
+// ?article_chunks=1은 읽기 전용 미리보기, ?article_chunks=write&limit=5는 최대 5기사 적용이다.
+// Vercel의 운영 OpenAI 키로 임베딩하므로 로컬 .env.local이 없어도 된다. 기사를 하나씩 처리해
+// 새 행 upsert가 성공한 기사만 옛 조각을 지운다.
+const ARTICLE_CHUNK_SELECT = "id,article_id,company_id,source_url,source_name,published_at,content_ko,content_original,chunk_index";
+const ARTICLE_CHUNK_PAGE = 500;
+const ARTICLE_CHUNK_DEFAULT_LIMIT = 5;
+
+async function articleChunkPlans() {
+  const chunks = [];
+  for (let offset = 0; ; offset += ARTICLE_CHUNK_PAGE) {
+    const page = await supabaseRest(`knowledge_chunk?select=${ARTICLE_CHUNK_SELECT}&source_type=eq.article_chunk&order=article_id.asc,chunk_index.asc&limit=${ARTICLE_CHUNK_PAGE}&offset=${offset}`);
+    chunks.push(...(page || []));
+    if (!page || page.length < ARTICLE_CHUNK_PAGE) break;
+  }
+  const byArticle = new Map();
+  for (const row of chunks) {
+    if (!row.article_id) continue;
+    if (!byArticle.has(row.article_id)) byArticle.set(row.article_id, []);
+    byArticle.get(row.article_id).push(row);
+  }
+  const plans = [];
+  let alreadyNew = 0;
+  for (const [articleId, rows] of byArticle) {
+    rows.sort((a, b) => (a.chunk_index ?? 0) - (b.chunk_index ?? 0));
+    const parsed = rows.map((row) => ({ row, ...splitArticleChunkText(row.content_ko) }));
+    if (parsed.every((item) => !item.summary || !item.body)) { alreadyNew += 1; continue; }
+    const withSummary = parsed.find((item) => item.summary);
+    const title = withSummary?.title || parsed[0]?.title || "";
+    const summary = withSummary?.summary || "";
+    const bodyLabel = parsed.find((item) => item.bodyLabel)?.bodyLabel || ARTICLE_BODY_LABELS.original;
+    const bodyChunks = parsed.filter((item) => item.body).map((item) => item.body);
+    const texts = buildArticleChunkTexts({ titleKo: title, summaryKo: summary, bodyChunks, bodyLabel });
+    if (!texts.length) continue;
+    const sample = rows[0];
+    plans.push({
+      articleId, texts, before: rows.length,
+      originals: parsed.filter((item) => item.body).map((item) => item.row.content_original || null),
+      summaryFirst: texts.length === bodyChunks.length + 1,
+      meta: { company_id: sample.company_id, source_url: sample.source_url, source_name: sample.source_name, published_at: sample.published_at },
+    });
+  }
+  return { chunks: chunks.length, articles: byArticle.size, alreadyNew, plans };
+}
+
+async function embedArticleChunks(texts) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY_MISSING");
+  const response = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small", input: texts, encoding_format: "float" }),
+  });
+  if (!response.ok) throw new Error(`OPENAI_EMBEDDING_${response.status}`);
+  const payload = await response.json();
+  const embeddings = (payload.data || []).map((item) => item.embedding);
+  if (embeddings.length !== texts.length) throw new Error("EMBEDDING_COUNT_MISMATCH");
+  return { model: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small", embeddings };
+}
+
+async function runArticleChunkRestructure(response, write, requestedLimit) {
+  try {
+    const { chunks, articles, alreadyNew, plans } = await articleChunkPlans();
+    const summary = {
+      article_chunks: chunks, articles, already_new_articles: alreadyNew, pending_articles: plans.length,
+      pending_chunks_before: plans.reduce((sum, plan) => sum + plan.before, 0),
+      pending_chunks_after: plans.reduce((sum, plan) => sum + plan.texts.length, 0),
+      sample: plans.slice(0, 2).map((plan) => ({ article_id: plan.articleId, chunks_before: plan.before, chunks_after: plan.texts.length, preview: plan.texts.slice(0, 2).map((text) => text.replace(/\s+/g, " ").slice(0, 160)) })),
+    };
+    if (!write) return response.status(200).json({ status: "preview", note: "DB에 쓰지 않았습니다. 실제로 바꾸려면 ?article_chunks=write&limit=5", ...summary });
+    const limit = Math.min(20, Math.max(1, Number(requestedLimit) || ARTICLE_CHUNK_DEFAULT_LIMIT));
+    const results = [];
+    for (const plan of plans.slice(0, limit)) {
+      try {
+        const { model, embeddings } = await embedArticleChunks(plan.texts);
+        const rows = plan.texts.map((content, index) => ({
+          company_id: plan.meta.company_id, article_id: plan.articleId, source_type: "article_chunk",
+          source_url: plan.meta.source_url, source_name: plan.meta.source_name, published_at: plan.meta.published_at,
+          content_ko: content, content_original: plan.summaryFirst && index === 0 ? null : plan.originals[plan.summaryFirst ? index - 1 : index] || null,
+          chunk_index: index, chunk_total: plan.texts.length,
+          content_hash: crypto.createHash("sha256").update(`${plan.articleId}:${index}:${content}`).digest("hex"),
+          embedding: embeddings[index], embedding_model: model,
+        }));
+        await supabaseRest("knowledge_chunk?on_conflict=content_hash", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: rows });
+        const existing = await supabaseRest(`knowledge_chunk?select=id,content_hash&source_type=eq.article_chunk&article_id=eq.${encodeURIComponent(plan.articleId)}`);
+        const hashes = new Set(rows.map((row) => row.content_hash));
+        const stale = (existing || []).filter((row) => !hashes.has(row.content_hash)).map((row) => row.id);
+        for (const id of stale) await supabaseRest(`knowledge_chunk?id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=minimal" });
+        results.push({ article_id: plan.articleId, status: "ok", before: plan.before, after: rows.length, removed: stale.length });
+      } catch (error) {
+        console.error("[ARTICLE_CHUNK_RESTRUCTURE_FAILED]", JSON.stringify({ articleId: plan.articleId, message: error.message }));
+        results.push({ article_id: plan.articleId, status: "failed", message: String(error.message || error).slice(0, 160) });
+      }
+    }
+    const done = results.filter((item) => item.status === "ok");
+    const failed = results.filter((item) => item.status === "failed");
+    console.info("[ARTICLE_CHUNK_RESTRUCTURE_DONE]", JSON.stringify({ requested: limit, done: done.length, failed: failed.length }));
+    return response.status(failed.length ? 502 : 200).json({ status: failed.length ? "partial" : "ok", requested: limit, completed: done.length, failed: failed.length, results, ...summary });
+  } catch (error) {
+    console.error("[ARTICLE_CHUNK_RESTRUCTURE_PREVIEW_FAILED]", JSON.stringify({ message: error.message }));
+    return response.status(502).json({ status: "article_chunk_restructure_failed", message: String(error.message || error).slice(0, 400) });
   }
 }
 
@@ -710,6 +816,9 @@ async function handleRequest(request, response) {
   }
   const redateCompanyId = String(request.query?.redate || request.body?.redate || "").trim();
   if (redateCompanyId) return runRedate(response, redateCompanyId);
+  // 기사 청크 형식 재구성. 기본은 미리보기이며, write는 최대 20기사를 한 요청에서 안전하게 교체한다.
+  const articleChunkMode = String(request.query?.article_chunks || request.body?.article_chunks || "").trim();
+  if (articleChunkMode) return runArticleChunkRestructure(response, articleChunkMode === "write", request.query?.limit || request.body?.limit);
   // 정기보고서 발췌에서 정량 지표를 뽑아 report_metric을 채운다. LLM을 쓰지 않는다.
   // ?metrics=1은 미리보기(쓰지 않음), ?metrics=write는 실제 upsert. 기본이 미리보기인 이유는
   // 무엇이 들어가는지 먼저 눈으로 보고 쓰기를 하기 위해서다.
