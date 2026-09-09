@@ -7,6 +7,7 @@ import { answerFromKnowledge } from "../lib/knowledge-search.js";
 import { buildCompareReport, applyVerifiedFacts, buildReportSynthesis } from "../lib/compare-report.js";
 import { buildTimelineReport } from "../lib/timeline-report.js";
 import { filterTimelineEvents } from "../lib/timeline-visibility.js";
+import { retryOnceOnTimeout } from "../lib/timeout-retry.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증), 함의 종합은 긴 입력 한 번을 부른다. `api/*.js` Node 함수는
 // `export const config = { maxDuration }` 형식만 읽으므로(예전 `export const maxDuration`은 무시됐다)
@@ -153,7 +154,13 @@ async function runTimelineReport(request, response) {
     // 함께 준다. 거래소 표준 손익(연간·당해 누적)과 보고서 원문에서 뽑은 물량(출하·장착·생산능력).
     // 실패해도 리포트는 사건만으로 낸다 — 숫자가 빠진 채 나오는 쪽이 아예 안 나오는 것보다 낫다.
     const metrics = await loadReportMetrics(companyId);
-    const result = await buildTimelineReport({ companyName: company.name_ko, events, metrics });
+    // 리포트 모델은 간헐적으로 첫 응답이 지연될 수 있다. 같은 입력을 즉시 사용자 실패로
+    // 돌려주지 말고, 네트워크/상류 시간 초과일 때만 한 번 다시 시도한다. 스키마·입력 오류는
+    // 재시도해도 해결되지 않으므로 그대로 반환한다.
+    const result = await retryOnceOnTimeout(
+      () => buildTimelineReport({ companyName: company.name_ko, events, metrics }),
+      { delayMs: 1500 },
+    );
     console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, events: events.length, reportChars: result.report.markdown_ko.length }));
     return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, events, generated_at: new Date().toISOString(), ...result });
   } catch (error) {
