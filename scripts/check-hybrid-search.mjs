@@ -119,6 +119,33 @@ assert.equal(collapsed.length, flooded.length, "버리지 않고 순서만 바�
 // event_fact와 article_chunk는 같은 기사여도 서로 다른 사실이라 따로 센다.
 assert.ok(collapsed.indexOf("ea") < collapsed.indexOf("a3"), "같은 기사의 event_fact는 article_chunk 상한과 무관하게 살아남는다");
 
+// --- 1.66) 두 회사를 물으면 회사별로 필수 조건을 따로 건다 ---------------------------------
+//
+// 2026-09-09: "reshine과 CATL 협력 관계"에 진촨루이샹·CATL 협력 청크 3건이 있는데도 상위 10건에 없었다.
+// 두 회사 표기를 한 그룹에 OR로 넣으면 청크가 많은 CATL이 다른 회사 이야기를 밀어낸다. 회사별로
+// +그룹을 나누자 그 3건이 1~3위가 됐다(운영 DB 실측).
+const { questionCompanyGroups } = await import("../lib/knowledge-search.js");
+const pairGroups = questionCompanyGroups("reshine과 CATL 협력 관계");
+assert.equal(pairGroups.length, 2, `두 회사가 각각 묶여야 한다: ${pairGroups.length}`);
+const pairQuery = buildLexicalQuery("reshine과 CATL 협력 관계", { requiredGroups: pairGroups });
+assert.equal((pairQuery.match(/\+\(/g) || []).length, 2, `필수 그룹이 회사마다 하나씩이어야 한다: ${pairQuery}`);
+// 한 회사면 예전과 같은 모양이다.
+const soloQuery = buildLexicalQuery("파라시스 신규 고객", { requiredGroups: questionCompanyGroups("파라시스 신규 고객") });
+assert.equal((soloQuery.match(/\+\(/g) || []).length, 1, "한 회사는 필수 그룹 하나");
+// 후처리도 "둘 다 언급 → 하나만 → 없음" 순이다.
+const pairDemoted = demoteUnrelatedCompanies([
+  { id: "catl-only", content_ko: "닝더스다이(CATL) 2026년 상반기 매출" },
+  { id: "both", content_ko: "진촨루이샹 IPO, 닝더스다이(CATL)와 협력" },
+  { id: "none", content_ko: "비야디 블레이드 배터리" },
+  { id: "reshine-only", content_ko: "진촨루이샹 인산철리튬 투자" },
+], [], pairGroups).map((row) => row.id);
+assert.deepEqual(pairDemoted, ["both", "catl-only", "reshine-only", "none"], `둘 다 언급한 근거가 맨 앞: ${pairDemoted}`);
+
+// 안내문은 작업 계획이 아니라 두 문장이다(2026-09-09 사용자: "없으면 없는 거지 왜 이런 가이드가 나오나").
+const promptSource = (await import("node:fs")).readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8");
+assert.match(promptSource, /guidance_ko는 최대 두 문장이다/, "안내문 길이 상한이 프롬프트에 있어야 한다");
+assert.match(promptSource, /검색 키워드 목록, 조사 절차, 범위 설정, 라벨링 제안 같은 작업 계획을 쓰지 않는다/, "작업 계획 금지가 프롬프트에 있어야 한다");
+
 // --- 1.7) 융합 상수는 기준선 실측에 맞춘 값이어야 한다 -------------------------------------
 const searchSource = (await import("node:fs")).readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8");
 assert.match(searchSource, /const RRF_K = 10;/, "k는 후보 규모(검색기당 10~20건)에 맞춘 10이어야 한다. 60이면 1~20위 점수 차가 1.3배뿐이다");
