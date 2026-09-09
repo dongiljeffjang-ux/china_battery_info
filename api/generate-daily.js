@@ -43,6 +43,10 @@ function serializeInsight(insight) {
   return lines.join("\n");
 }
 
+// Daily는 하루 전체를 엮는 가장 무거운 JSON 요청이다. 일반 LLM 기본값(45초)은
+// 운영에서 실제로 부족했던 만큼 Daily에만 90초를 별도 배정한다.
+export const DAILY_LLM_TIMEOUT_MS = 90000;
+
 async function selectTop10(candidates, preferenceExamples = []) {
   const schema = {
     type: "object", additionalProperties: false, required: ["sections", "insight", "top10"],
@@ -92,7 +96,8 @@ async function selectTop10(candidates, preferenceExamples = []) {
   const { data } = await createJsonResponse({
     name: "daily_top10", schema,
     instructions: `${DAILY_REPORT_PROMPT} ${DAILY_REPORT_STRUCTURE_INSTRUCTION}`,
-    input: JSON.stringify({ candidates: evidence, preference_examples: preferenceExamples })
+    input: JSON.stringify({ candidates: evidence, preference_examples: preferenceExamples }),
+    timeoutMs: DAILY_LLM_TIMEOUT_MS,
   });
   return data;
 }

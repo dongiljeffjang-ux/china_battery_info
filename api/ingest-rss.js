@@ -8,6 +8,7 @@ import { runCurationHop, runReportRenewal } from "../lib/curation.js";
 import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats, plannedSearchRequests } from "../lib/china-sources.js";
 import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
+import { retryOnceOnTimeout } from "../lib/timeout-retry.js";
 import { backfillCompanyEvents, digestReport, redateReportEvents } from "../lib/event-backfill.js";
 import { embedEvents } from "../lib/vector-ingestion.js";
 import { extractMetricsFromEvents } from "../lib/report-metrics.js";
@@ -559,7 +560,10 @@ async function runDailyStage(request) {
     return;
   }
   try {
-    const report = await generateDailyReport();
+    const report = await retryOnceOnTimeout(
+      () => generateDailyReport(),
+      { delayMs: 1500 },
+    );
     console.info("[DAILY_STAGE]", JSON.stringify({ status: report.status, top10: report.top10_count || 0, ms: Date.now() - started }));
     await logPipeline("daily", { status: report.status, top10: report.top10_count || 0, report_date: report.report_date || null }, { durationMs: Date.now() - started });
   } catch (error) {
