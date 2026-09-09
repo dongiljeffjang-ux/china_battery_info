@@ -392,7 +392,7 @@ async function runFinancialBackfill(response, write, only) {
     } catch (error) {
       failed.push({ company_id: company.id, message: String(error.message || error).slice(0, 120) });
     }
-    // 남의 서버를 몰아치지 않는다. 25개사면 전체 10초 남짓이라 함수 예산 안이다.
+    // 남의 서버를 몰아치지 않는다. 26개사면 전체 10초 남짓이라 함수 예산 안이다.
     await new Promise((resolve) => setTimeout(resolve, FINANCIAL_GAP_MS));
   }
   const byMetric = {};

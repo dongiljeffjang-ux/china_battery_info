@@ -17,7 +17,7 @@ const shape = lib.slice(lib.indexOf("const SYNTHESIS_ITEM"), lib.indexOf("export
 assert.ok(/required: \["theme_ko", "finding_ko", "basis_ko", "report_refs"\]/.test(shape), "모든 항목은 근거 문장과 리포트 번호를 가져야 한다");
 const build = lib.slice(lib.indexOf("export async function buildReportSynthesis"), lib.indexOf("// ── 검증 결과를 DB에 되돌린다"));
 assert.ok(!/webSearch: true/.test(build), "종합 호출은 웹 검색을 켜면 안 된다");
-assert.ok(/provider: "openai"/.test(build), "종합은 OpenAI가 맡는다");
+assert.ok(/provider: "openai_report"/.test(build), "종합은 Terra 전용 OpenAI 리포트 경로가 맡는다");
 
 const route = api.slice(api.indexOf("async function runReportSynthesis"), api.indexOf("async function handleRequest"));
 assert.ok(route.includes("ids.length < 2"), "리포트 2건 미만은 거부해야 한다");

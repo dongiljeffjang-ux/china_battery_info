@@ -7,10 +7,10 @@ process.env.SUPABASE_URL = 'https://example.supabase.co'; process.env.SUPABASE_S
 const { buildSearchGroups, plannedSearchRequests, TRACKED_COMPANIES } = await import('../lib/china-sources.js');
 const { searchBudgetFor } = await import('../lib/ingestion-guard.js');
 
-assert.equal(TRACKED_COMPANIES.length, 25);
+assert.equal(TRACKED_COMPANIES.length, 26);
 assert.deepEqual(
   Object.fromEntries(['cell', 'cathode', 'anode'].map((tag) => [tag, TRACKED_COMPANIES.filter((company) => company.type_tags.includes(tag)).length])),
-  { cell: 10, cathode: 10, anode: 5 },
+  { cell: 10, cathode: 11, anode: 5 },
 );
 
 for (const provider of ['openai', 'deepseek']) {
