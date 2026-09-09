@@ -11,7 +11,7 @@ process.env.OPENAI_API_KEY = "test-key";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test";
 
-const { buildLexicalQuery, demotePeriodMismatches, demoteUnrelatedCompanies, expandDomainQuestion, fuseByRrf, questionCompanyTerms, questionPeriods, searchKnowledge } = await import("../lib/knowledge-search.js");
+const { buildLexicalQuery, demotePeriodMismatches, demoteUnrelatedCompanies, expandDomainQuestion, fuseByRrf, questionCompanyTerms, questionPeriods, sanitizeRewrittenQueries, searchKnowledge } = await import("../lib/knowledge-search.js");
 
 // --- 1) 질의 조립 -----------------------------------------------------------
 
@@ -43,6 +43,10 @@ for (const term of ["소금", "소듐", "나트륨", "sodium-ion", "钠电", "�
   assert.ok(sodiumQuery.includes(term), `소금 배터리 질문에 ${term} 동의어가 포함돼야 한다`);
 }
 assert.equal(expandDomainQuestion("업황 흐름"), "업황 흐름", "사전에 없는 질문은 바꾸지 않는다");
+
+// 답변 부족 시 LLM이 만든 검색어는 공백·중복·길이·개수 상한을 코드에서도 다시 제한한다.
+assert.deepEqual(sanitizeRewrittenQueries("BYD 매출", [" BYD 2023년 매출 ", "BYD 2023년  매출", "BYD 매출", "", "x", "BYD 2024년 매출", "BYD 2025년 매출", "BYD 2026년 매출"]),
+  ["BYD 2023년 매출", "BYD 2024년 매출", "BYD 2025년 매출"]);
 
 // --- 1.5) 회사를 짚은 질문은 그 회사 표기를 단어 검색의 필수 조건으로 건다 ------------
 //
@@ -370,6 +374,10 @@ const matchCount = Number(source.match(/const MATCH_COUNT = (\d+)/)?.[1]);
 const schemaMax = Number(source.match(/used_sources: \{ type: "array", maxItems: (\d+)/)?.[1]);
 assert.equal(matchCount, schemaMax, "프롬프트에 넣는 근거 수와 used_sources 상한이 같아야 한다");
 assert.ok(source.includes('provider: "openai_rag"'), "근거 답변은 전용 경량 RAG 모델 경로를 써야 한다");
+assert.match(source, /if \(!data\.sufficient\)/, "1차 답변이 부족할 때만 재작성 비용을 쓴다");
+assert.match(source, /intentQuestion: question/, "재작성 검색도 회사·지표 의도는 원 질문에 고정한다");
+assert.match(source, /rewrittenQueries\.map[\s\S]*searchKnowledge/, "부족할 때 재작성 질의를 실제 재검색한다");
+assert.match(source, /KNOWLEDGE_REWRITE_SKIPPED/, "재작성 실패는 기존 답변으로 안전하게 물러난다");
 const providerSource = await import("node:fs").then((fs) => fs.readFileSync(new URL("../lib/llm-provider.js", import.meta.url), "utf8"));
 assert.ok(providerSource.includes('provider === "openai_rag"'), "전용 RAG 제공자 설정이 있어야 한다");
 assert.ok(providerSource.includes('OPENAI_RAG_MODEL') && providerSource.includes('gpt-5.4-nano'), "RAG 기본 모델은 gpt-5.4-nano여야 한다");

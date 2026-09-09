@@ -34,6 +34,6 @@ assert.ok(/traj-detail-item[\s\S]{0,600}factWithoutTitle\(/.test(src), "궤적 �
 const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8");
 assert.ok(css.includes(".digest-points{"), "불릿 목록 스타일이 있어야 한다");
 const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
-assert.match(html, /app\.js\?v=20260909-digest-bullets/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
+assert.match(html, /app\.js\?v=20260909-(?:digest-bullets|search-rewrite)/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
 
 console.log("ok  digest-bullets");

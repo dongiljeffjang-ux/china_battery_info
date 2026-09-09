@@ -1783,7 +1783,8 @@ function renderAskResult(payload, scoped){
     : ` 의미 검색 ${r.vector_matched}건 + 단어 검색 ${r.lexical_matched}건을 합쳐 후보 ${r.candidates}건, 그중 ${r.overlapped}건은 양쪽에 모두 걸렸습니다.`;
   // 정량 사전조회가 발동했으면 그것부터 밝힌다. 검색이 아니라 표에서 바로 읽은 값이라는 뜻이다.
   const metricNote = r?.metric_rows ? ` 회사·지표를 짚은 질문이라 정량 표에서 ${r.metric_rows}칸을 먼저 읽어 근거 앞에 두었습니다.` : '';
-  const scopeNote = (scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`) + gradeNote + metricNote + hybridNote;
+  const rewriteNote = r?.rewritten ? ` 1차 근거가 부족해 검색 질의 ${r.rewritten_queries?.length || 0}개로 한 번 더 검색했습니다.` : '';
+  const scopeNote = (scoped ? `${displayName(currentCompany)} 근거 ${payload.matched}건에서 찾았습니다.` : `전체 기업 근거 ${payload.matched}건에서 찾았습니다.`) + gradeNote + metricNote + hybridNote + rewriteNote;
   if (payload.sufficient && payload.answer_ko) {
     parts.push(`<p class="ask-answer">${escapeHtml(payload.answer_ko)}</p>`);
   }

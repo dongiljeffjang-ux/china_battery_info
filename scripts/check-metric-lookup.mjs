@@ -15,6 +15,8 @@ const NOW = new Date("2026-09-09T00:00:00Z");
 const table = [
   ["CATL의 2025년 매출은?", ["catl"], ["revenue_total"], [], ["2025"]],
   ["CATL의 2023년부터 2025년까지 매출은?", ["catl"], ["revenue_total"], [], ["2023", "2024", "2025"]],
+  ["BYD의 2023년부터의 연도별 매출", ["byd"], ["revenue_total"], [], ["2023", "2024", "2025"]],
+  ["BYD의 2023년 이후 연도별 매출", ["byd"], ["revenue_total"], [], ["2023", "2024", "2025"]],
   ["CATL 2023~2025 매출", ["catl"], ["revenue_total"], [], ["2023", "2024", "2025"]],
   ["후난위넝 2024년 상반기 영업이익", ["hunan-yuneng"], ["operating_profit"], [], ["2024H1"]],
   ["이브에너지 최근 3년 순이익", ["eve-energy"], ["net_profit_attr", "net_profit"], [], ["2023", "2024", "2025"]],
