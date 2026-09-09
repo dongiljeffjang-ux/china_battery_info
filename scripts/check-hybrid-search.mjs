@@ -47,6 +47,8 @@ assert.equal(expandDomainQuestion("업황 흐름"), "업황 흐름", "사전에 
 // 답변 부족 시 LLM이 만든 검색어는 공백·중복·길이·개수 상한을 코드에서도 다시 제한한다.
 assert.deepEqual(sanitizeRewrittenQueries("BYD 매출", [" BYD 2023년 매출 ", "BYD 2023년  매출", "BYD 매출", "", "x", "BYD 2024년 매출", "BYD 2025년 매출", "BYD 2026년 매출"]),
   ["BYD 2023년 매출", "BYD 2024년 매출", "BYD 2025년 매출"]);
+assert.deepEqual(sanitizeRewrittenQueries("BYD 2023년 이후 매출", ["BYD 2023 매출", "BTR 2024 매출", "CALB 2025 매출"]),
+  ["BYD 2023 매출"], "재작성 모델이 원 질문에 없던 회사를 추가하면 코드가 버려야 한다");
 
 // --- 1.5) 회사를 짚은 질문은 그 회사 표기를 단어 검색의 필수 조건으로 건다 ------------
 //
@@ -378,6 +380,7 @@ assert.match(source, /if \(!data\.sufficient\)/, "1차 답변이 부족할 때�
 assert.match(source, /intentQuestion: question/, "재작성 검색도 회사·지표 의도는 원 질문에 고정한다");
 assert.match(source, /rewrittenQueries\.map[\s\S]*searchKnowledge/, "부족할 때 재작성 질의를 실제 재검색한다");
 assert.match(source, /KNOWLEDGE_REWRITE_SKIPPED/, "재작성 실패는 기존 답변으로 안전하게 물러난다");
+assert.match(source, /parsed \? ordered\.filter\(\(row\) => parsed\.companies\.includes\(row\.company_id\)\) : ordered/, "정량 질문에 다른 회사 근거를 섞지 않는다");
 const providerSource = await import("node:fs").then((fs) => fs.readFileSync(new URL("../lib/llm-provider.js", import.meta.url), "utf8"));
 assert.ok(providerSource.includes('provider === "openai_rag"'), "전용 RAG 제공자 설정이 있어야 한다");
 assert.ok(providerSource.includes('OPENAI_RAG_MODEL') && providerSource.includes('gpt-5.4-nano'), "RAG 기본 모델은 gpt-5.4-nano여야 한다");
