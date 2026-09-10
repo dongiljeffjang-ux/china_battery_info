@@ -144,11 +144,12 @@ const denseEvents = Array.from({ length: 90 }, (_, index) => ({
   sourceUrl: "",
 }));
 const selectedEvidence = selectTimelineEvidence(denseEvents);
-assert.ok(selectedEvidence.length <= 48, "모델 입력 이벤트는 48건을 넘기면 안 된다");
+assert.ok(selectedEvidence.length <= 48, "대표 근거 선택기는 48건을 넘기면 안 된다");
 assert.equal(selectedEvidence[0].id, "dense-0", "가장 이른 근거는 보존해야 한다");
 assert.equal(selectedEvidence.at(-1).id, "dense-89", "가장 최근 근거는 보존해야 한다");
 const compactInput = buildTimelineInput({ companyName: "CATL", events: denseEvents });
-assert.match(compactInput, /화면 이벤트 90건 중 기간·레이어별 대표 근거 48건/, "압축 사실을 모델에 알려야 한다");
+assert.match(compactInput, /화면 이벤트 90건 중 기간·레이어별 대표 근거 24건/, "보고서 모델 입력은 24건으로 압축해야 한다");
+assert.match(timeline, /timeoutMs: 110000/, "압축된 시계열 리포트에는 110초 응답 시간을 준다");
 const omittedEvidence = denseEvents.find(event => !selectedEvidence.some(selected => selected.id === event.id));
 assert.ok(omittedEvidence && !compactInput.includes(omittedEvidence.title), "선택되지 않은 반복 근거를 모델 입력에 넣으면 안 된다");
 // 기업 API가 실제로 두 표를 읽어 넘기는지.
