@@ -583,10 +583,15 @@
   // 기준 답변 초안. 사람이 정답으로 체크한 근거의 사실 부분만 모은다 — 근거에 없는 문장은 넣지 않는다.
   // 이번 주 지표(Hit@10·MRR)는 기준 답변을 읽지 않지만 DB가 필수로 잡고 있어 빈 채로는 저장이 안 된다.
   // RAGAS를 붙일 때 사람이 다듬는 출발점이므로, 화면은 "초안"임을 알리고 그대로 저장할지는 사람이 정한다.
-  function draftReferenceAnswer(texts) {
+  // 회사를 한정하지 않고 검색하면 근거마다 회사가 다르므로, 각 줄 앞에 회사를 붙인다.
+  // 이벤트 청크의 [회사] 줄을 우선 쓰고(표시명이 들어 있다), 없으면 카드의 회사 ID로 이름을 찾는다.
+  function draftReferenceAnswer(items) {
     const facts = [];
-    for (const raw of texts) {
+    for (const item of items) {
+      const raw = typeof item === 'string' ? item : item?.text;
       const text = String(raw || '').replace(/\r\n/g, '\n');
+      const taggedCompany = text.match(/\[회사\]\s*([^\n]*)/)?.[1]?.trim() || '';
+      const company = taggedCompany || (typeof item === 'object' && item?.company ? String(item.company).trim() : '');
       let fact = '';
       const event = text.match(/\[사실\]\s*([\s\S]*?)(?:\n\[|$)/);
       if (event) fact = event[1];
@@ -599,9 +604,13 @@
         }
       }
       fact = fact.replace(/\s*\n\s*(?:-\s*)?/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 240);
-      if (fact && !facts.includes(fact)) facts.push(fact);
+      if (!fact) continue;
+      // 사실 문장이 이미 그 회사 이름으로 시작하면 중복해 붙이지 않는다.
+      const shortName = company.replace(/\([^)]*\)/g, '').trim();
+      const line = company && !(shortName && fact.startsWith(shortName)) ? `${company} · ${fact}` : fact;
+      if (!facts.includes(line)) facts.push(line);
     }
-    return facts.map((fact) => `- ${fact}`).join('\n').slice(0, 5900);
+    return facts.map((line) => `- ${line}`).join('\n').slice(0, 5900);
   }
   // 검색 정밀도에서 고른 정답 청크를 평가 세트로 옮긴다. 청크 ID는 화면에 글자로 보이지 않아
   // 사람이 옮겨 적을 수 없었고, 정답 청크가 없으면 Hit@10·MRR이 0으로만 나온다.
@@ -624,9 +633,11 @@
     if (!$('#eb-reference').value.trim()) {
       if (saved?.reference_answer) $('#eb-reference').value = saved.reference_answer;
       else {
-        const texts = [...document.querySelectorAll('#er-list [data-pick]:checked')]
-          .map((input) => input.closest('.eval-card')?.querySelector('pre')?.textContent || '');
-        const draft = draftReferenceAnswer(texts);
+        const items = [...document.querySelectorAll('#er-list [data-pick]:checked')].map((input) => {
+          const card = input.closest('.eval-card');
+          return { text: card?.querySelector('pre')?.textContent || '', company: card?.dataset.company ? companyName(card.dataset.company) : '' };
+        });
+        const draft = draftReferenceAnswer(items);
         if (draft) { $('#eb-reference').value = draft; drafted = true; }
       }
     }
