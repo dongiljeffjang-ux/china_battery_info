@@ -181,6 +181,29 @@ const pairDemoted = demoteUnrelatedCompanies([
 ], [], pairGroups).map((row) => row.id);
 assert.deepEqual(pairDemoted, ["both", "catl-only", "reshine-only", "none"], `둘 다 언급한 근거가 맨 앞: ${pairDemoted}`);
 
+// --- 1.65) 소속 > 언급 > 없음 ------------------------------------------------------------
+//
+// 2026-09-10 "룽바이 LFP 증설 계획": 다른 회사 청크 22건이 경쟁사 나열로 容百를 언급한다. 언급만으로
+// 같은 층에 두면 긴 경쟁사 기사가 룽바이 소속의 짧은 LFP 이벤트를 밀어낸다(정답 4건 중 2건이 10위 밖).
+// 소속을 한 층 위에 두자 4/4가 상위 10에 들었고 다른 15문항은 순위가 그대로였다(로컬 채점, run 36b8590d 대비).
+const { companyTier } = await import("../lib/knowledge-search.js");
+const ronbayGroups = questionCompanyGroups("룽바이 LFP 증설 계획");
+const peerMention = { id: "peer", company_id: "hunan-yuneng", content_ko: "후난위넝 LFP 호조. 경쟁사 容百科技·当升科技도 증설" };
+const attributed = { id: "own", company_id: "ronbay", content_ko: "구이저우 34만 톤 LFP 프로젝트" };
+const unrelated = { id: "none", company_id: "calb", content_ko: "CALB 쓰촨 30만 톤 리튬인산철" };
+assert.equal(companyTier(attributed, ronbayGroups), 2, "청크가 그 회사 소속이면 2");
+assert.equal(companyTier(peerMention, ronbayGroups), 1, "본문에 표기만 있으면 1");
+assert.equal(companyTier(unrelated, ronbayGroups), 0, "둘 다 아니면 0");
+// 융합 순위가 경쟁사 기사 쪽이 높아도 소속 청크가 앞이다. 언급 청크는 버리지 않고 그 다음이다.
+const tiered = demoteUnrelatedCompanies([peerMention, unrelated, attributed], questionCompanyTerms("룽바이 LFP 증설 계획"), ronbayGroups).map((row) => row.id);
+assert.deepEqual(tiered, ["own", "peer", "none"], `소속 > 언급 > 없음: ${tiered}`);
+// 공급사 기사(상대 회사 소속, 본문 언급)는 여전히 무관 청크보다 앞이다 — 1.6의 성질을 잃지 않는다.
+const supplierTier = companyTier({ id: "s", company_id: "reshine", content_ko: "孚能科技에 양극재 공급" }, questionCompanyGroups("파라시스 신규 고객"));
+assert.equal(supplierTier, 1, "공급사 기사는 언급 층(1)에 남는다");
+// 두 회사를 물으면 합산이다. 한 회사 소속이면서 다른 회사를 언급한 근거(3)가 한 회사 소속만(2)보다 앞이다.
+assert.equal(companyTier({ company_id: "reshine", content_ko: "진촨루이샹, 닝더스다이(CATL)와 협력" }, pairGroups), 3, "소속 2 + 언급 1");
+assert.equal(companyTier({ company_id: "catl", content_ko: "닝더스다이(CATL) 매출" }, pairGroups), 2, "한 회사 소속만이면 2");
+
 // 안내문은 작업 계획이 아니라 두 문장이다(2026-09-09 사용자: "없으면 없는 거지 왜 이런 가이드가 나오나").
 const promptSource = (await import("node:fs")).readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8");
 assert.match(promptSource, /guidance_ko는 최대 두 문장이다/, "안내문 길이 상한이 프롬프트에 있어야 한다");
@@ -345,6 +368,44 @@ globalThis.fetch = async (url) => {
 const periodSearch = await searchKnowledge({ question: "파라시스 2026년 상반기 신규 고객" });
 assert.deepEqual(periodSearch.slice(0, 2).map((item) => item.id), ["current", "old"], "명시 기간과 맞는 근거가 검색 결과에서 앞서야 한다");
 assert.deepEqual(periodSearch.retrieval.question_periods, ["2026H1"], "적용한 기간 조건을 검색 통계에 남겨야 한다");
+
+// --- 3-1b) 회사를 짚은 질문은 단어 검색 후보를 넓게 뽑아 소속 청크를 앞세운 뒤 자른다 -------
+//
+// 2026-09-10 룽바이 실측의 축소판: 단어 검색 점수는 경쟁사 나열로 容百를 언급한 긴 기사 쪽이 높다.
+// 10건만 뽑으면 그 기사들이 단어 검색 몫을 다 차지해 룽바이 소속 LFP 청크는 단어 검색에 "없는" 것이 되고,
+// 의미 검색 점수만으로는 위로 못 올라간다. 30건을 뽑아 소속을 앞세우면 융합에서 겹침이 생긴다.
+const poolCalls = [];
+globalThis.fetch = async (url, init) => {
+  const target = String(url);
+  if (target.includes("openai.com")) return jsonResponse({ data: [{ embedding: EMBEDDING }] });
+  if (target.includes("rpc/lexical_knowledge_chunks")) {
+    poolCalls.push(JSON.parse(init?.body || "{}"));
+    const peers = Array.from({ length: 10 }, (_, i) => ({ id: `peer${i}`, company_id: "hunan-yuneng", content_ko: `후난위넝 LFP 호조 ${i}. 경쟁사 容百科技도 증설`, lexical_score: 30 - i }));
+    const own = [
+      { id: "own-lfp", company_id: "ronbay", content_ko: "[회사] 룽바이(Ronbay)\n[사실] 구이저우 34만 톤 LFP 프로젝트", lexical_score: 9 },
+      { id: "own-cert", company_id: "ronbay", content_ko: "[회사] 룽바이(Ronbay)\n[사실] 인산철리튬 고객 인증", lexical_score: 8 },
+    ];
+    return jsonResponse([...peers, ...own]);
+  }
+  if (target.includes("rpc/match_knowledge_chunks")) return jsonResponse([
+    { id: "own-generic", company_id: "ronbay", content_ko: "[회사] 룽바이(Ronbay)\n[사실] 핵심 소재 기술", similarity: 0.9 },
+    { id: "own-lfp", company_id: "ronbay", content_ko: "[회사] 룽바이(Ronbay)\n[사실] 구이저우 34만 톤 LFP 프로젝트", similarity: 0.8 },
+  ]);
+  if (target.includes("report_metric?") || target.includes("market_financial?")) return jsonResponse([]);
+  throw new Error(`unexpected fetch: ${target}`);
+};
+const pooled = await searchKnowledge({ question: "룽바이 LFP 증설 계획" });
+assert.equal(poolCalls[0]?.match_count, 30, "회사를 짚은 질문은 단어 검색 후보를 30건 뽑는다");
+// 단어 검색 11·12번째였던 소속 청크가 단어 검색 몫에 들어와 융합에서 겹침을 받는다.
+assert.ok(pooled.retrieval.overlapped >= 1, `소속 청크가 양쪽에 걸려 겹침이 생겨야 한다: ${JSON.stringify(pooled.retrieval)}`);
+const pooledIds = pooled.map((row) => row.id);
+assert.ok(pooledIds.indexOf("own-lfp") < pooledIds.indexOf("peer0"), `소속 LFP 청크가 경쟁사 기사보다 앞이어야 한다: ${pooledIds.join(",")}`);
+assert.ok(pooledIds.includes("own-cert"), "단어 검색에서만 걸린 소속 청크도 상위 10에 들어와야 한다");
+assert.ok(pooledIds.includes("peer0"), "언급 청크는 버리지 않는다 — 소속 청크 뒤에 따라온다");
+// 회사를 짚지 않은 질문은 예전 그대로 10건이다. 이 유형은 기준선에서 1.00이었다.
+poolCalls.length = 0;
+await searchKnowledge({ question: "전고체 배터리 양산 시점" });
+assert.equal(poolCalls[0]?.match_count, 10, "회사 조건이 없으면 단어 검색 후보 수를 바꾸지 않는다");
 
 // --- 3-2) 임베딩이 끊겨도 단어 검색만으로 버틴다 -----------------------------
 
