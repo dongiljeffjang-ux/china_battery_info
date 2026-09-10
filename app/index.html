@@ -180,6 +180,18 @@
         <section id="company-timeline-report-panel" class="company-timeline-report-panel" hidden aria-live="polite"></section>
       </section>
 
+      <dialog id="timeline-report-mode-dialog" class="report-mode-dialog" aria-labelledby="timeline-report-mode-title">
+        <form method="dialog">
+          <header><p class="eyebrow">COMPANY TIMELINE REPORT</p><h2 id="timeline-report-mode-title">어떤 관점으로 분석할까요?</h2><p>같은 시계열도 선택한 질문에 따라 다른 근거와 구조로 읽습니다.</p></header>
+          <div class="report-mode-options">
+            <button value="direction" data-report-mode="direction"><strong>전략 방향</strong><span>성장 방식과 전략 중심의 변화를 읽습니다.</span></button>
+            <button value="pattern" data-report-mode="pattern"><strong>패턴 인사이트</strong><span>시장·기술·정책·실적 사이의 연결을 찾습니다.</span></button>
+            <button value="inflection_point" data-report-mode="inflection_point"><strong>전략 분기점</strong><span>진행 중인 변화가 갈릴 경로와 의미를 읽습니다.</span></button>
+          </div>
+          <button class="secondary-button report-mode-cancel" value="cancel">취소</button>
+        </form>
+      </dialog>
+
       <section id="compare" class="view" aria-labelledby="compare-title">
         <div class="page-heading compact">
           <div>

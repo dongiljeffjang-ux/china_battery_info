@@ -137,12 +137,13 @@ function pairContext(a, b, eventsA, eventsB) {
   const chainOf = company => ["cell", "cathode", "anode"].find(tag => company.type_tags.includes(tag)) || "other";
   const chainA = chainOf(a), chainB = chainOf(b);
   const mode = chainA === chainB ? "P" : (chainA === "cell" || chainB === "cell") ? "V" : (new Set([chainA, chainB]).size === 2 ? "C" : "X");
-  const label = { P: "동종 밸류체인(잠정)", V: "셀-소재 수직 연쇄 가능성", C: "인접 소재", X: "비교 축 미확보" }[mode];
+  const analysisMode = { P: "competition", V: "customer_supply", C: "adjacent_material", X: "comparison" }[mode];
+  const label = { P: "경쟁 관점", V: "고객·공급 관점", C: "인접 소재 관점", X: "비교 관점" }[mode];
   const coverage = events => {
     const dates = events.map(event => event.date).filter(Boolean).sort();
     return { total: events.length, market: events.filter(event => event.track === "market").length, tech: events.filter(event => event.track === "tech").length, earliest: dates[0] || "미상", latest: dates.at(-1) || "미상" };
   };
-  return { mode, label_ko: label, note_ko: "밸류체인 태그만으로 한 잠정 분류이며 고객·거래·화학계 중복은 입력에 없으면 미확보로 둡니다.", coverage_a: coverage(eventsA), coverage_b: coverage(eventsB) };
+  return { mode, analysis_mode: analysisMode, label_ko: label, note_ko: "기업 유형을 바탕으로 정한 분석 관점입니다. 실제 고객·거래·화학계 관계는 입력 근거가 있을 때만 사실로 사용합니다.", coverage_a: coverage(eventsA), coverage_b: coverage(eventsB) };
 }
 
 // 시계열 리포트에 넣을 정량 행. 금액은 거래소 표준 항목(영업이익까지 있다), 물량은 보고서 원문
@@ -167,6 +168,8 @@ async function runTimelineReport(request, response) {
   const company = COMPANIES.find(item => item.id === companyId);
   if (!company) return response.status(404).json({ status: "unknown_company" });
   const events = cleanTimelineEvents(request.body?.events);
+  const reportMode = ["direction", "pattern", "inflection_point"].includes(String(request.body?.reportMode || ""))
+    ? String(request.body.reportMode) : "direction";
   if (!events.length) return response.status(400).json({ status: "no_evidence", message: "현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다." });
   try {
     // 리포트가 사건 조각만 받으면 나열에 머문다. 방향은 숫자에서 먼저 읽히므로 정량 시계열을
@@ -178,11 +181,11 @@ async function runTimelineReport(request, response) {
     // 돌려주지 말고, 네트워크/상류 시간 초과일 때만 한 번 다시 시도한다. 스키마·입력 오류는
     // 재시도해도 해결되지 않으므로 그대로 반환한다.
     const result = await retryOnceOnTimeout(
-      () => buildTimelineReport({ companyName: company.name_ko, companyTags: company.type_tags, events, metrics, alternatives, policies }),
+      () => buildTimelineReport({ companyName: company.name_ko, companyTags: company.type_tags, reportMode, events, metrics, alternatives, policies }),
       { delayMs: 1500 },
     );
-    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, events: events.length, reportChars: result.report.markdown_ko.length }));
-    return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, events, policies, generated_at: new Date().toISOString(), ...result });
+    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, reportMode, events: events.length, reportChars: result.report.markdown_ko.length }));
+    return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, report_mode: reportMode, events, policies, generated_at: new Date().toISOString(), ...result });
   } catch (error) {
     console.error("[TIMELINE_REPORT_FAILED]", JSON.stringify({ companyId, message: error.message }));
     return response.status(502).json({ status: "timeline_report_failed", message: error.message });

@@ -180,6 +180,13 @@ assert.match(api, /function cleanEvents[\s\S]{0,300}\.slice\(0, 200\)[\s\S]{0,70
 assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
 assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
 assert.match(api, /report_metric\?select=period,metric,value,unit,yoy_pct_stated/, "보고서 물량을 읽어야 한다");
-assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, events, metrics, alternatives, policies \}\)/, "정량 행과 기업 유형을 리포트에 넘겨야 한다");
+assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, reportMode, events, metrics, alternatives, policies \}\)/, "정량 행·기업 유형·리포트 모드를 넘겨야 한다");
+assert.match(api, /\["direction", "pattern", "inflection_point"\]/, "허용된 리포트 모드만 API가 받는다");
+assert.match(timeline, /TIMELINE_REPORT_MODES/, "시계열 리포트 모드 목록을 유지해야 한다");
+assert.match(timeline, /선택한 보고서 용도: 전략 방향/);
+assert.match(timeline, /선택한 보고서 용도: 패턴 인사이트/);
+assert.match(timeline, /선택한 보고서 용도: 전략 분기점/);
+assert.match(app, /chooseTimelineReportMode/);
+assert.match(html, /timeline-report-mode-dialog/);
 
 console.log("timeline report checks passed");

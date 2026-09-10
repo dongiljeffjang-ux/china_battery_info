@@ -10,6 +10,12 @@ const [api, lib, app] = await Promise.all([
 assert.match(api, /function pairContext/);
 assert.match(api, /pair_context: pairContextValue/);
 assert.match(lib, /const PAIR_LITE_RULE/);
+assert.match(lib, /const COMPARISON_MODE_RULE/);
+assert.match(lib, /customer_supply/);
+assert.match(lib, /실제 거래 근거가 없으면 공급 중·고객사라고 쓰지 말고/);
+assert.match(api, /analysis_mode: analysisMode/);
+assert.match(api, /경쟁 관점/);
+assert.match(api, /고객·공급 관점/);
 assert.match(lib, /required: \["headline_ko", "pair_lite", "trajectory", "comparison", "korea_insight", "policy_analysis_ko"\]/);
 assert.match(lib, /pair_lite\.scope_ko/);
 assert.match(lib, /upstream 공급 신호/);

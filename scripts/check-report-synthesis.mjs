@@ -10,7 +10,8 @@ const sql = fs.readFileSync(new URL("../supabase/report-synthesis.sql", import.m
 const prompt = lib.match(/export const REPORT_SYNTHESIS_PROMPT =([\s\S]*?);\n/)?.[1] || "";
 assert.ok(prompt.includes("웹 검색을 쓰지 않는다"), "종합은 저장된 리포트만 근거로 써야 한다");
 assert.ok(prompt.includes("투자 추천은 어떤 형태로도 쓰지 않는다"), "투자 추천 금지가 프롬프트에 있어야 한다");
-assert.ok(prompt.includes("한 단계까지만 추론한다"), "여러 단계 건너뛴 결론 금지가 프롬프트에 있어야 한다");
+assert.ok(prompt.includes("두 단계로 연결해 추론한다"), "전략 변화와 사업적 파급까지 두 단계 추론을 허용해야 한다");
+assert.ok(prompt.includes("입력에 없는 거래·고객·계약·실적을 전제로") && prompt.includes("리포트 근거로 설명할 수 없는 결론은 쓰지 않는다"), "근거 없는 여러 단계 결론은 금지해야 한다");
 assert.ok(prompt.includes("행동 지시나 할 일 목록을 쓰지 않는다"), "행동 지시 금지가 프롬프트에 있어야 한다");
 
 const shape = lib.slice(lib.indexOf("const SYNTHESIS_ITEM"), lib.indexOf("export const REPORT_SYNTHESIS_PROMPT"));

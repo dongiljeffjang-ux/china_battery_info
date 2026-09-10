@@ -931,12 +931,14 @@ function renderTimelineMarkdown(markdown){
   return out.join('');
 }
 
+const timelineReportModeLabel = { direction: '전략 방향', pattern: '패턴 인사이트', inflection_point: '전략 분기점' };
 function timelineReportParts(payload){
   const report = payload.report || {};
-  const title = `${payload.company_name_ko || '기업'} 시계열 리포트`;
+  const modeLabel = timelineReportModeLabel[payload.report_mode] || '전략 방향';
+  const title = `${payload.company_name_ko || '기업'} ${modeLabel} 리포트`;
   const generated = payload.generated_at ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(payload.generated_at)) : '';
   const markdown = renderTimelineMarkdown(report.markdown_ko || '생성된 리포트가 비어 있습니다.');
-  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">시장·기술 이벤트 ${payload.events?.length || 0}건과 중국 정책 ${payload.policies?.length || 0}건을 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
+  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · ${escapeHtml(modeLabel)} · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">시장·기술 이벤트 ${payload.events?.length || 0}건과 중국 정책 ${payload.policies?.length || 0}건을 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
   return { title, body };
 }
 
@@ -965,18 +967,30 @@ function renderTimelineReportPanel(payload){
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+async function chooseTimelineReportMode(){
+  const dialog = document.querySelector('#timeline-report-mode-dialog');
+  if (!dialog) return 'direction';
+  return new Promise(resolve => {
+    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'cancel' ? '' : dialog.returnValue || 'direction'), { once: true });
+    dialog.showModal();
+  });
+}
+
 async function generateTimelineReport(){
+  const reportMode = await chooseTimelineReportMode();
+  if (!reportMode) return;
   await chooseReportSupporting();
   const includePolicyInReport = window.confirm('중국 정책을 이 리포트 분석에 반영할까요?\n\n확인: 정책의 적용 대상·시점과 기업의 제품·수요·원가·생산·수출 조건의 관련성을 근거 범위에서 검토합니다.\n취소: 시장·기술 기업 근거만으로 분석합니다.');
   if (!lastCompanyTimeline?.events?.length) { window.alert('현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다.'); return; }
   const snapshot = lastCompanyTimeline;
   const button = document.querySelector('#company-timeline-report');
   if (button) button.disabled = true;
-  showBusy('시계열 리포트 생성 중', `선택한 기업의 현재 화면 이벤트 ${snapshot.events.length}건만 OpenAI가 읽습니다. 웹 검색과 DB 저장은 하지 않습니다. 1분 안팎 걸립니다.`);
+  const modeLabel = timelineReportModeLabel[reportMode] || '전략 방향';
+  showBusy(`${modeLabel} 리포트 생성 중`, `선택한 기업의 현재 화면 이벤트 ${snapshot.events.length}건을 ${modeLabel} 관점으로 읽습니다. 웹 검색과 DB 저장은 하지 않습니다. 1분 안팎 걸립니다.`);
   try {
     const response = await fetch('/api/company', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'timeline_report', includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl, sourceDate: event.sourceDate })) })
+      body: JSON.stringify({ mode: 'timeline_report', reportMode, includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl, sourceDate: event.sourceDate })) })
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);

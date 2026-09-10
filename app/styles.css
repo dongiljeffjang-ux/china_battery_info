@@ -441,3 +441,13 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 /* 웹 검증이 찾은 다른 출처. 원래 값 옆에 작게, 원래 값보다 약하게 보인다. */
 .alt-evidence{display:inline-block;margin-left:4px;padding:0 6px;border-radius:99px;font-size:10px;font-weight:700;line-height:1.6;background:#fff4e0;color:#9a6a12;text-decoration:none;white-space:nowrap}
 .alt-evidence:hover{background:#ffe7bd}
+
+/* 시계열 보고서는 한 버튼에서 용도를 고른다. 모드를 세 버튼으로 상시 노출하면 시간축 조작부가 복잡해진다. */
+.report-mode-dialog{width:min(560px,calc(100vw - 32px));border:0;border-radius:12px;padding:0;color:var(--ink);box-shadow:0 20px 60px rgba(16,54,95,.25)}
+.report-mode-dialog::backdrop{background:rgba(16,34,53,.35)}
+.report-mode-dialog form{padding:22px}
+.report-mode-dialog header p{margin:0 0 4px}.report-mode-dialog h2{margin:0;font-size:20px}.report-mode-dialog header > p:last-child{margin:8px 0 0;color:var(--muted);font-size:13px;line-height:1.55}
+.report-mode-options{display:grid;gap:8px;margin:18px 0 14px}
+.report-mode-options button{display:grid;gap:3px;padding:13px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;text-align:left;cursor:pointer;color:var(--ink)}
+.report-mode-options button:hover,.report-mode-options button:focus{border-color:var(--blue);background:var(--pale);outline:none}.report-mode-options strong{font-size:14px}.report-mode-options span{color:var(--muted);font-size:12px}
+.report-mode-cancel{float:right}
