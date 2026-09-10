@@ -431,8 +431,11 @@
   function retrievalCard(row) {
     const by = row.retrieved_by || [];
     const byLabel = by.length > 1 ? '의미+단어' : by[0] === 'lexical' ? '단어 검색' : by[0] === 'vector' ? '의미 검색' : '미상';
+    // 이 질문으로 이미 저장된 평가 문항의 정답 청크는 체크된 채로 그린다. 그래야 다시 검색해도
+    // 무엇이 정답인지 보이고, 평가 세트로 넘길 때 기존 정답이 빠지지 않는다.
+    const saved = (retrievalContext?.benchmark_case?.reference_chunk_ids || []).includes(row.id);
     return `<div class="chunk eval-card${verdictClass(row.evaluation)}" data-eval-subject="retrieval" data-chunk-id="${esc(row.id)}" data-chunk-type="${esc(row.source_type)}" data-company="${esc(row.company_id || '')}" data-rank="${esc(row.rank)}" data-retrieved-by="${esc(by.join(','))}" data-similarity="${esc(row.similarity ?? '')}">
-      <header><label class="er-pick"><input type="checkbox" data-pick="${esc(row.id)}" /> 정답</label> <span class="sim">${Number(row.similarity || 0).toFixed(3)}</span> #${row.rank} <span class="tag">${esc(byLabel)}</span> ${tag(row.source_type)} ${esc(companyName(row.company_id))} · ${fmtDay(row.published_at)} · ${esc(row.source_name || '')} ${row.article_id ? `· <a class="link" data-article="${esc(row.article_id)}">기사</a>` : ''} ${row.source_url ? `· <a class="link" href="${esc(row.source_url)}" target="_blank" rel="noopener">원문</a>` : ''}</header>
+      <header><label class="er-pick${saved ? ' is-on' : ''}"><input type="checkbox" data-pick="${esc(row.id)}"${saved ? ' checked' : ''} /> 정답${saved ? ' · 저장됨' : ''}</label> <span class="sim">${Number(row.similarity || 0).toFixed(3)}</span> #${row.rank} <span class="tag">${esc(byLabel)}</span> ${tag(row.source_type)} ${esc(companyName(row.company_id))} · ${fmtDay(row.published_at)} · ${esc(row.source_name || '')} ${row.article_id ? `· <a class="link" data-article="${esc(row.article_id)}">기사</a>` : ''} ${row.source_url ? `· <a class="link" href="${esc(row.source_url)}" target="_blank" rel="noopener">원문</a>` : ''}</header>
       <pre>${esc(row.content_ko)}</pre>
       ${row.original_excerpt ? `<details><summary class="small muted">원문 발췌</summary><pre>${esc(row.original_excerpt)}</pre></details>` : ''}
       ${evalBar('retrieval', row.evaluation)}
@@ -449,15 +452,20 @@
     });
     evalCatalog = payload.catalog || evalCatalog;
     noteSchema(payload.schema_missing);
-    retrievalContext = { question: payload.question, company: payload.company || null, include_unverified: payload.include_unverified };
+    retrievalContext = { question: payload.question, company: payload.company || null, include_unverified: payload.include_unverified, benchmark_case: payload.benchmark_case || null };
     const stats = payload.retrieval;
     const done = payload.results.filter((row) => row.evaluation).length;
+    // 저장된 정답 중 이번 결과에 안 보이는 것이 있으면 알려준다. 검색이 바뀌어 정답이 상위 10 밖으로
+    // 밀렸다는 뜻이고, 그 정답은 체크할 수 없어도 평가 세트에는 그대로 남는다.
+    const savedIds = payload.benchmark_case?.reference_chunk_ids || [];
+    const savedShown = payload.results.filter((row) => savedIds.includes(row.id)).length;
     $('#er-meta').textContent = [
       `${payload.results.length}건 · ${payload.ms}ms`,
       stats ? `의미 ${stats.vector_matched}건 + 단어 ${stats.lexical_matched}건 → 후보 ${stats.candidates}건(겹침 ${stats.overlapped}건)` : '',
       stats && !stats.lexical_available ? '단어 검색 미작동' : '',
       stats && !stats.vector_available ? '의미 검색 미작동' : '',
       done ? `이미 평가한 근거 ${done}건` : '',
+      savedIds.length ? `평가 세트 정답 ${savedIds.length}건 중 이 결과에 ${savedShown}건` : '',
     ].filter(Boolean).join(' · ');
     $('#er-list').innerHTML = payload.results.length ? payload.results.map(retrievalCard).join('') : '<p class="muted">근거 없음</p>';
   }
@@ -580,13 +588,22 @@
     if (!picked.length) { $('#er-meta').textContent = '정답으로 쓸 근거를 먼저 체크하세요.'; return; }
     const context = retrievalContext || {};
     const question = context.question || $('#er-q').value.trim();
+    const saved = context.benchmark_case || null;
+    // 저장된 문항이 있으면 화면에 안 보여서 체크 못 한 정답도 합쳐 넘긴다. 체크를 풀어 뺀 것은 뺀다.
+    const shownIds = new Set([...document.querySelectorAll('#er-list [data-pick]')].map((input) => input.dataset.pick));
+    const hidden = (saved?.reference_chunk_ids || []).filter((id) => !shownIds.has(id));
+    const merged = [...new Set([...picked, ...hidden])];
     $('#eb-question').value = question;
-    if (!$('#eb-title').value.trim()) $('#eb-title').value = question.slice(0, 160);
-    $('#eb-chunks').value = picked.join(', ');
+    $('#eb-title').value = saved?.title || $('#eb-title').value.trim() || question.slice(0, 160);
+    // 기준 답변은 저장 필수 항목이라, 저장된 문항이면 다시 적지 않아도 되게 채워 둔다.
+    if (saved?.reference_answer && !$('#eb-reference').value.trim()) $('#eb-reference').value = saved.reference_answer;
+    $('#eb-chunks').value = merged.join(', ');
     $('#eb-company').value = context.company || '';
     $('#eb-unverified').checked = context.include_unverified === true;
     await showEvalSub('eval-benchmark');
-    $('#eb-meta').textContent = `정답 청크 ${picked.length}건을 옮겼습니다. 기준 답변을 적고 저장하세요.`;
+    $('#eb-meta').textContent = saved
+      ? `저장된 문항을 갱신합니다 · 정답 청크 ${merged.length}건(화면에서 고른 ${picked.length}건${hidden.length ? ` + 이번 결과에 없던 기존 정답 ${hidden.length}건` : ''}). 저장하면 기존 문항이 바뀝니다.`
+      : `정답 청크 ${picked.length}건을 옮겼습니다. 기준 답변을 적고 저장하세요.`;
   }));
   $('#es-load').addEventListener('click', () => runEval(loadEvalSummary));
   $('#eb-save').addEventListener('click', () => runEval(async () => {
@@ -601,8 +618,9 @@
     if (!ids.length) $('#eb-meta').textContent = '정답 청크가 없습니다. 저장은 되지만 Hit@10·MRR은 0으로 나옵니다.';
     // api()는 GET 전용이라 method·body를 무시한다. 쓰기는 반드시 postApi()로 보낸다 —
     // 예전에는 api()에 method를 넘겨 GET으로 나갔고 서버가 unknown_view로 되돌렸다.
-    await postApi('benchmark-case-save', { title, question, reference_answer: reference, reference_chunk_ids: ids, company_id: $('#eb-company').value || null, include_unverified: $('#eb-unverified').checked });
-    if (ids.length) $('#eb-meta').textContent = `저장했습니다 · 정답 청크 ${ids.length}건`;
+    const result = await postApi('benchmark-case-save', { title, question, reference_answer: reference, reference_chunk_ids: ids, company_id: $('#eb-company').value || null, include_unverified: $('#eb-unverified').checked });
+    if (ids.length) $('#eb-meta').textContent = `${result?.replaced ? '기존 문항을 갱신했습니다' : '새 문항을 저장했습니다'} · 정답 청크 ${ids.length}건`;
+    if (retrievalContext && retrievalContext.question === question) retrievalContext.benchmark_case = result?.case || retrievalContext.benchmark_case;
     $('#eb-title').value = ''; $('#eb-question').value = ''; $('#eb-reference').value = ''; $('#eb-chunks').value = ''; await loadEvalBenchmark();
   }));
   // 실패해도 "실행 중…"이 남으면 사용자가 계속 기다린다. 어떤 경로로 끝나든 문구를 바꾼다.

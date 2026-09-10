@@ -381,6 +381,17 @@ async function evalChunks(query) {
 
 // 검색 평가 화면이 쓰는 검색. 벡터 검색 시험과 같은 경로를 그대로 부르되,
 // 이미 이 질문으로 매긴 판정을 근거마다 붙여 돌려준다.
+// 같은 질문·회사·보조데이터 범위로 이미 저장된 평가 문항. rag_eval_case의 유니크 인덱스
+// (question, coalesce(company_id,''), include_unverified)와 같은 범위다. 검색 화면이 이걸 알아야
+// 저장된 정답 청크를 체크된 채로 보여줄 수 있고, 저장은 새 행 대신 기존 행을 갱신할 수 있다.
+// 2026-09-10 사용자가 실제로 걸렸다: 정답을 넘겨 저장한 뒤 다시 검색하면 체크가 전부 사라져,
+// 그 상태로 다시 저장하면 기존 정답이 새로 고른 것으로 통째로 바뀐다.
+async function findBenchmarkCase({ question, companyId, includeUnverified }) {
+  const scope = `question=eq.${enc(question)}&include_unverified=eq.${includeUnverified ? "true" : "false"}&${companyId ? `company_id=eq.${enc(companyId)}` : "company_id=is.null"}`;
+  const found = await supabaseRest(`rag_eval_case?select=id,title,reference_answer,reference_chunk_ids,active&${scope}&limit=1`);
+  return found?.[0] || null;
+}
+
 async function evalSearch(query) {
   const question = String(query.q || "").trim().slice(0, 300);
   if (!question) return { error: "question_required" };
@@ -391,9 +402,15 @@ async function evalSearch(query) {
   const rows = await searchKnowledge({ question, companyId: company, limit, includeUnverified });
 
   let prior = [];
+  let benchmarkCase = null;
   let schemaMissing = false;
   const key = questionKey({ question, companyId: company, includeUnverified });
-  try { prior = await supabaseRest(`rag_evaluation?select=${EVAL_SELECT}&subject_type=eq.retrieval&question_key=eq.${enc(key)}`); }
+  try {
+    [prior, benchmarkCase] = await Promise.all([
+      supabaseRest(`rag_evaluation?select=${EVAL_SELECT}&subject_type=eq.retrieval&question_key=eq.${enc(key)}`),
+      findBenchmarkCase({ question, companyId: company, includeUnverified }),
+    ]);
+  }
   catch (error) { if (!isSchemaMissing(error)) throw error; schemaMissing = true; }
   const byChunk = new Map((prior || []).map((row) => [row.chunk_id, row]));
 
@@ -401,6 +418,7 @@ async function evalSearch(query) {
     schema_missing: schemaMissing,
     catalog: evalCatalog(),
     question, question_key: key, company, include_unverified: includeUnverified, ms: Date.now() - started,
+    benchmark_case: benchmarkCase,
     retrieval: rows.retrieval || null,
     results: rows.map((row, index) => ({
       ...row,
@@ -449,12 +467,14 @@ async function benchmarkCaseSave(body) {
   if (!title || !question || !referenceAnswer) return { error: "invalid_benchmark_case" };
   const companyId = body.company_id ? safeToken(body.company_id) : null;
   const chunkIds = [...new Set((Array.isArray(body.reference_chunk_ids) ? body.reference_chunk_ids : []).filter(safeId))];
-  const row = { title, question, reference_answer: referenceAnswer, reference_chunk_ids: chunkIds, company_id: companyId, include_unverified: body.include_unverified === true, active: body.active !== false, note: String(body.note || "").trim().slice(0, 1000), updated_at: new Date().toISOString() };
-  const id = safeId(body.id);
+  const includeUnverified = body.include_unverified === true;
+  const row = { title, question, reference_answer: referenceAnswer, reference_chunk_ids: chunkIds, company_id: companyId, include_unverified: includeUnverified, active: body.active !== false, note: String(body.note || "").trim().slice(0, 1000), updated_at: new Date().toISOString() };
+  // 화면은 id를 보내지 않는다. 같은 범위의 문항이 이미 있으면 새 행(유니크 위반)이 아니라 그 행을 갱신한다.
+  const id = safeId(body.id) || (await findBenchmarkCase({ question, companyId, includeUnverified }))?.id || null;
   const saved = id
     ? await supabaseRest(`rag_eval_case?id=eq.${enc(id)}&select=*`, { method: "PATCH", body: row })
     : await supabaseRest("rag_eval_case?select=*", { method: "POST", body: row });
-  return { case: saved?.[0] || null };
+  return { case: saved?.[0] || null, replaced: Boolean(id) };
 }
 async function benchmarkRun() {
   const cases = await supabaseRest("rag_eval_case?select=*&active=eq.true&order=updated_at.desc&limit=50");
