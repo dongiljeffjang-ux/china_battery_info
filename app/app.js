@@ -2267,6 +2267,7 @@ async function renderComparison(){
 function activateView(view){
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('is-visible', el.id === view));
   document.querySelectorAll('.nav-link').forEach(el => el.classList.toggle('is-active',el.dataset.view===view));
+  window.requestAnimationFrame(() => refreshPageOutline(view));
   // 히스토리는 다른 기기·다른 탭에서도 쌓이므로 비교 화면에 들어올 때마다 다시 읽는다.
   if (view === 'compare') loadCompareReportHistory();
 }
@@ -2274,10 +2275,60 @@ function viewFromLocationHash(hash = window.location.hash){
   const view = String(hash || '').replace(/^#/, '');
   return ['daily', 'companies', 'compare'].includes(view) ? view : 'daily';
 }
+let pageOutlineObserver = null;
+function setActiveOutlineItem(target){
+  document.querySelectorAll('#page-outline-links button').forEach(button => {
+    const active = button.dataset.outlineTarget === target;
+    button.classList.toggle('is-active', active);
+    if (active) button.setAttribute('aria-current', 'location');
+    else button.removeAttribute('aria-current');
+  });
+}
+function refreshPageOutline(view){
+  const outline = document.querySelector('#page-outline');
+  const links = document.querySelector('#page-outline-links');
+  const page = document.querySelector(`#${view}.view`);
+  if (!outline || !links || !page) return;
+  const compactOutline = window.matchMedia('(max-width: 1600px)').matches;
+  if (!compactOutline) outline.classList.remove('is-open');
+  document.querySelector('#page-outline-toggle')?.setAttribute('aria-expanded', String(!compactOutline));
+  pageOutlineObserver?.disconnect();
+  const targets = [page, ...page.querySelectorAll('[data-outline-label]')]
+    .filter(target => !target.hidden);
+  links.innerHTML = targets.map((target, index) => {
+    const id = target.id || `outline-${view}-${index}`;
+    target.id = id;
+    const label = index === 0
+      ? (target.querySelector('h1')?.textContent?.trim() || '페이지 맨 위')
+      : target.dataset.outlineLabel;
+    return `<button type="button" data-outline-target="${escapeHtml(id)}">${escapeHtml(label)}</button>`;
+  }).join('');
+  links.querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+    document.getElementById(button.dataset.outlineTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveOutlineItem(button.dataset.outlineTarget);
+    if (window.matchMedia('(max-width: 1600px)').matches) {
+      outline.classList.remove('is-open');
+      document.querySelector('#page-outline-toggle')?.setAttribute('aria-expanded', 'false');
+    }
+  }));
+  setActiveOutlineItem(targets[0]?.id || '');
+  pageOutlineObserver = new IntersectionObserver(entries => {
+    const visible = entries.filter(entry => entry.isIntersecting)
+      .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (visible[0]) setActiveOutlineItem(visible[0].target.id);
+  }, { rootMargin: '-82px 0px -62% 0px', threshold: 0 });
+  targets.forEach(target => pageOutlineObserver.observe(target));
+}
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
 // /admin의 메뉴는 /#companies처럼 페이지를 새로 연다. 클릭 핸들러는 그 요청에 관여하지 않으므로,
 // 첫 로드·뒤로가기·직접 URL 모두 해시를 읽어 같은 화면을 연다.
 window.addEventListener('hashchange', () => activateView(viewFromLocationHash()));
+document.querySelector('#page-outline-toggle')?.addEventListener('click', event => {
+  if (!window.matchMedia('(max-width: 1600px)').matches) return;
+  const outline = document.querySelector('#page-outline');
+  const open = outline.classList.toggle('is-open');
+  event.currentTarget.setAttribute('aria-expanded', String(open));
+});
 
 
 document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompanyPicker(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });

@@ -20,6 +20,12 @@ assert.equal(isTimelineBusinessEvent(report("동력전지 생산능력은 30GWh�
 assert.equal(isTimelineBusinessEvent(report("양극재 출하량은 12만 톤이다")), true);
 assert.equal(isTimelineBusinessEvent(report("2025년 매출 120억 위안")), true);
 assert.equal(isTimelineBusinessEvent(report("2025년 영업이익 8억 위안")), true);
+assert.equal(isTimelineBusinessEvent({
+  ...report("2025년 지배주주 순이익 722억 위안"),
+  original_excerpt_ko: "회사는 매출 4,237억 위안과 지배주주 순이익 722억 위안을 기록했다.",
+}), false, "원문 발췌 주변의 매출 표현 때문에 순이익 이벤트가 통과하면 안 된다");
+assert.equal(isTimelineBusinessEvent(report("상위 5대 고객 매출은 1,474.59억 위안이다", "customer-commercialization")), false);
+assert.equal(isTimelineBusinessEvent(report("1위 고객 판매금액은 501.17억 위안이다", "customer-commercialization")), false);
 assert.equal(isTimelineBusinessEvent(event("플래시 충전소 7,018기 구축", "investment-production", "article")), true,
   "뉴스의 사업 이벤트는 공시 세부 필터로 숨기지 않는다");
 
