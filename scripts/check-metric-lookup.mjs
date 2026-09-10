@@ -117,7 +117,7 @@ assert.equal(await m.lookupMetrics(null, { supabaseRest: fakeRest }).then((r) =>
 const search = fs.readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8");
 assert.match(search, /lookupMetrics\(parsed, \{ supabaseRest, limit: METRIC_ROW_LIMIT \}\)/, "검색이 정량 조회를 부른다");
 // 회사 후처리(demoteUnrelatedCompanies)를 거친 목록(ordered)에서 자른다. fused를 직접 자르면 후처리가 무효다.
-assert.match(search, /const searchSlots = Math\.max\(0, limit - metricChunks\.length\);[\s\S]*?let picked = scopedOrdered\.slice\(0, searchSlots\);[\s\S]*?const top = \[\.\.\.metricChunks, \.\.\.picked\];/, "정량 행이 앞, 해당 회사로 좁힌 검색 결과가 뒤, 합쳐서 상한");
+assert.match(search, /const searchSlots = Math\.max\(0, limit - metricChunks\.length\);[\s\S]*?let picked = scopedOrdered\.slice\(0, searchSlots\);[\s\S]*?const top = \[\.\.\.metricChunks, \.\.\.picked, \.\.\.headlineRows\];/, "정량 행이 앞, 해당 회사로 좁힌 검색 결과가 뒤, 합쳐서 상한");
 assert.match(search, /METRIC_ROW_LIMIT = Math\.floor\(MATCH_COUNT \/ 2\)/, "정량 행은 프롬프트의 절반까지만");
 assert.match(search, /\[정량 · 제공자 집계값 · 발췌 없음\]/, "프롬프트 근거 라벨");
 assert.match(search, /합계·평균·성장률을 새로 계산하지 않는다/, "파생 계산 금지가 프롬프트에 있다");

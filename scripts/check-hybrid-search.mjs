@@ -447,12 +447,15 @@ await assert.rejects(
 
 // --- 4) 상한 -----------------------------------------------------------------
 
-// 프롬프트에 넣는 근거 수는 ANSWER_SCHEMA의 used_sources 상한과 같아야 한다.
+// 프롬프트에 넣는 근거 수(검증 MATCH_COUNT + 보조 데이터 HEADLINE_QUOTA)는 ANSWER_SCHEMA의 used_sources 상한과 같아야 한다.
 // 여기가 어긋나면 모델이 존재하지 않는 번호를 인용하거나 스키마 검증에서 막힌다.
+// 2026-09-10부터 '보조 데이터 포함'은 검증 근거를 밀어내지 않고 뒤에 덧붙이므로 번호가 MATCH_COUNT를 넘는다.
 const source = await import("node:fs").then((fs) => fs.readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8"));
 const matchCount = Number(source.match(/const MATCH_COUNT = (\d+)/)?.[1]);
-const schemaMax = Number(source.match(/used_sources: \{ type: "array", maxItems: (\d+)/)?.[1]);
-assert.equal(matchCount, schemaMax, "프롬프트에 넣는 근거 수와 used_sources 상한이 같아야 한다");
+const headlineQuota = Number(source.match(/const HEADLINE_QUOTA = (\d+)/)?.[1]);
+assert.ok(matchCount > 0 && headlineQuota > 0, "MATCH_COUNT와 HEADLINE_QUOTA를 소스에서 읽을 수 있어야 한다");
+assert.match(source, /used_sources: \{ type: "array", maxItems: MATCH_COUNT \+ HEADLINE_QUOTA, items: \{ type: "integer", minimum: 1, maximum: MATCH_COUNT \+ HEADLINE_QUOTA \} \}/,
+  "used_sources 상한은 MATCH_COUNT + HEADLINE_QUOTA로 소스 상수에 묶여 있어야 한다");
 assert.ok(source.includes('provider: "openai_rag"'), "근거 답변은 전용 경량 RAG 모델 경로를 써야 한다");
 assert.match(source, /if \(!data\.sufficient\)/, "1차 답변이 부족할 때만 재작성 비용을 쓴다");
 assert.match(source, /intentQuestion: question/, "재작성 검색도 회사·지표 의도는 원 질문에 고정한다");
@@ -462,5 +465,45 @@ assert.match(source, /parsed \? ordered\.filter\(\(row\) => parsed\.companies\.i
 const providerSource = await import("node:fs").then((fs) => fs.readFileSync(new URL("../lib/llm-provider.js", import.meta.url), "utf8"));
 assert.ok(providerSource.includes('provider === "openai_rag"'), "전용 RAG 제공자 설정이 있어야 한다");
 assert.ok(providerSource.includes('OPENAI_RAG_MODEL') && providerSource.includes('gpt-5.4-nano'), "RAG 기본 모델은 gpt-5.4-nano여야 한다");
+
+// --- 3-4) '보조 데이터 포함'은 검증 근거를 보존하고 헤드라인을 뒤에 덧붙인다 ----------------
+//
+// 2026-09-10 사용자 실측: "적자를 보고 있는 중국 기업?"에서 토글을 켜자 정답이던 Farasis 순손실 청크(10위)가
+// 사라지고 헤드라인 4건이 그 자리를 차지해 답이 "근거 부족"으로 바뀌었다. 더 넣었는데 결과가 줄어드는 것은
+// 토글의 뜻과 어긋난다. 검증 근거는 토글을 끈 것과 같은 검색으로 뽑고, 헤드라인은 별도 패스로 뒤에 붙인다.
+const verifiedPool = Array.from({ length: 10 }, (_, i) => ({ id: `v${i}`, company_id: "farasis", source_type: "article_chunk", content_ko: `검증 근거 ${i}`, similarity: 0.5 - i * 0.01 }));
+const headlinePool = Array.from({ length: 6 }, (_, i) => ({ id: `h${i}`, company_id: "calb", source_type: "headline", content_ko: `[미검증 헤드라인] ${i}`, similarity: 0.6 - i * 0.01 }));
+let embedCalls = 0; const rpcCalls = [];
+globalThis.fetch = async (url, init) => {
+  const target = String(url);
+  if (target.includes("openai.com")) { embedCalls += 1; return jsonResponse({ data: [{ embedding: EMBEDDING }] }); }
+  const body = JSON.parse(init?.body || "{}");
+  if (target.includes("rpc/match_knowledge_chunks")) {
+    rpcCalls.push({ rpc: "vector", unverified: body.include_unverified });
+    // 헤드라인은 유사도가 더 높아 같은 풀에서 경쟁시키면 검증 근거를 밀어낸다 — 그 상황을 그대로 흉내 낸다.
+    return jsonResponse(body.include_unverified ? [...headlinePool, ...verifiedPool].slice(0, body.match_count) : verifiedPool.slice(0, body.match_count));
+  }
+  if (target.includes("rpc/lexical_knowledge_chunks")) {
+    rpcCalls.push({ rpc: "lexical", unverified: body.include_unverified });
+    return jsonResponse(body.include_unverified ? [...headlinePool, ...verifiedPool].slice(0, body.match_count) : verifiedPool.slice(0, body.match_count));
+  }
+  if (target.includes("report_metric?") || target.includes("market_financial?")) return jsonResponse([]);
+  throw new Error(`unexpected fetch: ${target}`);
+};
+const offRows = await searchKnowledge({ question: "적자를 보고 있는 중국 기업", includeUnverified: false });
+const offCalls = rpcCalls.splice(0), offEmbeds = embedCalls; embedCalls = 0;
+assert.ok(offRows.every((row) => row.source_type !== "headline"), "토글이 꺼지면 헤드라인이 섞이지 않는다");
+assert.ok(offCalls.every((call) => call.unverified === false), "토글이 꺼지면 보조 데이터 패스를 부르지 않는다");
+assert.equal(offEmbeds, 1, "임베딩은 질문당 한 번이다");
+const onRows = await searchKnowledge({ question: "적자를 보고 있는 중국 기업", includeUnverified: true });
+const onCalls = rpcCalls.splice(0);
+assert.deepEqual(onRows.slice(0, offRows.length).map((row) => row.id), offRows.map((row) => row.id),
+  "토글을 켜도 검증 근거의 목록과 순서는 끈 것과 같아야 한다 — 더하는 것이지 바꾸는 것이 아니다");
+const appended = onRows.slice(offRows.length);
+assert.ok(appended.length > 0 && appended.length <= 3, `헤드라인은 뒤에 최대 HEADLINE_QUOTA건 덧붙는다: ${appended.length}`);
+assert.ok(appended.every((row) => row.source_type === "headline"), "덧붙는 것은 헤드라인뿐이다");
+assert.equal(onRows.retrieval.headline_rows, appended.length, "통계에 헤드라인 건수를 남긴다");
+assert.ok(onCalls.some((call) => call.unverified === true) && onCalls.some((call) => call.unverified === false), "검증 패스와 보조 패스를 둘 다 돈다");
+assert.equal(embedCalls, 1, "보조 패스가 있어도 임베딩은 한 번이다");
 
 console.log("hybrid search checks passed");
