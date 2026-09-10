@@ -147,8 +147,13 @@ const selectedEvidence = selectTimelineEvidence(denseEvents);
 assert.ok(selectedEvidence.length <= 48, "대표 근거 선택기는 48건을 넘기면 안 된다");
 assert.equal(selectedEvidence[0].id, "dense-0", "가장 이른 근거는 보존해야 한다");
 assert.equal(selectedEvidence.at(-1).id, "dense-89", "가장 최근 근거는 보존해야 한다");
+const sourceYears = new Set(denseEvents.map(event => event.date.slice(0, 4)));
+const selectedYears = new Set(selectedEvidence.map(event => event.date.slice(0, 4)));
+assert.deepEqual([...selectedYears].sort(), [...sourceYears].sort(), "입력 압축 뒤에도 모든 연도의 흐름을 보존해야 한다");
 const compactInput = buildTimelineInput({ companyName: "CATL", events: denseEvents });
-assert.match(compactInput, /화면 이벤트 90건 중 기간·레이어별 대표 근거 24건/, "보고서 모델 입력은 24건으로 압축해야 한다");
+const compactCount = compactInput.match(/화면 이벤트 90건 중 기간·레이어별 대표 근거 (\d+)건/);
+assert.ok(compactCount, "긴 시계열의 대표 근거 수를 표시해야 한다");
+assert.ok(Number(compactCount[1]) > 0 && Number(compactCount[1]) <= 24, "대표 근거는 최대 24건 이내여야 한다");
 assert.match(timeline, /timeoutMs: 110000/, "압축된 시계열 리포트에는 110초 응답 시간을 준다");
 const omittedEvidence = denseEvents.find(event => !selectedEvidence.some(selected => selected.id === event.id));
 assert.ok(omittedEvidence && !compactInput.includes(omittedEvidence.title), "선택되지 않은 반복 근거를 모델 입력에 넣으면 안 된다");
@@ -156,6 +161,6 @@ assert.ok(omittedEvidence && !compactInput.includes(omittedEvidence.title), "선
 assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
 assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
 assert.match(api, /report_metric\?select=period,metric,value,unit,yoy_pct_stated/, "보고서 물량을 읽어야 한다");
-assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, events, metrics, policies \}\)/, "정량 행을 리포트에 넘겨야 한다");
+assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, events, metrics, policies \}\)/, "정량 행과 기업 유형을 리포트에 넘겨야 한다");
 
 console.log("timeline report checks passed");

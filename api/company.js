@@ -165,7 +165,7 @@ async function runTimelineReport(request, response) {
     // 돌려주지 말고, 네트워크/상류 시간 초과일 때만 한 번 다시 시도한다. 스키마·입력 오류는
     // 재시도해도 해결되지 않으므로 그대로 반환한다.
     const result = await retryOnceOnTimeout(
-      () => buildTimelineReport({ companyName: company.name_ko, events, metrics, policies }),
+      () => buildTimelineReport({ companyName: company.name_ko, companyTags: company.type_tags, events, metrics, policies }),
       { delayMs: 1500 },
     );
     console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, events: events.length, reportChars: result.report.markdown_ko.length }));
@@ -193,7 +193,7 @@ async function runCompareReport(request, response) {
     // 숫자 조회가 한쪽에서 실패해도 해당 회사의 이벤트 근거로 리포트는 계속 만든다.
     const includePolicy = request.body?.includePolicy === true;
     const [metricsA, metricsB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
-    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB, metricsA, metricsB, policies, pairContext: pairContextValue });
+    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, companyTags: [...a.type_tags, ...b.type_tags], eventsA, eventsB, metricsA, metricsB, policies, pairContext: pairContextValue });
     result.report.policy_context = policies;
     // 웹 검증이 확인한 것은 리포트에만 두지 않고 DB에 되돌린다. 실패해도 리포트는 그대로 낸다.
     let dbUpdates = null;
