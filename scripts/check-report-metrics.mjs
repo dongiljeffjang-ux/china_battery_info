@@ -42,6 +42,11 @@ assert.equal(
   undefined,
   "비율(%)을 금액으로 읽으면 안 된다",
 );
+assert.equal(
+  pick(extractMetricsFromExcerpt("研发投入总额占营业收入 2.40 | 3.50 | 减少1.1个百分点 [单位：元] 比例（%）", { evidenceKind: "periodic_report", occurredAt: "2026-06-30" }), "revenue_total"),
+  undefined,
+  "표 끝 단위가 붙은 매출 비율을 금액으로 읽으면 안 된다",
+);
 
 // ── 3. 이익 계정 세 가지가 서로를 잡아먹지 않는다 (Zhongke 2025 연차) ──────────
 const zhongke = extractMetricsFromExcerpt(
@@ -89,6 +94,26 @@ const zhenhua = extractMetricsFromExcerpt(
 );
 close(pick(zhenhua, "revenue_total").value, 9.7232329572, "표 형식 발췌에서 당기 값(첫 칸)을 읽는다");
 assert.equal(pick(zhenhua, "revenue_total").period, "2024H1");
+
+// 표 단위 꼬리표는 행 끝에 한 번만 붙는다. 꼬리표를 놓치면 千元을 元으로
+// 읽어 1000배 작아진다.
+const tableUnit = extractMetricsFromExcerpt(
+  "营业收入合计 | 423,701,834 | 100.00% | 362,012,554 | 100.00% | 17.04% [单位:千元]",
+  { evidenceKind: "annual_report", occurredAt: "2025-12-31" },
+);
+close(pick(tableUnit, "revenue_total").value, 4237.01834, "표 꼬리표 千元 환산");
+
+// 긴 자회사명과 제품명 앞의 매출은 전사 매출이 아니다.
+const longSubsidiary = extractMetricsFromExcerpt(
+  "子公司金驰能源材料有限公司营业收入 22.07 亿元。",
+  { evidenceKind: "annual_report", occurredAt: "2024-12-31" },
+);
+assert.equal(pick(longSubsidiary, "revenue_total"), undefined, "긴 자회사 매출을 전사 매출로 읽지 않는다");
+const materialRevenue = extractMetricsFromExcerpt(
+  "负极材料实现营业收入 37.36 亿元。",
+  { evidenceKind: "annual_report", occurredAt: "2023-12-31" },
+);
+assert.equal(pick(materialRevenue, "revenue_total"), undefined, "제품·소재 매출을 전사 매출로 읽지 않는다");
 
 const wanrun = extractMetricsFromExcerpt(
   "实现营业总收入 443,589.04 万元，较上年度同比增加 50.49%…实现归属母公司净利润-26,577.81万元，较上年度同比减少亏损 13,861.70 万元",
