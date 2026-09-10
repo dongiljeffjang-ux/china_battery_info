@@ -11,7 +11,8 @@ assert.match(daily, /DAILY_LLM_TIMEOUT_MS = 90000/);
 assert.match(daily, /timeoutMs: DAILY_LLM_TIMEOUT_MS/);
 assert.match(daily, /provider: "openai_report"/);
 assert.match(timelineReport, /name: "company_timeline_report",\s*provider: "openai_report"/s);
-assert.equal((compareReport.match(/provider: "openai_report"/g) || []).length, 3);
+// 초안·웹 검증·정책-기업 연결 재검토·함의 종합. 모두 리포트 전용 API를 쓴다.
+assert.equal((compareReport.match(/provider: "openai_report"/g) || []).length, 4);
 assert.match(ingest, /retryOnceOnTimeout\(\s*\(\) => generateDailyReport\(\),\s*\{ delayMs: 1500 \}/s);
 const companyApi = readFileSync(new URL("../api/company.js", import.meta.url), "utf8");
 assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, events, metrics, alternatives, policies \}\),\s*\{ delayMs: 1500 \}/s, "시계열 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");

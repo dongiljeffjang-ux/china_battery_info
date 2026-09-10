@@ -1904,6 +1904,23 @@ async function exportRawNews(){
 // 비교 리포트를 A4 한 장으로 인쇄용 창에 띄운다.
 // 서버가 PDF 바이트를 만들지 않는 이유는 한글 PDF에 CJK 폰트를 통째로 실어야 하기 때문이다.
 // 브라우저 인쇄는 시스템 폰트를 그대로 쓰므로 한글이 깨지지 않고, 사용자가 PDF로 저장할 수 있다.
+// 정책-기업 연결 웹 재검토 결과. 직접·간접은 근거(회사 사실 또는 연 문서)가 있어야 서버가 남긴다.
+const POLICY_RELATION_LABEL = { direct: '직접', indirect: '간접', none: '무관', undetermined: '판정불가' };
+function policyLinksHtml(r, payload){
+  if (r.policy_check_status === 'failed') return '<p class="none">정책-기업 연결 웹 재검토에 실패해 위 해석은 초안 기준입니다.</p>';
+  const links = Array.isArray(r.policy_links) ? r.policy_links : [];
+  if (!links.length) return r.policy_check_status === 'ok' ? '<p class="none">정책-기업 연결 재검토에서 관련 가능성이 있는 조합을 찾지 못했습니다.</p>' : '';
+  const order = { direct: 0, indirect: 1, undetermined: 2, none: 3 };
+  const rows = [...links].sort((x, y) => (order[x.relation] ?? 9) - (order[y.relation] ?? 9)).map(link => {
+    const who = link.company === 'B' ? payload.company_b : payload.company_a;
+    const basis = [
+      link.basis_title ? `회사 사실: ${link.basis_date ? `${link.basis_date} ` : ''}${link.basis_title}` : '',
+      link.source_url ? `<a href="${escapeHtml(link.source_url)}" target="_blank" rel="noreferrer">출처 문서 ↗</a>` : '',
+    ].filter(Boolean);
+    return `<li><span class="tag">${escapeHtml(POLICY_RELATION_LABEL[link.relation] || '판정불가')}</span> <strong>${escapeHtml(link.policy_title)}</strong> <small>${escapeHtml(link.policy_date || '')}</small> · ${escapeHtml(who || '')}<br><span>${escapeHtml(link.path_ko)}</span>${basis.length ? `<br><span class="basis">${basis.map(part => part.startsWith('<a ') ? part : escapeHtml(part)).join(' · ')}</span>` : ''}</li>`;
+  }).join('');
+  return `<p class="who" style="margin-top:4px">정책–기업 연결 재검토 (웹 검색)</p><ul>${rows}</ul>`;
+}
 function compareReportParts(payload){
   const r = payload.report || {};
   const insight = r.korea_insight || {};
@@ -2010,7 +2027,8 @@ ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
 <h2 class="insight">3. 한국 배터리사·소재사 관점 — 해석</h2>
 ${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
 ${r.policy_analysis_ko ? `<h2>중국 정책 변수 — 해석</h2><p class="txt">${bulletText(r.policy_analysis_ko)}</p>` : ''}
-${r.policy_context?.length ? `<details><summary>분석에 포함된 정책 근거 ${r.policy_context.length}건</summary><ul>${r.policy_context.map(policy => `<li>${escapeHtml(policy.occurred_at)} · ${escapeHtml(policy.title_ko)} — ${escapeHtml(policy.fact_ko)} <small>${escapeHtml(policy.source_name)}</small></li>`).join('')}</ul></details>` : ''}
+${policyLinksHtml(r, payload)}
+${r.policy_context?.length ? `<details><summary>정책 연혁 전체 ${r.policy_context.length}건${r.policy_selected_count ? ` · 리포트에는 대표 ${r.policy_selected_count}건 입력` : ''}</summary><ul>${r.policy_context.map(policy => `<li>${escapeHtml(policy.occurred_at)} · ${escapeHtml(policy.title_ko)} — ${escapeHtml(policy.fact_ko)} <small>${escapeHtml(policy.source_name)}</small></li>`).join('')}</ul></details>` : ''}
 <h2 class="check">4. 웹 검증${verifyFailed ? ' — 미실시' : ''}</h2>
 <p class="txt">${escapeHtml(check.checked_ko || (verifyFailed ? '웹 검증 단계가 실패해 초안 그대로입니다.' : '검증 정보 없음'))}</p>
 ${verifyFailed ? '' : (fixes ? `<p class="who" style="margin-top:4px">수정</p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>')}
