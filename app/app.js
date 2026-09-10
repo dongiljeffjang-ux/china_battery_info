@@ -2461,10 +2461,10 @@ async function runTimelineBackfill(){
     companyTimelineCache.clear();
     await renderCompany();
     window.alert(`시계열 백필을 완료했습니다.\n실행 ${completed}단계 · 마지막 작업 ${lastTask || '없음'}`);
-    button.disabled = false; button.textContent = '정기보고서 재처리';
+    button.disabled = false; button.textContent = '재처리';
   } catch (error) {
     window.alert(`백필 실행 중 실패했습니다: ${error.message}`);
-    button.disabled = false; button.textContent = '정기보고서 재처리';
+    button.disabled = false; button.textContent = '재처리';
   }
 }
 // 벡터DB(knowledge_chunk)에 아직 없는 event를 임베딩 API로 채운다. 남은 만큼 반복 호출한다.
@@ -2486,7 +2486,7 @@ async function runEmbedBackfill(){
   } catch (error) {
     window.alert(`임베딩을 실행하지 못했습니다: ${error.message}`);
   } finally {
-    button.disabled = false; button.textContent = '벡터DB 임베딩 채우기';
+    button.disabled = false; button.textContent = '임베딩';
   }
 }
 // 보고서에서 이미 확정한 상세 사실은 보존하고, 카드·표용 한국어 한 문장만 별도 열에 채운다.
@@ -2516,7 +2516,7 @@ async function runEventDisplaySummary(){
     window.alert(`화면용 요약 생성 중 실패했습니다: ${error.message}`);
   } finally {
     button.disabled = false;
-    button.textContent = '화면용 보고서 요약 생성';
+    button.textContent = '요약 생성';
   }
 }
 async function initialize(){
