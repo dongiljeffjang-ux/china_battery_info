@@ -44,7 +44,7 @@ erDiagram
 | --- | --- | --- |
 | `company` | `id`, `name_ko`, `name_zh`, `name_en`, `type_tags`, `listed_status` | 기업의 정규 식별자와 복수 유형 태그 |
 | `company_alias` | `company_id`, `alias`, `language`, `alias_type` | 중문·영문 약칭, 브랜드, 자회사, 구 명칭을 정규 기업 ID에 연결 |
-| `event` | `id`, `company_id`, `trajectory_track`, `market_layer`, `occurred_at`, `fact_ko`, `display_summary_ko`, `source_url`, `original_excerpt`, `original_excerpt_ko` | 시장 이벤트는 4개 비교 레이어 중 하나를 보유; `display_summary_ko`는 화면용 짧은 한국어 요약이며 상세 사실·원문 발췌·한국어 번역·출처 링크를 대체하지 않는다 |
+| `event` | `id`, `company_id`, `trajectory_track`, `market_layer`, `occurred_at`, `fact_ko`, `display_summary_ko`, `display_summary_version`, `source_url`, `original_excerpt`, `original_excerpt_ko` | 시장 이벤트는 4개 비교 레이어 중 하나를 보유; `display_summary_ko`는 버전 관리되는 화면용 짧은 한국어 요약이며 상세 사실·원문 발췌·한국어 번역·출처 링크를 대체하지 않는다 |
 | `security` | `company_id`, `exchange`, `ticker`, `security_type` | 상장 코드와 시장 |
 | `source` | `id`, `name`, `source_type`, `base_url`, `trust_tier` | 거래소·회사·매체·사용자 소스 |
 | `document` | `id`, `source_id`, `canonical_url`, `content_hash`, `published_at` | 논리적 원문 |

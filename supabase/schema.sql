@@ -52,6 +52,7 @@ create table if not exists public.event (
   fact_ko text not null,
   -- 표·카드에서 빠르게 읽는 별도 요약. fact_ko와 원문 발췌는 보존한다.
   display_summary_ko text,
+  display_summary_version text,
   display_summary_model text,
   display_summarized_at timestamptz,
   trajectory_track text not null check (trajectory_track in ('market', 'technology', 'both')),
