@@ -7,7 +7,7 @@
     <title>China Battery Lens</title>
     <link rel="icon" type="image/svg+xml" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
     <link rel="apple-touch-icon" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
-    <link rel="stylesheet" href="./styles.css?v=20260910-trajectory-lanes" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-event-display-summary" />
     <link rel="stylesheet" href="./access.css?v=20260901b" />
   </head>
   <body>
@@ -123,6 +123,7 @@
           </div>
           <div class="company-actions">
             <button id="run-backfill-button" class="secondary-button" type="button" data-tip="정기보고서만 한 건씩 다시 읽어 회사 시계열 이벤트와 벡터 임베딩을 갱신합니다. 다른 유지 작업은 실행하지 않습니다.">정기보고서 재처리</button>
+            <button id="run-event-summary-button" class="secondary-button" type="button" data-tip="연차·반기·분기보고서 이벤트의 별도 화면용 한국어 요약을 생성합니다. 상세 사실·원문 발췌·출처 링크는 바꾸지 않으며 뉴스 수집용 OpenAI 모델을 사용합니다.">화면용 보고서 요약 생성</button>
             <button id="run-embed-button" class="secondary-button" type="button" data-tip="시계열 사실(event) 중 벡터DB(지식 검색)에 아직 들어가지 않은 항목을 임베딩합니다. LLM 사실 추출이 아니라 이미 확정된 텍스트를 임베딩 API로 색인만 합니다.">벡터DB 임베딩 채우기</button>
             <button id="export-company-timeline" class="secondary-button" type="button">Excel 내보내기</button>
           </div>
@@ -225,7 +226,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260910-trajectory-lanes"></script>
+    <script src="./app.js?v=20260910-event-display-summary"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

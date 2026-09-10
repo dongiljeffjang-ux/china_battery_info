@@ -50,6 +50,10 @@ create table if not exists public.event (
   occurred_at date not null,
   title_ko text not null,
   fact_ko text not null,
+  -- 표·카드에서 빠르게 읽는 별도 요약. fact_ko와 원문 발췌는 보존한다.
+  display_summary_ko text,
+  display_summary_model text,
+  display_summarized_at timestamptz,
   trajectory_track text not null check (trajectory_track in ('market', 'technology', 'both')),
   layer_key text,
   region_scope text,
@@ -109,6 +113,7 @@ create index if not exists article_top10_idx on public.article (is_top10, top10_
 create index if not exists article_embedding_retry_idx on public.article (embedding_status, published_at desc) where body_original is not null;
 create index if not exists article_feedback_article_idx on public.article_feedback (article_id, vote);
 create index if not exists event_company_date_idx on public.event (company_id, occurred_at);
+create index if not exists event_display_summary_pending_idx on public.event (occurred_at desc, id) where display_summary_ko is null;
 create index if not exists event_entity_names_idx on public.event using gin (entity_names);
 create index if not exists knowledge_chunk_company_date_idx on public.knowledge_chunk (company_id, published_at desc);
 create index if not exists knowledge_chunk_embedding_hnsw_idx on public.knowledge_chunk using hnsw (embedding vector_cosine_ops);

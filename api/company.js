@@ -9,6 +9,7 @@ import { buildTimelineReport } from "../lib/timeline-report.js";
 import { filterTimelineEvents } from "../lib/timeline-visibility.js";
 import { retryOnceOnTimeout } from "../lib/timeout-retry.js";
 import { historicalPolicies } from "../lib/policy-context.js";
+import { summarizeEventDisplayBatch } from "../lib/event-display-summary.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증), 함의 종합은 긴 입력 한 번을 부른다. `api/*.js` Node 함수는
 // `export const config = { maxDuration }` 형식만 읽으므로(예전 `export const maxDuration`은 무시됐다)
@@ -55,7 +56,7 @@ function sortedCatalog() {
   });
 }
 
-const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,fact_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier)";
+const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,fact_ko,display_summary_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier)";
 async function loadPolicyEvents() {
   const live = await supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${POLICY_COMPANY_ID}&timeline_eligibility=neq.exclude&order=occurred_at.asc`);
   return [...historicalPolicies(), ...(live || [])].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
@@ -298,6 +299,18 @@ async function runReportSynthesis(request, response) {
 async function handleRequest(request, response) {
   if (!requireAccess(request, response)) return;
   if (request.method === "POST") {
+    if (String(request.body?.mode || "") === "event_display_summary") {
+      try {
+        const result = await summarizeEventDisplayBatch({ limit: request.body?.limit });
+        return response.status(200).json({ status: "ok", ...result });
+      } catch (error) {
+        const schemaMissing = /display_summary_ko|display_summary_model|display_summarized_at/.test(error.message || "");
+        return response.status(schemaMissing ? 503 : 502).json({
+          status: schemaMissing ? "schema_missing" : "event_display_summary_failed",
+          message: schemaMissing ? "supabase/event-display-summary.sql을 운영 DB에 먼저 적용해야 합니다." : error.message
+        });
+      }
+    }
     if (String(request.body?.mode || "") === "compare_report") return runCompareReport(request, response);
     if (String(request.body?.mode || "") === "synthesize_reports") return runReportSynthesis(request, response);
     if (String(request.body?.mode || "") === "timeline_report") return runTimelineReport(request, response);

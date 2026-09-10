@@ -703,6 +703,7 @@ function normalizeEvent(event){
     both: event.trajectory_track === 'both',
     title: event.title_ko || '제목 미상',
     fact: event.fact_ko || '',
+    displaySummary: event.display_summary_ko || '',
     region: event.region_scope || '',
     eligibility: event.timeline_eligibility === 'core' ? '핵심' : event.timeline_eligibility === 'reference' ? '참고' : '',
     sourceName: event.source_name || event.article?.source_name || '출처 미상',
@@ -1076,7 +1077,7 @@ function factWithoutTitle(title, fact, rawTitle){
 // 남은 설명을 문장 단위 불릿으로. 한 문장이면 불릿 하나다. 300자 상한은 전체 합에 건다.
 function digestItemParts(event, companyId){
   const title = stripCompanySubject(event.title, companyId).trim();
-  const detail = factWithoutTitle(title, event.fact, event.title);
+  const detail = factWithoutTitle(title, event.displaySummary || event.fact, event.title);
   let budget = DIGEST_ITEM_CHARS - title.length;
   const points = [];
   for (const sentence of splitSentences(detail)) {
@@ -1760,7 +1761,7 @@ function renderLayerMatrix(timeline){
       // 표는 빠르게 훑는 영역이므로 제목 아래에는 한 개의 짧은 핵심 불릿만 둔다.
       // 전체 근거와 수치는 기존 툴팁·원문 링크에서 확인할 수 있다.
       const displayTitle = shortTitle(stripCompanySubject(event.title, timeline.companyId || currentCompany));
-      const detailPoints = splitSentences(factWithoutTitle(displayTitle, event.fact, event.title))
+      const detailPoints = splitSentences(factWithoutTitle(displayTitle, event.displaySummary || event.fact, event.title))
         .map(point => point.replace(/^[\s•·\-–—]+/, '').trim())
         .filter(Boolean)
         .slice(0, 1);
@@ -2487,6 +2488,36 @@ async function runEmbedBackfill(){
     button.disabled = false; button.textContent = '벡터DB 임베딩 채우기';
   }
 }
+// 보고서에서 이미 확정한 상세 사실은 보존하고, 카드·표용 한국어 한 문장만 별도 열에 채운다.
+// 서버 함수가 한 번에 16건씩 처리하므로 브라우저가 독립 요청으로 다음 배치를 이어 호출한다.
+async function runEventDisplaySummary(){
+  if (!(await confirmAccessCode('화면용 보고서 요약 생성'))) return;
+  if (!window.confirm('연차·반기·분기보고서 이벤트의 화면용 한국어 요약을 생성합니다. 상세 사실, 원문 발췌, 링크는 바꾸지 않습니다. 뉴스 수집용 OpenAI 모델을 사용합니다. 완료될 때까지 이 탭을 열어 두세요. 시작할까요?')) return;
+  const button = document.querySelector('#run-event-summary-button');
+  button.disabled = true;
+  let total = 0;
+  try {
+    for (let hop = 1; hop <= 200; hop += 1) {
+      button.textContent = `화면 요약 생성 중… (${total}건)`;
+      const response = await fetch('/api/company', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'event_display_summary', limit: 16 })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.status !== 'ok') throw new Error(payload.message || payload.status || `HTTP ${response.status}`);
+      total += payload.updated || 0;
+      if (!payload.selected || !payload.remaining) break;
+    }
+    companyTimelineCache.clear();
+    await renderCompany();
+    window.alert(`화면용 요약 ${total}건을 생성했습니다. 상세 사실과 원문은 그대로 보존되어 있습니다.`);
+  } catch (error) {
+    window.alert(`화면용 요약 생성 중 실패했습니다: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = '화면용 보고서 요약 생성';
+  }
+}
 async function initialize(){
   // 카탈로그·대시보드 요청이 끝날 때까지 기본 Daily가 보이면 /#companies 직접 링크가 Daily처럼 보인다.
   // 먼저 URL의 화면을 켜고, 그 다음 해당 화면의 데이터를 채운다.
@@ -2514,6 +2545,7 @@ async function initialize(){
   document.querySelector('#export-company-timeline').addEventListener('click', exportCompanyTimeline);
   document.querySelector('#run-backfill-button').addEventListener('click', runTimelineBackfill);
   document.querySelector('#run-embed-button').addEventListener('click', runEmbedBackfill);
+  document.querySelector('#run-event-summary-button').addEventListener('click', runEventDisplaySummary);
   document.querySelector('#ask-form').addEventListener('submit', askKnowledge);
   document.querySelector('#news-more').addEventListener('click', () => { topNewsExpanded = !topNewsExpanded; renderTopNews(); });
   // 보조 데이터 토글은 기업 시계열 화면과 비교 화면 두 곳에 있고, 같은 상태를 공유한다.
