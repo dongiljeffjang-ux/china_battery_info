@@ -38,6 +38,7 @@ assert.match(timeline, /function layerTable/);
 assert.match(html, /data-timeline-report-mode="direction"/);
 assert.match(html, /data-timeline-report-mode="pattern"/);
 assert.match(html, /data-timeline-report-mode="inflection_point"/);
+assert.match(html, /전략 보고서 생성/, "세 메뉴가 리포트 생성 기능임을 명확히 보여야 한다");
 assert.match(html, /전략 진단/, "전략 방향은 임원 보고서 톤의 제목을 써야 한다");
 assert.match(html, /패턴 분석/, "패턴 인사이트는 임원 보고서 톤의 제목을 써야 한다");
 assert.match(html, /전략 변수/, "전략 분기점은 임원 보고서 톤의 제목을 써야 한다");
