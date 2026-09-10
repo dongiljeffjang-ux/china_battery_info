@@ -580,6 +580,29 @@
   $('#ec-load').addEventListener('click', () => runEval(() => loadEvalChunks(false)));
   $('#ec-more').addEventListener('click', () => runEval(() => loadEvalChunks(true)));
   $('#er-load').addEventListener('click', () => runEval(loadEvalRetrieval));
+  // 기준 답변 초안. 사람이 정답으로 체크한 근거의 사실 부분만 모은다 — 근거에 없는 문장은 넣지 않는다.
+  // 이번 주 지표(Hit@10·MRR)는 기준 답변을 읽지 않지만 DB가 필수로 잡고 있어 빈 채로는 저장이 안 된다.
+  // RAGAS를 붙일 때 사람이 다듬는 출발점이므로, 화면은 "초안"임을 알리고 그대로 저장할지는 사람이 정한다.
+  function draftReferenceAnswer(texts) {
+    const facts = [];
+    for (const raw of texts) {
+      const text = String(raw || '').replace(/\r\n/g, '\n');
+      let fact = '';
+      const event = text.match(/\[사실\]\s*([\s\S]*?)(?:\n\[|$)/);
+      if (event) fact = event[1];
+      else {
+        const article = text.match(/\[한국어 팩트 요약\]\s*\n([\s\S]*?)(?:\n\[원문|$)/);
+        if (article) fact = article[1];
+        else {
+          const headline = text.match(/\[제목\]\s*([^\n]*)/);
+          fact = headline ? headline[1] : (text.split('\n').find((line) => line.trim() && !line.trim().startsWith('[')) || '');
+        }
+      }
+      fact = fact.replace(/\s*\n\s*(?:-\s*)?/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 240);
+      if (fact && !facts.includes(fact)) facts.push(fact);
+    }
+    return facts.map((fact) => `- ${fact}`).join('\n').slice(0, 5900);
+  }
   // 검색 정밀도에서 고른 정답 청크를 평가 세트로 옮긴다. 청크 ID는 화면에 글자로 보이지 않아
   // 사람이 옮겨 적을 수 없었고, 정답 청크가 없으면 Hit@10·MRR이 0으로만 나온다.
   // 검색 조건이 다르면 같은 질문이라도 다른 근거가 나오므로 회사·보조 데이터도 함께 옮긴다.
@@ -595,15 +618,25 @@
     const merged = [...new Set([...picked, ...hidden])];
     $('#eb-question').value = question;
     $('#eb-title').value = saved?.title || $('#eb-title').value.trim() || question.slice(0, 160);
-    // 기준 답변은 저장 필수 항목이라, 저장된 문항이면 다시 적지 않아도 되게 채워 둔다.
-    if (saved?.reference_answer && !$('#eb-reference').value.trim()) $('#eb-reference').value = saved.reference_answer;
+    // 기준 답변은 저장 필수 항목이라, 저장된 문항이면 그 답변을, 새 문항이면 체크한 근거에서 뽑은 초안을 채운다.
+    // 사람이 이미 적어 둔 것이 있으면 건드리지 않는다.
+    let drafted = false;
+    if (!$('#eb-reference').value.trim()) {
+      if (saved?.reference_answer) $('#eb-reference').value = saved.reference_answer;
+      else {
+        const texts = [...document.querySelectorAll('#er-list [data-pick]:checked')]
+          .map((input) => input.closest('.eval-card')?.querySelector('pre')?.textContent || '');
+        const draft = draftReferenceAnswer(texts);
+        if (draft) { $('#eb-reference').value = draft; drafted = true; }
+      }
+    }
     $('#eb-chunks').value = merged.join(', ');
     $('#eb-company').value = context.company || '';
     $('#eb-unverified').checked = context.include_unverified === true;
     await showEvalSub('eval-benchmark');
     $('#eb-meta').textContent = saved
       ? `저장된 문항을 갱신합니다 · 정답 청크 ${merged.length}건(화면에서 고른 ${picked.length}건${hidden.length ? ` + 이번 결과에 없던 기존 정답 ${hidden.length}건` : ''}). 저장하면 기존 문항이 바뀝니다.`
-      : `정답 청크 ${picked.length}건을 옮겼습니다. 기준 답변을 적고 저장하세요.`;
+      : `정답 청크 ${picked.length}건을 옮겼습니다. ${drafted ? '기준 답변은 체크한 근거의 사실을 모은 초안입니다 — 확인하고 저장하세요.' : '기준 답변을 적고 저장하세요.'}`;
   }));
   $('#es-load').addEventListener('click', () => runEval(loadEvalSummary));
   $('#eb-save').addEventListener('click', () => runEval(async () => {
