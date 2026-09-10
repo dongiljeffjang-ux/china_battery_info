@@ -592,7 +592,8 @@ async function loadDashboardFromApi(){
 }
 let currentChain = 'cathode';
 let includeSupporting = false;
-let includePolicy = true;
+// 정책은 필요할 때만 열어 본다. 기업 사실·시장·기술 축이 기본 화면의 주인공이다.
+let includePolicy = false;
 
 // 기업 시계열 표는 공시 원문에서 나온 사실과 핵심 등급 기사만 기본으로 보여준다.
 // 참고 등급 기사와 웹 검색 백필은 시장·기술 구분과 무관하게 '보조 데이터 포함'을

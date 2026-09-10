@@ -36,7 +36,7 @@ assert.doesNotMatch(inline, /시행·유예 일정/, '정책 행 제목에는 �
 assert.doesNotMatch(app, /function renderPolicyAxis\(/, '중복되는 전체 정책 목록 렌더러를 두지 않는다');
 const index = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
 assert.doesNotMatch(index, /company-policy-axis|compare-policy-axis|배터리·NEV·ESS 정책 시간축/, '별도 정책 목록 섹션을 렌더하지 않는다');
-assert.match(app, /let includePolicy = true/, '정책 한 줄 표시는 기본으로 켜져 있어야 한다');
+assert.match(app, /let includePolicy = false/, '정책 한 줄 표시는 기본으로 꺼져 있어야 한다');
 assert.match(app, /policy-inline-row/, '정책은 별도 열이 아니라 해당 시점 아래의 보조 행이어야 한다');
 assert.match(index, /id="include-policy"/, '기업 화면에서 정책 표시를 선택할 수 있어야 한다');
 assert.match(index, /id="include-policy-compare"/, '비교 화면에서 정책 표시를 선택할 수 있어야 한다');
