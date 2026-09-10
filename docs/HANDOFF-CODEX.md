@@ -1,5 +1,10 @@
 # Codex → Claude Code 인수인계
 
+> **캐시 버전 규칙 (2026-09-10 21시 확인):** `app/app.js`·`app/styles.css`를 바꾸면 `app/index.html`의 `?v=`를 반드시 올린다.
+> Codex의 전략 보고서 모드 커밋 6개(`d71b031`~`1a62883`)가 두 파일을 바꾸고 버전을 그대로 둬, 20:22 이후 접속한 브라우저가
+> 새 HTML에 옛 `app.js`를 붙여 쓸 수 있었다(새 보고서 버튼 무동작 위험). `bee9b70` 뒤 커밋에서 `app.js?v=20260910-report-modes`,
+> `styles.css?v=20260910-borderless-tools`로 올렸다. `scripts/check-digest-bullets.mjs`·`check-page-outline.mjs`가 app.js 버전을 고정하므로 같이 고친다.
+
 ## 2026-09-10 저녁 Claude Code — 비교 리포트 근거 선별·다른 근거 병기·정책 재검토·시계열 표시 조정
 
 ### 커밋 (시간순. 푸시 여부는 아래 "운영 상태")

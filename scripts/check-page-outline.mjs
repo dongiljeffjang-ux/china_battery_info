@@ -15,6 +15,6 @@ assert.match(app, /new IntersectionObserver\(/, "현재 구간을 스크롤 위�
 assert.match(app, /activateView[\s\S]*refreshPageOutline\(view\)/, "페이지 전환 때 목차도 바뀌어야 한다");
 assert.ok(css.includes(".page-outline{"), "고정 목차 스타일이 있어야 한다");
 assert.ok(css.includes("@media(max-width:760px){.page-outline{display:none}"), "모바일에서는 목차를 숨겨야 한다");
-assert.match(html, /app\.js\?v=20260910-report-date/, "새 목차 스크립트를 받도록 캐시 버전을 올려야 한다");
+assert.match(html, /app\.js\?v=20260910-report-modes/, "새 목차 스크립트를 받도록 캐시 버전을 올려야 한다");
 
 console.log("page outline checks passed");
