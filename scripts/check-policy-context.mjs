@@ -24,9 +24,15 @@ const app = readFileSync(new URL('../app/app.js', import.meta.url), 'utf8');
 const source = app.slice(app.indexOf('function policyInlineItems('), app.indexOf('// 리포트 출력은 제한된 Markdown('));
 const escapeHtml = value => String(value || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const { policyCell } = new Function('escapeHtml', 'periodOf', 'displayDate', 'sourceLink', source + '\nreturn { policyCell };')(escapeHtml, date => date.slice(0, 4), event => event.date, event => escapeHtml(event.sourceName));
-const fake = [{ date: '2026-09-01', title: '<script>bad</script>', fact: '시행 내용', sourceName: '첨부 미검증' }];
+const fake = [
+  { id: 'policy-1', date: '2026-07-16', title: '<script>bad</script>', fact: '발표 내용', sourceName: '첨부 미검증' },
+  { id: 'policy-1-schedule-2026-09-01', date: '2026-09-01', title: '<script>bad</script> · 시행·유예 일정(첨부)', fact: '시행 내용', sourceName: '첨부 미검증' },
+];
 assert.equal(policyCell(fake, '2025'), '');
-assert.match(policyCell(fake, '2026'), /&lt;script&gt;/);
+const inline = policyCell(fake, '2026');
+assert.match(inline, /&lt;script&gt;/);
+assert.equal((inline.match(/&lt;script&gt;/g) || []).length, 1, '발표·시행 일정이 같은 분기에 겹쳐도 정책은 한 번만 보인다');
+assert.doesNotMatch(inline, /시행·유예 일정/, '정책 행 제목에는 중복 일정 꼬리표를 표시하지 않는다');
 assert.doesNotMatch(app, /function renderPolicyAxis\(/, '중복되는 전체 정책 목록 렌더러를 두지 않는다');
 const index = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
 assert.doesNotMatch(index, /company-policy-axis|compare-policy-axis|배터리·NEV·ESS 정책 시간축/, '별도 정책 목록 섹션을 렌더하지 않는다');

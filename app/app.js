@@ -851,11 +851,22 @@ async function renderCompany(){
 }
 
 function policyInlineItems(policies){
-  return (policies || []).map(policy => {
-    const fact = String(policy.fact || '').replace(/\s+/g, ' ').trim();
+  // 발표일과 시행일이 같은 분기에 들어오면 한 정책이 두 번 보인다. 화면에서는 원정책 ID
+  // 하나당 한 줄만 남기고, 시행일 일정 항목을 우선해 해당 분기의 변화 시점을 보존한다.
+  const unique = new Map();
+  for (const policy of policies || []) {
+    const baseId = String(policy.id || '').replace(/-schedule-\d{4}-\d{2}-\d{2}$/, '');
+    const previous = unique.get(baseId);
+    if (!previous || String(policy.id || '').includes('-schedule-')) unique.set(baseId, policy);
+  }
+  return [...unique.values()].map(policy => {
+    // 정책 행은 한국어 요약만 쓴다. 시행일·문건 번호는 전체 근거용 메타데이터이므로,
+    // 여기서 붙인 괄호를 다시 노출하면 중국어 문건 표기가 화면으로 새어 나온다.
+    const fact = String(policy.fact || '').replace(/\s*\(시행:[^)]*\)\s*$/, '').replace(/\s+/g, ' ').trim();
     const summary = fact.length > 150 ? `${fact.slice(0, 147)}…` : fact;
+    const title = String(policy.title || '').replace(/ · 시행·유예 일정\(첨부\)$/, '');
     const tip = [fact, `정책 시점: ${displayDate(policy)}`, `출처: ${policy.sourceName || ''}`].filter(Boolean).join('\n\n');
-    return `<div class="policy-inline-item" data-tip="${escapeHtml(tip)}"><span class="policy-inline-tag">정책</span><span class="policy-inline-title">${escapeHtml(policy.title)}</span>${summary ? `<span class="policy-inline-summary">${escapeHtml(summary)}</span>` : ''}</div>`;
+    return `<div class="policy-inline-item" data-tip="${escapeHtml(tip)}"><span class="policy-inline-tag">정책</span><span class="policy-inline-title">${escapeHtml(title)}</span>${summary ? `<span class="policy-inline-summary">${escapeHtml(summary)}</span>` : ''}</div>`;
   }).join('');
 }
 function policyCell(policies, period){
@@ -1746,15 +1757,15 @@ function renderLayerMatrix(timeline){
     return matched.map(event => {
       const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
       const unclassified = event.layer === UNCLASSIFIED_LAYER ? '<span class="matrix-entity">미분류</span>' : '';
-      // 제목만으로는 규모·단계·상대방을 알 수 없으므로 제목과 겹치지 않는 사실을
-      // 두 줄까지 개조식으로 보인다. 전체 근거는 기존 툴팁에 유지한다.
+      // 표는 빠르게 훑는 영역이므로 제목 아래에는 한 개의 짧은 핵심 불릿만 둔다.
+      // 전체 근거와 수치는 기존 툴팁·원문 링크에서 확인할 수 있다.
       const displayTitle = shortTitle(stripCompanySubject(event.title, timeline.companyId || currentCompany));
       const detailPoints = splitSentences(factWithoutTitle(displayTitle, event.fact, event.title))
         .map(point => point.replace(/^[\s•·\-–—]+/, '').trim())
         .filter(Boolean)
-        .slice(0, 2);
+        .slice(0, 1);
       const detail = detailPoints.length
-        ? `<ul class="matrix-details">${detailPoints.map(point => `<li>${escapeHtml(clipText(point, 90))}</li>`).join('')}</ul>` : '';
+        ? `<ul class="matrix-details">${detailPoints.map(point => `<li>${escapeHtml(clipText(point, 64))}</li>`).join('')}</ul>` : '';
       // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다.
       const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
       return `<div class="matrix-item${supporting}" data-tip="${escapeHtml(tip)}"><span class="matrix-title">${escapeHtml(displayTitle)}</span>${detail}${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;

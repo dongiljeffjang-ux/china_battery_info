@@ -9,6 +9,6 @@ assert.match(source, /timeline\.events\.filter\(isPrimaryEvidence\)/, "기본 �
 assert.doesNotMatch(source, /isPrimaryEvidence\(event\) \|\| event\.track === 'tech'/, "기술 뉴스만 보조 데이터에서 기본 근거로 승격하면 안 된다");
 assert.match(source, /class="traj-lane-labels"/, "연차보고서 그래프 아래에는 시장·기술 레인 이름을 항상 표시해야 한다");
 assert.match(source, />시장<\/text>[\s\S]*>기술<\/text>/, "그래프 사건 플래그의 시장·기술 두 축을 유지해야 한다");
-assert.match(source, /clipText\(point, 90\)/, "표의 세부 개조식은 읽기 쉽게 축약해야 한다");
+assert.match(source, /clipText\(point, 64\)/, "표의 세부 개조식은 읽기 쉽게 축약해야 한다");
 
 console.log("supporting toggle scroll preservation checks passed");
