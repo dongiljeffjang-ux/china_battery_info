@@ -4,7 +4,8 @@
 
 **가장 최근 변경 요약과 다음 할 일은 `docs/HANDOFF-CODEX.md`에 있다. 먼저 읽는다.**
 맨 위 절(2026-09-10 저녁 Claude Code)이 최신이다: 비교 리포트 근거 선별 수정, 웹 검증 교정의 "다른 근거" 병기(`evidence_alternative`),
-정책-기업 연결 웹 재검토, `pending_review`→`verified` 1단계, Sankey 기본 기간, 보조 데이터 툴팁화. 배포 완료, SQL 2개는 사용자 실행 대기.
+정책-기업 연결 웹 재검토, `pending_review`→`verified` 이관(SQL 적용·코드 정리 완료), Sankey 기본 기간, 보조 데이터 툴팁화,
+순이익·R&D 시계열 표시와 툴팁 발행일(`b7f24db`, 푸시 대기). 공시 처리 순서는 바꾸지 않기로 했다(되돌림).
 (그 앞 세션 분은 `docs/HANDOFF-2026-09-08-CLAUDE.md`에 남아 있다. 두 문서가 겹치면 `HANDOFF-CODEX.md`가 최신이다.)
 
 2026-09-10 세션 둘이 `HANDOFF-CODEX.md` 첫머리에 순서대로 있다. **위쪽(Claude Code)** 은 맨 앞 "요약" 절만 읽으면 된다 —
