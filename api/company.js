@@ -106,6 +106,7 @@ function cleanEvents(list) {
       layer: String(event?.layer || "").slice(0, 80),
       period: String(event?.period || "").slice(0, 30),
       entity: String(event?.entity || "").slice(0, 120),
+      sourceDate: /^\d{4}-\d{2}-\d{2}$/.test(String(event?.sourceDate || "")) ? String(event.sourceDate) : "",
       title: String(event?.title || "").slice(0, 160),
       fact: String(event?.fact || "").slice(0, 400),
       sourceName: String(event?.sourceName || "").slice(0, 80)
@@ -125,6 +126,7 @@ function cleanTimelineEvents(list) {
     title: String(event?.title || "").slice(0, 180),
     fact: String(event?.fact || "").slice(0, 500),
     entity: String(event?.entity || "").slice(0, 120),
+    sourceDate: /^\d{4}-\d{2}-\d{2}$/.test(String(event?.sourceDate || "")) ? String(event.sourceDate) : "",
     sourceName: String(event?.sourceName || "").slice(0, 100),
     sourceUrl: /^https?:\/\//i.test(String(event?.sourceUrl || "")) ? String(event.sourceUrl).slice(0, 500) : "",
   })).filter(event => event.id && event.date && event.title && event.fact);

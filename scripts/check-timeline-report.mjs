@@ -160,6 +160,8 @@ assert.ok(omittedEvidence && !compactInput.includes(omittedEvidence.title), "선
 // 화면 툴팁의 발생 법인이 리포트 입력에도 들어가야 한다(보조 데이터는 칸에 제목만 보인다).
 const entityInput = buildTimelineInput({ companyName: "CATL", events: [{ id: "e1", date: "2026-08-18", period: "2026년", layer: "supply-performance", title: "상용차 협력", fact: "CATL 뉴스룸에 따르면 협력 체결", entity: "CATL 상용차 법인", sourceName: "CATL Newsroom", sourceUrl: "" }] });
 assert.match(entityInput, /CATL 뉴스룸에 따르면 협력 체결 \(2026-08-18 · 발생 법인: CATL 상용차 법인 · 출처: CATL Newsroom/, "사실 전문·발생 법인·출처가 리포트 입력에 있어야 한다");
+const datedInput = buildTimelineInput({ companyName: "BYD", events: [{ id: "e2", date: "2026-03-05", period: "2026년", layer: "technology-development", title: "2세대 블레이드", fact: "9분 충전", sourceName: "大众日报", sourceDate: "2026-09-04", sourceUrl: "" }] });
+assert.match(datedInput, /\(사건 2026-03-05 · 발행 2026-09-04 · 출처: 大众日报/, "기사 발행일이 있으면 사건 시점과 나란히 적는다");
 // 2026-09-10 후난위넝 비교 리포트: 레이어 없는 62건(기술 4건)에서 4건만 골라 기술 축이 비었다.
 // 남는 칸을 채우고 기술 몫을 보장해야 한다.
 const flatEvents = Array.from({ length: 62 }, (_, index) => ({

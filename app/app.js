@@ -976,7 +976,7 @@ async function generateTimelineReport(){
   try {
     const response = await fetch('/api/company', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'timeline_report', includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl })) })
+      body: JSON.stringify({ mode: 'timeline_report', includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl, sourceDate: event.sourceDate })) })
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
@@ -2240,7 +2240,7 @@ async function synthesizeReports(){
 }
 // 레이어·기간이 빠지면 서버의 대표 근거 선택이 연도별 한 건으로 줄어든다. 시계열 리포트와 같은 필드를 보낸다.
 // 화면에서 제목만 보이는 보조 데이터도 툴팁 내용(사실 전문·발생 법인·출처)은 그대로 리포트에 간다.
-const compareReportEvent = event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName });
+const compareReportEvent = event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceDate: event.sourceDate });
 async function generateCompareReport(){
   await chooseReportSupporting();
   const includePolicyInReport = window.confirm('중국 정책을 이 비교 리포트 분석에 반영할까요?\n\n확인: 두 기업에 대한 정책의 적용 대상·시점과 사업 조건의 관련성을 근거 범위에서 비교합니다.\n취소: 시장·기술 기업 근거만으로 비교합니다.');
