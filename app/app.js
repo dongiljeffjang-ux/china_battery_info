@@ -446,8 +446,8 @@ function mapDashboardArticle(article){
     title: article.title_ko || article.title_original,
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
     why: `출처: ${article.source_name || '출처 미상'}`,
-    confidence: article.verification_status === 'pending_review' ? '본문대조 완료' : article.verification_status === 'pending' ? '미분석' : article.source_tier || '검수 완료',
-    confidenceTitle: article.verification_status === 'pending_review' ? '원문 본문 대조 팩트체크 완료' : article.verification_status === 'pending' ? '미분석 수집 원문' : article.source_tier || '검수 완료',
+    confidence: ['verified', 'pending_review'].includes(article.verification_status) ? '본문대조 완료' : article.verification_status === 'pending' ? '미분석' : article.source_tier || '검수 완료',
+    confidenceTitle: ['verified', 'pending_review'].includes(article.verification_status) ? '원문 본문 대조 팩트체크 완료' : article.verification_status === 'pending' ? '미분석 수집 원문' : article.source_tier || '검수 완료',
     top10Rank: article.is_top10 ? article.top10_rank : null,
     url: article.canonical_url,
     sourceName: article.source_name

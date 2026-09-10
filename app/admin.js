@@ -99,7 +99,7 @@
     const { overview, last_runs } = await api({ view: 'overview' });
     const byStatus = overview.articles_by_status || [];
     const total = byStatus.reduce((s, r) => s + r.count, 0);
-    const verified = byStatus.filter((r) => ['pending_review', 'approved'].includes(r.verification_status)).reduce((s, r) => s + r.count, 0);
+    const verified = byStatus.filter((r) => ['verified', 'pending_review', 'approved'].includes(r.verification_status)).reduce((s, r) => s + r.count, 0);
     const untried = byStatus.filter((r) => r.verification_status === 'pending' && !r.processing_status).reduce((s, r) => s + r.count, 0);
     const failed = byStatus.filter((r) => ['body_unavailable', 'body_too_short', 'processing_failed'].includes(r.processing_status)).reduce((s, r) => s + r.count, 0);
     const rejected = byStatus.filter((r) => r.processing_status === 'fact_check_rejected').reduce((s, r) => s + r.count, 0);

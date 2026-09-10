@@ -228,7 +228,7 @@ export async function processPendingArticle(articleId, companyId) {
   }
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
     method: "PATCH",
-    body: { title_ko: verifiedResult.title_ko, summary_ko: verifiedResult.summary_ko, keywords_ko: verifiedResult.keywords_ko, headline_signals: verifiedResult.headline_signals || [], verification_status: "pending_review", source_tier: `${primaryProvider}_${verifierProvider}_${factCheck.verdict === "corrected_pass" ? "corrected" : "fact_checked"}`, processing_status: "ok", processing_note: factCheck.verdict === "corrected_pass" ? String(factCheck.reason_ko || "").slice(0, 500) || null : null, processed_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    body: { title_ko: verifiedResult.title_ko, summary_ko: verifiedResult.summary_ko, keywords_ko: verifiedResult.keywords_ko, headline_signals: verifiedResult.headline_signals || [], verification_status: "verified", source_tier: `${primaryProvider}_${verifierProvider}_${factCheck.verdict === "corrected_pass" ? "corrected" : "fact_checked"}`, processing_status: "ok", processing_note: factCheck.verdict === "corrected_pass" ? String(factCheck.reason_ko || "").slice(0, 500) || null : null, processed_at: new Date().toISOString(), updated_at: new Date().toISOString() }
   });
   let embedding = { status: "skipped", chunks: 0 };
   try {
@@ -258,7 +258,7 @@ export async function processPendingArticle(articleId, companyId) {
     const nearby = await supabaseRest(`event?select=occurred_at,title_ko,fact_ko&company_id=eq.${encodeURIComponent(companyId)}&occurred_at=gte.${addDays(occurredAt, -3)}&occurred_at=lte.${addDays(occurredAt, 3)}`);
     if ((nearby || []).some((prev) => sameFact(prev, candidate))) {
       console.info("[EVENT_DUP_SKIPPED]", JSON.stringify({ articleId, companyId, title: verifiedResult.event_title_ko }));
-      return { status: "pending_review", verification_outcome: factCheck.verdict, analysis: verifiedResult, fact_check: factCheck, embedding, duplicate: true, primary_provider: primaryProvider, verifier_provider: verifierProvider };
+      return { status: "verified", verification_outcome: factCheck.verdict, analysis: verifiedResult, fact_check: factCheck, embedding, duplicate: true, primary_provider: primaryProvider, verifier_provider: verifierProvider };
     }
     // 이벤트는 만들어지는 즉시 벡터 검색 대상이 돼야 한다. 크론이나 버튼을 기다리게 하지 않는다.
     // 임베딩 실패는 이벤트 적재를 되돌리지 않는다. 남은 것은 임베딩 크론이 채운다.
@@ -291,7 +291,7 @@ export async function processPendingArticle(articleId, companyId) {
       console.error("[EVENT_EMBEDDING_FAILED]", JSON.stringify({ articleId, message: error.message }));
     }
   }
-  return { status: "pending_review", verification_outcome: factCheck.verdict, analysis: verifiedResult, fact_check: factCheck, embedding, primary_provider: primaryProvider, verifier_provider: verifierProvider };
+  return { status: "verified", verification_outcome: factCheck.verdict, analysis: verifiedResult, fact_check: factCheck, embedding, primary_provider: primaryProvider, verifier_provider: verifierProvider };
 }
 
 export default async function handler(request, response) {
@@ -305,7 +305,7 @@ export default async function handler(request, response) {
 
   try {
     const result = await processPendingArticle(articleId, companyId);
-    return response.status(result.status === "pending_review" ? 200 : 422).json(result);
+    return response.status(result.status === "verified" ? 200 : 422).json(result);
   } catch (error) {
     return response.status(502).json({ status: "processing_failed", message: error.message });
   } finally {

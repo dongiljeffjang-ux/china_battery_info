@@ -1,59 +1,17 @@
--- China Battery Lens: 관리자 페이지(품질 점검)용 관측 스키마.
--- Supabase SQL Editor에서 한 번 실행한다. 재실행해도 안전하다.
+-- 자동 본문 대조 통과 상태의 이름을 pending_review → verified로 바꾼다. 재실행해도 안전하다.
 --
--- 왜 필요한가
---   1) 어느 검색 제공자(OpenAI/DeepSeek)가 찾은 기사인지가 검증 후 source_tier에 덮여 사라졌다.
---      discovered_via에 발견 경로를 따로 남겨 검증 이후에도 출처 경로를 추적한다.
---   2) 수집·처리·Daily·유지 단계의 결과는 Vercel 로그에만 남아 화면에서 볼 수 없었다.
---      pipeline_log에 단계별 결과를 남겨 관리자 페이지가 읽는다.
---   3) 야간 수집 upsert가 이미 검증된 기사를 pending으로 되돌리는 문제가 있었다(코드는 고쳤다).
---      되돌려진 행을 복구한다.
+-- pending_review는 "사람 검토 대기"로 읽히지만 실제 뜻은 "OpenAI 추출 + DeepSeek 본문 대조 통과"다.
+-- 코드(2026-09-10 배포)는 이미 새 기사를 verified로 쓰고 두 값을 모두 읽는다.
+-- 이 파일을 실행한 뒤 코드에서 pending_review 읽기를 뺀다.
+--
+-- 실행 전 확인용(바뀔 행 수):
+--   select verification_status, count(*) from public.article group by 1 order by 2 desc;
 
--- 0) headline-knowledge.sql이 아직 운영에 적용되지 않았어도 집계 함수가 만들어지도록 열을 먼저 보장한다.
---    (headline-knowledge.sql의 같은 문장과 동일하며 재실행해도 안전하다.)
-alter table public.article add column if not exists headline_embedded_at timestamptz;
-
--- 1) 발견 경로
-alter table public.article add column if not exists discovered_via text;
-comment on column public.article.discovered_via is
-  '처음 발견한 경로. web_search_openai / web_search_deepseek / web_search_openai+deepseek / cninfo / catl_newsroom / google_news_rss';
-
-update public.article set discovered_via = case
-    when source_tier like 'web_search_%' then source_tier
-    when source_tier = 'official_disclosure' or source_name = 'CNINFO Disclosure' then 'cninfo'
-    when source_name = 'CATL Newsroom' then 'catl_newsroom'
-    when source_name = 'Google News RSS' then 'google_news_rss'
-    else null end
- where discovered_via is null;
-
-create index if not exists article_discovered_via_idx on public.article (discovered_via, created_at desc);
-
--- 2) 검증 통과 뒤 재수집 upsert로 pending으로 되돌려진 기사 복구.
---    processing_status='ok'이고 요약이 있으면 검증을 통과한 기사다.
 update public.article
-   set verification_status = 'verified',
-       source_tier = case when source_tier like 'web_search_%' or source_tier = 'needs_review' then 'openai_deepseek_fact_checked' else source_tier end
- where processing_status = 'ok'
-   and verification_status = 'pending'
-   and summary_ko is not null;
+   set verification_status = 'verified'
+ where verification_status = 'pending_review';
 
--- 3) 파이프라인 단계 로그
-create table if not exists public.pipeline_log (
-  id bigserial primary key,
-  stage text not null,
-  hop integer,
-  status text not null default 'ok',
-  payload jsonb not null default '{}'::jsonb,
-  duration_ms integer,
-  created_at timestamptz not null default now()
-);
-create index if not exists pipeline_log_created_idx on public.pipeline_log (created_at desc);
-alter table public.pipeline_log enable row level security;
-revoke all on public.pipeline_log from anon, authenticated;
-grant select, insert, update, delete on public.pipeline_log to service_role;
-grant usage, select on sequence public.pipeline_log_id_seq to service_role;
-
--- 4) 개요 집계 (PostgREST는 group by를 못 하므로 함수로 둔다)
+-- 관리자 개요 집계. admin-observability.sql의 같은 함수에서 상태 값만 바꿨다.
 create or replace function public.admin_overview()
 returns jsonb
 language sql stable security invoker set search_path = public

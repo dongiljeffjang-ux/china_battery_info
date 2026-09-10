@@ -120,9 +120,9 @@ export async function generateDailyReport(articleIds = []) {
   // 다만 이번 회차에 막 처리한 기사는 발행일과 무관하게 합쳐, 방금 읽은 것이 빠지지 않게 한다.
   const reportDate = koreaDate();
   const { start, end } = koreaDayBounds(reportDate);
-  const fetchWindow = (from) => supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&published_at=gte.${from}&published_at=lt.${end}&order=published_at.desc&limit=80`);
+  const fetchWindow = (from) => supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=in.(verified,pending_review)&published_at=gte.${from}&published_at=lt.${end}&order=published_at.desc&limit=80`);
   const justProcessed = articleIds.length
-    ? await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.pending_review&id=in.(${articleIds.join(",")})`)
+    ? await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=in.(verified,pending_review)&id=in.(${articleIds.join(",")})`)
     : [];
   const merge = (rows) => [...new Map([...justProcessed, ...rows].map((article) => [article.id, article])).values()];
   let candidates = merge(await fetchWindow(start));

@@ -32,7 +32,7 @@
       .tag{display:inline-block;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:700;white-space:nowrap;background:#eef2f6;color:var(--ink)}
       .tag.openai{background:#e7f0ff;color:#1a4d9c}.tag.deepseek{background:#eae6ff;color:#4b2fa6}.tag.both{background:#e2f6f4;color:#0b6b62}
       .tag.cninfo{background:#fff3d9;color:#8b5a10}.tag.catl_newsroom{background:#e3f5ed;color:#0c6b4e}
-      .tag.ok,.tag.pending_review,.tag.approved,.tag.embedded{background:var(--good-bg);color:var(--good)}
+      .tag.ok,.tag.verified,.tag.pending_review,.tag.approved,.tag.embedded{background:var(--good-bg);color:var(--good)}
       .tag.failed,.tag.rejected,.tag.fact_check_rejected,.tag.body_unavailable,.tag.processing_failed,.tag.body_too_short{background:#fde8e8;color:#9b1c1c}
       .tag.pending,.tag.none{background:#eef2f6;color:var(--muted)}
       .tag.audit-high{background:#fde8e8;color:#9b1c1c}.tag.audit-review{background:#fff3d9;color:#8b5a10}
@@ -189,7 +189,7 @@
         <section id="panel-articles" class="panel">
           <div class="filters">
             <label>발견 경로<select id="art-via"><option value="">전체</option><option value="web_search_openai">OpenAI 검색</option><option value="web_search_deepseek">DeepSeek 검색</option><option value="cninfo">CNINFO 공시</option><option value="catl_newsroom">CATL 뉴스룸</option><option value="google_news_rss">Google News RSS(구)</option></select></label>
-            <label>검증 상태<select id="art-verification"><option value="">전체</option><option value="pending">pending · 미처리</option><option value="pending_review">pending_review · 검증 통과</option><option value="rejected">rejected</option></select></label>
+            <label>검증 상태<select id="art-verification"><option value="">전체</option><option value="pending">pending · 미처리</option><option value="verified">verified · 검증 통과</option><option value="rejected">rejected</option></select></label>
             <label>처리 결과<select id="art-processing"><option value="">전체</option><option value="none">시도 안 함</option><option value="ok">ok</option><option value="body_unavailable">body_unavailable</option><option value="body_too_short">body_too_short</option><option value="fact_check_rejected">fact_check_rejected</option><option value="processing_failed">processing_failed</option></select></label>
             <label>임베딩<select id="art-embedding"><option value="">전체</option><option value="embedded">embedded</option><option value="pending">pending</option><option value="failed">failed</option></select></label>
             <label>회사<select id="art-company"><option value="">전체</option></select></label>
@@ -317,6 +317,6 @@
       <aside id="drawer" class="drawer" hidden aria-label="기사 상세"></aside>
     </div>
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./admin.js?v=20260910-run-abstention"></script>
+    <script src="./admin.js?v=20260910-verified-status"></script>
   </body>
 </html>

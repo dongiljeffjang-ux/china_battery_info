@@ -30,7 +30,7 @@ update public.article
    set processing_status = 'ok',
        processed_at = coalesce(processed_at, body_fetched_at, updated_at)
  where processing_status is null
-   and verification_status in ('pending_review', 'approved');
+   and verification_status in ('verified', 'approved');
 
 update public.article
    set processing_status = 'fact_check_rejected',
