@@ -188,3 +188,16 @@ assert.ok(isSchemaMissingReturn.includes('"PGRST205"'),
   "PostgREST가 실제로 테이블을 못 찾을 때 내는 코드만 봐야 한다");
 
 console.log("ok  rag-evaluation");
+
+// --- 5) 배치 평가는 활성 문항을 전부 돌리고 abstention 문항을 분모에서 뺀다 ------------------
+//
+// 2026-09-10: 54문항에서 예전 상한 50에 걸려 4문항이 조용히 빠졌고, 정답 청크가 없는 답 없음 문항 5개가
+// hit 0으로 잡혀 Hit@10이 0.89가 아니라 0.80으로 보였다. 둘 다 "검색이 나빠졌다"로 오독될 수 있는 숫자다.
+const benchmarkSource = adminSource.slice(adminSource.indexOf("async function benchmarkRun()"));
+assert.ok(!/limit=50\b/.test(benchmarkSource), "배치 평가 문항 상한이 50이면 세트가 커질 때 조용히 잘린다");
+assert.match(benchmarkSource, /BENCHMARK_CASE_LIMIT/, "문항 상한은 이름 붙은 상수로 둔다");
+assert.match(benchmarkSource, /if \(!expected\.size\) \{[\s\S]*?abstention \+= 1;[\s\S]*?continue;/, "정답 청크가 없는 문항은 점수 분모에 넣지 않고 abstention으로 센다");
+assert.match(benchmarkSource, /abstention_cases: abstention/, "run 지표에 abstention 문항 수를 따로 남긴다");
+assert.match(benchmarkSource, /commit/, "run에 커밋 SHA를 남겨야 같은 세트의 다른 코드를 구분한다");
+
+console.log("ok  rag-evaluation (benchmark run)");

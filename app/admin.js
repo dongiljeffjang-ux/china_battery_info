@@ -677,7 +677,8 @@
         return;
       }
       const m = result.metrics || {};
-      $('#eb-meta').textContent = `완료 · Hit@10 ${Number(m.hit_rate_at_10 || 0).toFixed(2)} · MRR ${Number(m.mrr || 0).toFixed(2)} · Recall@10 ${m.recall_at_10 == null ? '—' : Number(m.recall_at_10).toFixed(2)} · 평가 ${num(m.evaluated || 0)}문항${m.failed ? ` · 실패 ${num(m.failed)}문항` : ''}`;
+      // 답 없음 문항은 점수 분모에 없다. 따로 보여야 "문항 수가 줄었다"로 안 읽힌다.
+      $('#eb-meta').textContent = `완료 · Hit@10 ${Number(m.hit_rate_at_10 || 0).toFixed(2)} · MRR ${Number(m.mrr || 0).toFixed(2)} · Recall@10 ${m.recall_at_10 == null ? '—' : Number(m.recall_at_10).toFixed(2)} · 채점 ${num(m.evaluated || 0)}문항${m.abstention_cases ? ` + 답 없음 ${num(m.abstention_cases)}문항(분모 제외)` : ''}${m.failed ? ` · 실패 ${num(m.failed)}문항` : ''}${m.commit ? ` · 코드 ${m.commit.slice(0, 7)}` : ''}`;
     } catch (error) {
       $('#eb-meta').textContent = `실행 실패: ${error.message || error}`;
       throw error;

@@ -476,25 +476,39 @@ async function benchmarkCaseSave(body) {
     : await supabaseRest("rag_eval_case?select=*", { method: "POST", body: row });
   return { case: saved?.[0] || null, replaced: Boolean(id) };
 }
+// 한 회차에 평가할 문항 상한. 2026-09-10 54문항에서 예전 상한 50에 걸려 4문항이 조용히 빠졌고 화면은
+// "50문항"이라고만 보였다. 세트가 바뀌면 숫자를 비교할 수 없으므로 활성 문항은 전부 돌린다.
+const BENCHMARK_CASE_LIMIT = 200;
 async function benchmarkRun() {
-  const cases = await supabaseRest("rag_eval_case?select=*&active=eq.true&order=updated_at.desc&limit=50");
+  const cases = await supabaseRest(`rag_eval_case?select=*&active=eq.true&order=updated_at.desc&limit=${BENCHMARK_CASE_LIMIT}`);
   if (!cases?.length) return { error: "no_benchmark_cases" };
-  const [run] = await supabaseRest("rag_eval_run?select=*", { method: "POST", body: { mode: "retrieval", status: "running", case_count: cases.length, retriever_config: { limit: 10, engine: "hybrid" } } });
-  const scores = []; const results = [];
+  // 어느 코드의 점수인지 run에 남긴다. 같은 세트라도 커밋이 다르면 비교 대상이 다른 것이다.
+  const commit = String(process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 12) || null;
+  const [run] = await supabaseRest("rag_eval_run?select=*", { method: "POST", body: { mode: "retrieval", status: "running", case_count: cases.length, retriever_config: { limit: 10, engine: "hybrid", commit } } });
+  const scores = []; const results = []; let abstention = 0;
   for (const item of cases) {
     try {
       const rows = await searchKnowledge({ question: item.question, companyId: item.company_id || null, limit: 10, includeUnverified: item.include_unverified });
       const ids = rows.map((row) => row.id); const expected = new Set(item.reference_chunk_ids || []);
+      // 정답 청크가 없는 문항은 "근거 없음"이 정답인 abstention 문항이다. 검색이 무엇을 돌려주든 맞고 틀림을
+      // 셀 수 없으므로 Hit@10·MRR·Recall 분모에 넣지 않는다. 넣으면 abstention 문항 수만큼 점수가 깎여
+      // 검색이 나빠진 것처럼 보인다(2026-09-10 run ef291ef9: 5문항이 hit 0으로 잡혀 0.89가 0.80으로 보였다).
+      // 검색 결과는 남겨 두어 나중에 답변 모델의 sufficient=false 판단을 채점할 때 쓴다.
+      if (!expected.size) {
+        abstention += 1;
+        results.push({ run_id: run.id, case_id: item.id, retrieved_chunk_ids: ids, retrieved_contexts: rows.map((row) => String(row.content_ko || "").slice(0, 4000)), retrieval_metrics: { abstention: true, top_similarity: rows[0]?.similarity ?? null } });
+        continue;
+      }
       const ranks = ids.map((id, index) => expected.has(id) ? index + 1 : null).filter(Boolean);
       const hit = ranks.length > 0 ? 1 : 0; const first = ranks[0] || null;
-      const recall = expected.size ? ranks.length / expected.size : null;
+      const recall = ranks.length / expected.size;
       scores.push({ hit, reciprocal_rank: first ? 1 / first : 0, recall });
       results.push({ run_id: run.id, case_id: item.id, retrieved_chunk_ids: ids, retrieved_contexts: rows.map((row) => String(row.content_ko || "").slice(0, 4000)), retrieval_metrics: { hit_rate: hit, mrr: first ? 1 / first : 0, recall_at_10: recall, first_rank: first } });
     } catch (error) { results.push({ run_id: run.id, case_id: item.id, error_message: String(error.message || error).slice(0, 400) }); }
   }
   if (results.length) await supabaseRest("rag_eval_result", { method: "POST", body: results });
   const average = key => { const values = scores.map(row => row[key]).filter(Number.isFinite); return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null; };
-  const metrics = { hit_rate_at_10: average("hit"), mrr: average("reciprocal_rank"), recall_at_10: average("recall"), evaluated: scores.length, failed: results.length - scores.length };
+  const metrics = { hit_rate_at_10: average("hit"), mrr: average("reciprocal_rank"), recall_at_10: average("recall"), evaluated: scores.length, abstention_cases: abstention, failed: results.length - scores.length - abstention, commit };
   await supabaseRest(`rag_eval_run?id=eq.${enc(run.id)}`, { method: "PATCH", body: { status: "completed", metrics, finished_at: new Date().toISOString() } });
   return { run_id: run.id, metrics };
 }
