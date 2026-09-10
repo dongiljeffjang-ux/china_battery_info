@@ -211,9 +211,16 @@ assert.match(promptSource, /검색 키워드 목록, 조사 절차, 범위 설�
 
 // --- 1.7) 융합 상수는 기준선 실측에 맞춘 값이어야 한다 -------------------------------------
 const searchSource = (await import("node:fs")).readFileSync(new URL("../lib/knowledge-search.js", import.meta.url), "utf8");
-assert.match(searchSource, /const RRF_K = 10;/, "k는 후보 규모(검색기당 10~20건)에 맞춘 10이어야 한다. 60이면 1~20위 점수 차가 1.3배뿐이다");
-assert.match(searchSource, /const VECTOR_WEIGHT = 0\.7;/, "의미 검색 비중 0.7 (기준선: 의미 0.46 vs 단어 0.17)");
-assert.match(searchSource, /const LEXICAL_WEIGHT = 0\.3;/, "단어 검색은 확인용으로 남긴다. 0이면 겹침 보너스가 사라진다");
+// 2026-09-10 54문항 실측으로 K=30(MRR 0.661→0.676, 다른 지표 동일). 값은 로컬 실험용 환경변수로만 덮어쓸 수 있고 운영 기본은 30이다.
+assert.match(searchSource, /const RRF_K = tuned\("RAG_RRF_K", 30\);/, "RRF K 기본값은 54문항 실측에 맞춘 30이어야 한다");
+assert.match(searchSource, /const VECTOR_WEIGHT = tuned\("RAG_VECTOR_WEIGHT", 0\.7\);/, "의미 검색 가중치 기본 0.7 — 0.5/0.5는 54문항에서 Hit@10 0.90→0.76으로 떨어졌다");
+assert.match(searchSource, /const LEXICAL_WEIGHT = tuned\("RAG_LEXICAL_WEIGHT", 0\.3\);/, "단어 검색 가중치 기본 0.3");
+assert.match(searchSource, /const LEXICAL_RESERVE = tuned\("RAG_LEXICAL_RESERVE", 0\);/, "단어 검색 보장 칸은 기본 0 — 2건 보장은 목록형 5문항의 recall을 깎았다");
+// 밸류체인 그룹(회사 10여 곳, 표기 98~156개)이 필수 그룹 상한에 잘리면 뒤쪽 회사가 필수 조건에서 빠진다.
+const moroccoQuery = buildLexicalQuery(expandDomainQuestion("모로코에 양극재 공장을 추진하는 회사"), { requiredGroups: questionValueChainGroups("모로코에 양극재 공장을 추진하는 회사") });
+const moroccoRequired = moroccoQuery.match(/^\+\(([^)]*)\)/)?.[1] || "";
+assert.ok(/중웨이신차이|CNGR/.test(moroccoRequired), "양극재 회사 그룹의 필수 조건에 CNGR 표기가 들어 있어야 한다(상한 40에 잘리면 빠진다)");
+assert.ok(moroccoRequired.split(" OR ").length > 100, `양극재 그룹 표기가 잘리면 안 된다: ${moroccoRequired.split(" OR ").length}개`);
 // k=10·0.7/0.3에서 실제로 달라지는 성질. 양쪽 상위 겹침이 여전히 1등인 것은 맞다(기준선에서 겹침이
 // 0.50으로 최고). 달라지는 건 (1) 의미 1위 단독(0.7/11)이 단어 1위 단독(0.3/11)을 이기고 — 0.5/0.5에서는
 // 동점이었다 — (2) 의미 1위 단독이 8위쯤의 어중간한 겹침(1.0/18)을 이긴다 — k=60에서는 겹치기만 하면

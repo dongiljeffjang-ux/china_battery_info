@@ -17,13 +17,16 @@ const label = (() => { const i = args.indexOf("--label"); return i >= 0 ? args[i
 const commit = (() => { try { return execSync("git rev-parse --short HEAD").toString().trim(); } catch { return "?"; } })();
 const dirty = (() => { try { return execSync("git status --porcelain -- lib/").toString().trim() ? "+dirty" : ""; } catch { return ""; } })();
 
-const cases = await supabaseRest("rag_eval_case?select=*&active=eq.true&order=updated_at.desc&limit=50");
+// api/admin.js benchmarkRun과 같은 규칙: 활성 문항 전부(상한 200), 정답 청크가 없는 답 없음 문항은 분모에서 뺀다.
+const cases = await supabaseRest("rag_eval_case?select=*&active=eq.true&order=updated_at.desc&limit=200");
 const rows = [];
+let abstention = 0;
 for (const item of cases) {
+  const expected = new Set(item.reference_chunk_ids || []);
+  if (!expected.size) { abstention += 1; continue; }
   const started = Date.now();
   const found = await searchKnowledge({ question: item.question, companyId: item.company_id || null, limit: 10, includeUnverified: item.include_unverified });
   const ids = found.map((row) => row.id);
-  const expected = new Set(item.reference_chunk_ids || []);
   const ranks = ids.map((id, index) => (expected.has(id) ? index + 1 : null)).filter(Boolean);
   rows.push({
     question: item.question, hit: ranks.length ? 1 : 0, first_rank: ranks[0] || null,
@@ -32,10 +35,10 @@ for (const item of cases) {
   });
 }
 const avg = (key) => { const v = rows.map((r) => r[key]).filter((x) => Number.isFinite(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
-const metrics = { hit_rate_at_10: avg("hit"), mrr: rows.reduce((s, r) => s + (r.first_rank ? 1 / r.first_rank : 0), 0) / rows.length, recall_at_10: avg("recall"), cases: rows.length };
+const metrics = { hit_rate_at_10: avg("hit"), mrr: rows.reduce((s, r) => s + (r.first_rank ? 1 / r.first_rank : 0), 0) / rows.length, recall_at_10: avg("recall"), cases: rows.length, abstention_cases: abstention };
 
 console.log(`\n== ${commit}${dirty} ${label} ==`);
-console.log(`Hit@10 ${metrics.hit_rate_at_10.toFixed(3)}  MRR ${metrics.mrr.toFixed(3)}  Recall@10 ${metrics.recall_at_10.toFixed(3)}  (${rows.length}문항)\n`);
+console.log(`Hit@10 ${metrics.hit_rate_at_10.toFixed(3)}  MRR ${metrics.mrr.toFixed(3)}  Recall@10 ${metrics.recall_at_10.toFixed(3)}  (채점 ${rows.length}문항 + 답 없음 ${abstention}문항 제외)\n`);
 for (const r of rows.sort((a, b) => (a.first_rank || 99) - (b.first_rank || 99) || a.question.localeCompare(b.question))) {
   console.log(`${r.hit ? "○" : "×"} rank ${String(r.first_rank ?? "-").padStart(2)}  recall ${r.found}/${r.expected}  ovl ${String(r.overlapped ?? "-").padStart(2)}  ${r.question.slice(0, 34)}`);
 }
