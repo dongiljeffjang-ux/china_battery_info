@@ -16,6 +16,7 @@ assert.equal((compareReport.match(/provider: "openai_report"/g) || []).length, 4
 assert.match(ingest, /retryOnceOnTimeout\(\s*\(\) => generateDailyReport\(\),\s*\{ delayMs: 1500 \}/s);
 const companyApi = readFileSync(new URL("../api/company.js", import.meta.url), "utf8");
 assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, reportMode, events, metrics, alternatives, policies \}\),\s*\{ delayMs: 1500 \}/s, "시계열 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
+assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildCompareReport\(\{ companyIdA: a\.id, companyIdB: b\.id, nameA: a\.name_ko, nameB: b\.name_ko, companyTags: \[\.\.\.a\.type_tags, \.\.\.b\.type_tags\], eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, pairContext: pairContextValue \}\),\s*\{ delayMs: 1500 \}/s, "비교 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
 
 // 리포트가 아닌 OpenAI 호출은 항상 일반(Luna) API 키·모델을 사용한다.
 const savedEnv = {

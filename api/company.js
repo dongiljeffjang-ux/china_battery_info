@@ -210,7 +210,12 @@ async function runCompareReport(request, response) {
     // 숫자 조회가 한쪽에서 실패해도 해당 회사의 이벤트 근거로 리포트는 계속 만든다.
     const includePolicy = request.body?.includePolicy === true;
     const [metricsA, metricsB, alternativesA, alternativesB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), loadAlternatives(a.id), loadAlternatives(b.id), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
-    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, companyTags: [...a.type_tags, ...b.type_tags], eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, pairContext: pairContextValue });
+    // 비교 리포트 초안 호출은 일시적인 상류 TimeoutError가 나면 시계열 리포트와 같은 입력으로 한 번만
+    // 재시도한다. 웹 검증 단계의 실패는 buildCompareReport 안에서 초안 결과로 이미 되돌린다.
+    const result = await retryOnceOnTimeout(
+      () => buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, companyTags: [...a.type_tags, ...b.type_tags], eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, pairContext: pairContextValue }),
+      { delayMs: 1500 },
+    );
     result.report.policy_context = policies;
     // 웹 검증이 확인한 것은 리포트에만 두지 않고 DB에 되돌린다. 실패해도 리포트는 그대로 낸다.
     let dbUpdates = null;
