@@ -93,14 +93,18 @@ async function runAsk(request, response) {
 
 // 비교 화면에 실제로 표시된 이벤트를 그대로 근거로 삼는다. 서버가 다시 조회하면
 // 화면에 보이는 것과 리포트 내용이 어긋날 수 있다. 대신 길이와 건수는 서버에서 자른다.
+// 입력 상한은 요청 크기만 막는다. 모델에 보낼 대표 근거는 selectTimelineEvidence가 고른다 —
+// 여기서 앞 60건으로 먼저 자르면 화면 순서(최신순) 때문에 오래된 연도가 통째로 빠졌다.
 function cleanEvents(list) {
   return (Array.isArray(list) ? list : [])
-    .slice(0, 60)
+    .slice(0, 200)
     .map((event) => ({
       // 검증자가 "이 이벤트의 날짜가 틀렸다"고 짚을 수 있도록 id를 같이 넘긴다. 형식이 uuid가 아니면 버린다.
       id: /^[0-9a-f-]{36}$/i.test(String(event?.id || "")) ? String(event.id) : "",
       date: String(event?.date || "").slice(0, 10),
       track: event?.track === "tech" || event?.track === "technology" ? "tech" : "market",
+      layer: String(event?.layer || "").slice(0, 80),
+      period: String(event?.period || "").slice(0, 30),
       title: String(event?.title || "").slice(0, 160),
       fact: String(event?.fact || "").slice(0, 400),
       sourceName: String(event?.sourceName || "").slice(0, 80)
@@ -111,7 +115,7 @@ function cleanEvents(list) {
 // 기업 화면에 실제로 표시된 시간축 이벤트만 리포트의 재료로 쓴다. 화면의 "보조 데이터 포함"
 // 선택과 서버 리포트의 근거가 어긋나지 않게 하며, 클라이언트 입력은 길이·형식만 보수적으로 제한한다.
 function cleanTimelineEvents(list) {
-  return (Array.isArray(list) ? list : []).slice(0, 80).map(event => ({
+  return (Array.isArray(list) ? list : []).slice(0, 200).map(event => ({
     id: /^[0-9a-f-]{36}$/i.test(String(event?.id || "")) ? String(event.id) : "",
     date: /^\d{4}-\d{2}-\d{2}$/.test(String(event?.date || "")) ? String(event.date) : "",
     track: event?.track === "tech" || event?.track === "technology" ? "tech" : "market",

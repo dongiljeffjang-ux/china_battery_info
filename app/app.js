@@ -31,7 +31,6 @@ let dailyReportFacts = null;
 let dailyReportInsight = null;
 let approvedTop10 = [];
 let approvedCompanyNews = [];
-let pendingCandidates = [];
 let rangeFlows = [];
 let lastComparison = null;
 // 기업 시계열 리포트는 비교 리포트와 달리 저장하지 않는다. 현재 화면에 표시된 근거만 이 메모리에 둔다.
@@ -275,40 +274,6 @@ function renderTopNews(){
   });
 }
 
-function classifyCandidate(article){
-  const title = `${article.title_original || ''} ${article.title_ko || ''}`.toLowerCase();
-  const event = /扩产|增产|产能|项目|投产|开工|factory|capacity|production/.test(title) ? '투자·생산' :
-    /认证|客户|订单|供货|出货|交付|customer|order/.test(title) ? '고객·상업화' :
-    /专利|技术|研发|电池|材料|硅|磷酸|钠|technology|patent/.test(title) ? '기술·제품' :
-    /业绩|营收|利润|价格|销量|市场|financial|revenue/.test(title) ? '실적·시장' : '일반 산업 뉴스';
-  const relation = article.article_company?.[0];
-  const type = relation?.company?.type_tags?.[0];
-  return { event, type: type === 'anode' ? '음극재' : type === 'cathode' ? '양극재' : type === 'cell' ? '셀사' : '미분류' };
-}
-
-function renderCandidateQueue(){
-  const target = document.querySelector('#candidate-news-feed');
-  const count = document.querySelector('#candidate-news-count');
-  if (!target || !count) return;
-  count.textContent = pendingCandidates.length ? `최신 ${pendingCandidates.length}건 · Top 10 미선정` : '수집 후보 없음';
-  target.innerHTML = '';
-  if (!pendingCandidates.length) {
-    target.innerHTML = '<p>수집 후보가 없습니다. 수집 1회 실행 후 다시 불러오세요.</p>';
-    return;
-  }
-  const template = document.querySelector('#news-template');
-  pendingCandidates.forEach(item => {
-    const node = template.content.cloneNode(true);
-    const sector = node.querySelector('.sector-tag'); sector.textContent = `${item.classification.type} · ${item.classification.event}`;
-    node.querySelector('.confidence-tag').textContent = '수집 후보';
-    node.querySelector('time').textContent = item.date;
-    node.querySelector('h3').textContent = item.title;
-    node.querySelector('.news-fact').textContent = `분류 근거: 회사 별칭 매칭 / 제목 키워드 ‘${item.classification.event}’. 원문 본문과 출처 신뢰도는 아직 검증하지 않았습니다.`;
-    node.querySelector('.impact-reason').textContent = `출처: ${item.sourceName || 'RSS'}`;
-    node.querySelector('a').href = item.url;
-    target.append(node);
-  });
-}
 function renderHeadlineSankey(){
   const counts = new Map();
   // 검증 기사와 미검증 헤드라인을 따로 센다. 툴팁이 둘을 나눠 보여야 얼마나 믿을지 읽는 사람이 정할 수 있다.
@@ -485,8 +450,7 @@ function mapDashboardArticle(article){
     confidenceTitle: article.verification_status === 'pending_review' ? '원문 본문 대조 팩트체크 완료' : article.verification_status === 'pending' ? '미분석 수집 원문' : article.source_tier || '검수 완료',
     top10Rank: article.is_top10 ? article.top10_rank : null,
     url: article.canonical_url,
-    sourceName: article.source_name,
-    classification: classifyCandidate(article)
+    sourceName: article.source_name
   };
 }
 // 접근 세션이 끝나면 API가 401을 준다. 조용히 넘기면 화면이 예전 상태로 멈춰 "안 된다"로만 보인다.
@@ -574,7 +538,6 @@ async function loadDashboardFromApi(){
     // Top 10에 뽑힌 기사도 회사별 뉴스에 그대로 싣는다. 예전에는 중복을 피한다고 걸러냈는데,
     // 하루 분석량이 적을 때 대부분이 Top 10으로 빠져 회사별 뉴스가 한두 건만 남았다.
     approvedCompanyNews = (payload.companyNews || []).map(mapDashboardArticle);
-    pendingCandidates = (payload.pendingNews || []).map(mapDashboardArticle);
     rangeFlows = payload.flows || [];
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
@@ -2217,6 +2180,8 @@ async function synthesizeReports(){
     hideBusy();
   }
 }
+// 레이어·기간이 빠지면 서버의 대표 근거 선택이 연도별 한 건으로 줄어든다. 시계열 리포트와 같은 필드를 보낸다.
+const compareReportEvent = event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, sourceName: event.sourceName });
 async function generateCompareReport(){
   await chooseReportSupporting();
   const includePolicyInReport = window.confirm('중국 정책을 이 비교 리포트 분석에 반영할까요?\n\n확인: 두 기업에 대한 정책의 적용 대상·시점과 사업 조건의 관련성을 근거 범위에서 비교합니다.\n취소: 시장·기술 기업 근거만으로 비교합니다.');
@@ -2235,8 +2200,8 @@ async function generateCompareReport(){
         includeSupporting,
         includePolicy: includePolicyInReport,
         companyA: lastComparison.a, companyB: lastComparison.b,
-        eventsA: lastComparison.eventsA.map(event => ({ id: event.id, date: event.date, track: event.track, title: event.title, fact: event.fact, sourceName: event.sourceName })),
-        eventsB: lastComparison.eventsB.map(event => ({ id: event.id, date: event.date, track: event.track, title: event.title, fact: event.fact, sourceName: event.sourceName }))
+        eventsA: lastComparison.eventsA.map(compareReportEvent),
+        eventsB: lastComparison.eventsB.map(compareReportEvent)
       })
     });
     const payload = await response.json();

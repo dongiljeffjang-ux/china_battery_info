@@ -157,6 +157,20 @@ assert.ok(Number(compactCount[1]) > 0 && Number(compactCount[1]) <= 24, "대표 
 assert.match(timeline, /timeoutMs: 110000/, "압축된 시계열 리포트에는 110초 응답 시간을 준다");
 const omittedEvidence = denseEvents.find(event => !selectedEvidence.some(selected => selected.id === event.id));
 assert.ok(omittedEvidence && !compactInput.includes(omittedEvidence.title), "선택되지 않은 반복 근거를 모델 입력에 넣으면 안 된다");
+// 2026-09-10 후난위넝 비교 리포트: 레이어 없는 62건(기술 4건)에서 4건만 골라 기술 축이 비었다.
+// 남는 칸을 채우고 기술 몫을 보장해야 한다.
+const flatEvents = Array.from({ length: 62 }, (_, index) => ({
+  id: `flat-${index}`,
+  date: `202${3 + Math.floor(index / 16)}-${String((index % 12) + 1).padStart(2, "0")}-15`,
+  track: index % 15 === 7 ? "tech" : "market",
+  title: index % 15 === 7 ? `[기술-${index}] 특허 보유` : `[시장-${index}] 고객 출하`,
+  fact: "사실",
+}));
+const flatSelected = selectTimelineEvidence(flatEvents, { limit: 18, perBucket: 1 });
+assert.equal(flatSelected.length, 18, "대표 근거 뒤 남는 칸을 상한까지 채워야 한다");
+assert.equal(flatSelected.filter(event => event.track === "tech").length, flatEvents.filter(event => event.track === "tech").length, "기술 사건이 상한의 1/4보다 적으면 모두 남아야 한다");
+assert.deepEqual([...new Set(flatSelected.map(event => event.date.slice(0, 4)))].sort(), [...new Set(flatEvents.map(event => event.date.slice(0, 4)))].sort(), "기술 몫을 채워도 연도 대표는 유지해야 한다");
+assert.match(api, /function cleanEvents[\s\S]{0,300}\.slice\(0, 200\)[\s\S]{0,700}layer:[\s\S]{0,100}period:/, "비교 리포트 입력은 레이어·기간을 유지하고 먼저 60건으로 자르지 않는다");
 // 기업 API가 실제로 두 표를 읽어 넘기는지.
 assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
 assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
