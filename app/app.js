@@ -850,14 +850,21 @@ function policyCell(policies, period){
 // 리포트 출력은 제한된 Markdown만 HTML로 바꾼다. 모델 문자열은 먼저 전부 escapeHtml을 거치므로
 // 태그가 실행되지 않는다. 그 다음 우리가 아는 표기만 되살린다 — 굵게·기울임·코드·링크·줄바꿈.
 // 링크는 http(s)만 통과시킨다.
+// 긴 주소는 본문을 덮는다. 맨 주소와 주소가 라벨인 링크는 'link'로 줄이고 새 창에서 연다.
 function inlineMarkdown(text){
+  const links = [];
+  const anchor = (href, label) => {
+    links.push(`<a class="report-link" href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${label}</a>`);
+    return `\u0000${links.length - 1}\u0000`;
+  };
   return escapeHtml(String(text || ''))
     .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (whole, label, href) => anchor(href, /^https?:\/\//i.test(label) ? 'link' : label))
+    .replace(/https?:\/\/[^\s<>"'()\u0000]+[^\s<>"'().,;:!?\u0000]/g, href => anchor(href, 'link'))
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (whole, label, href) =>
-      `<a href="${href.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${label}</a>`);
+    .replace(/\u0000(\d+)\u0000/g, (whole, index) => links[Number(index)]);
 }
 function renderTimelineMarkdown(markdown){
   const lines = String(markdown || '').replace(/\r/g, '').split('\n');
@@ -1001,9 +1008,9 @@ function keyMetrics(event){
 function eventTip(event){
   return [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', sourceTipText(event)].filter(Boolean).join('\n\n');
 }
-// 툴팁은 마우스를 떼면 사라져 링크를 누를 수 없다. 주소는 확인용 글자로 두고, 누르는 링크는 칸의 '원문'이다.
+// 툴팁에는 긴 주소를 넣지 않는다. 누르는 링크는 칸의 '원문'이다.
 function sourceTipText(event){
-  return [`출처: ${event.sourceName}${event.sourceDate ? ` · 발행 ${event.sourceDate}` : ''}`, event.sourceUrl || ''].filter(Boolean).join('\n');
+  return `출처: ${event.sourceName}${event.sourceDate ? ` · 발행 ${event.sourceDate}` : ''}`;
 }
 
 // 제목이 "매출 134억·순이익 11억·출하 13만 톤·…"처럼 길면 앞 두 토막만 남긴다. 나머지는 툴팁에 있다.
