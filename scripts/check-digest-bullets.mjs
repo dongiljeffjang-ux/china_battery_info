@@ -39,6 +39,8 @@ const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8
 assert.ok(css.includes(".digest-points{"), "불릿 목록 스타일이 있어야 한다");
 assert.ok(css.includes('.matrix-details li::before{content:"-"'), "시계열 상세에는 요청한 하이픈 말머리가 있어야 한다");
 const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
-assert.match(html, /app\.js\?v=20260910-alt-evidence/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
+assert.match(html, /app\.js\?v=20260910-sankey-2day/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
+// Daily Sankey 기본 기간(사용자 지정 2026-09-10): 평일은 당일~2일 전, 금요일은 3일 전부터.
+assert.match(src, /=== 'Fri' \? -3 : -2;/, "Sankey 기본 기간은 평일 당일~2일 전이어야 한다");
 
 console.log("ok  digest-bullets");
