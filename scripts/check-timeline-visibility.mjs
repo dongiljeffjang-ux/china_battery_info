@@ -30,6 +30,10 @@ assert.equal(isTimelineBusinessEvent({
   trajectory_track: "technology",
 }), true);
 assert.equal(isTimelineBusinessEvent({
+  ...report("특허 820건·자산부채율 61.35%", "technology-ip-standard"),
+  trajectory_track: "technology",
+}), true, "기술 보고서에 재무 잡음이 섞여도 기술 사실을 숨기지 않는다");
+assert.equal(isTimelineBusinessEvent({
   ...report("2025년 지배주주 순이익 722억 위안"),
   original_excerpt_ko: "회사는 매출 4,237억 위안과 지배주주 순이익 722억 위안을 기록했다.",
 }), false, "원문 발췌 주변의 매출 표현 때문에 순이익 이벤트가 통과하면 안 된다");
