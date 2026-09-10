@@ -157,6 +157,9 @@ assert.ok(Number(compactCount[1]) > 0 && Number(compactCount[1]) <= 24, "대표 
 assert.match(timeline, /timeoutMs: 110000/, "압축된 시계열 리포트에는 110초 응답 시간을 준다");
 const omittedEvidence = denseEvents.find(event => !selectedEvidence.some(selected => selected.id === event.id));
 assert.ok(omittedEvidence && !compactInput.includes(omittedEvidence.title), "선택되지 않은 반복 근거를 모델 입력에 넣으면 안 된다");
+// 화면 툴팁의 발생 법인이 리포트 입력에도 들어가야 한다(보조 데이터는 칸에 제목만 보인다).
+const entityInput = buildTimelineInput({ companyName: "CATL", events: [{ id: "e1", date: "2026-08-18", period: "2026년", layer: "supply-performance", title: "상용차 협력", fact: "CATL 뉴스룸에 따르면 협력 체결", entity: "CATL 상용차 법인", sourceName: "CATL Newsroom", sourceUrl: "" }] });
+assert.match(entityInput, /CATL 뉴스룸에 따르면 협력 체결 \(2026-08-18 · 발생 법인: CATL 상용차 법인 · 출처: CATL Newsroom/, "사실 전문·발생 법인·출처가 리포트 입력에 있어야 한다");
 // 2026-09-10 후난위넝 비교 리포트: 레이어 없는 62건(기술 4건)에서 4건만 골라 기술 축이 비었다.
 // 남는 칸을 채우고 기술 몫을 보장해야 한다.
 const flatEvents = Array.from({ length: 62 }, (_, index) => ({

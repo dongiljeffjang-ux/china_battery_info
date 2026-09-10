@@ -967,7 +967,7 @@ async function generateTimelineReport(){
   try {
     const response = await fetch('/api/company', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'timeline_report', includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, sourceName: event.sourceName, sourceUrl: event.sourceUrl })) })
+      body: JSON.stringify({ mode: 'timeline_report', includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl })) })
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
@@ -1751,7 +1751,8 @@ function renderLayerMatrix(timeline){
         .map(point => point.replace(/^[\s•·\-–—]+/, '').trim())
         .filter(Boolean)
         .slice(0, 1);
-      const detail = detailPoints.length
+      // 보조 데이터는 제목만 두고 요약 줄은 툴팁으로 보낸다. 켜면 칸이 길어져 핵심 사실이 밀린다.
+      const detail = isPrimaryEvidence(event) && detailPoints.length
         ? `<ul class="matrix-details">${detailPoints.map(point => `<li>${escapeHtml(clipText(point, 64))}</li>`).join('')}</ul>` : '';
       // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다.
       const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
@@ -2225,7 +2226,8 @@ async function synthesizeReports(){
   }
 }
 // 레이어·기간이 빠지면 서버의 대표 근거 선택이 연도별 한 건으로 줄어든다. 시계열 리포트와 같은 필드를 보낸다.
-const compareReportEvent = event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, sourceName: event.sourceName });
+// 화면에서 제목만 보이는 보조 데이터도 툴팁 내용(사실 전문·발생 법인·출처)은 그대로 리포트에 간다.
+const compareReportEvent = event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName });
 async function generateCompareReport(){
   await chooseReportSupporting();
   const includePolicyInReport = window.confirm('중국 정책을 이 비교 리포트 분석에 반영할까요?\n\n확인: 두 기업에 대한 정책의 적용 대상·시점과 사업 조건의 관련성을 근거 범위에서 비교합니다.\n취소: 시장·기술 기업 근거만으로 비교합니다.');
@@ -2297,7 +2299,8 @@ async function renderComparison(){
     const shown = ranked.slice(0, CELL_LIMIT);
     const rest = ranked.length - shown.length;
     return shown.map(event => {
-      const metrics = keyMetrics(event);
+      // 보조 데이터는 제목만 보이고 수치·전문은 툴팁에 있다. 레이어 시간축과 같은 규칙이다.
+      const metrics = isPrimaryEvidence(event) ? keyMetrics(event) : '';
       const both = event.both ? '<span class="cmp-both">시장·기술</span>' : '';
       // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다. 레이어 시간축과 같은 규칙이다.
       const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
