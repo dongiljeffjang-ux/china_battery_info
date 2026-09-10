@@ -30,6 +30,7 @@ assert.match(timeline, /기존 보고서 또는 HTML: 없음/, "없는 입력은
 assert.match(timeline, /이전 회차 보고서: 없음/);
 assert.match(api, /mode\s*\|\|\s*""\)\s*===\s*"timeline_report"/);
 assert.match(api, /cleanTimelineEvents/);
+assert.match(api, /include_supporting:\s*includeSupporting/, "시계열 리포트 응답은 보조 데이터 선택 상태를 돌려야 한다");
 assert.match(api, /sourceUrl/);
 assert.doesNotMatch(api, /result\.report\.turning_points/, "Markdown 리포트에는 이전 turning_points 구조를 읽으면 안 된다");
 assert.match(timeline, /시장-실적\/생산기반/);
@@ -39,6 +40,8 @@ assert.match(html, /data-timeline-report-mode="pattern"/);
 assert.match(html, /data-timeline-report-mode="inflection_point"/);
 assert.match(html, /id="company-timeline-report-panel"/);
 assert.match(app, /mode:\s*'timeline_report'/);
+assert.match(app, /includeSupporting:\s*options\.includeSupporting/, "선택한 보조 데이터 옵션을 시계열 리포트 요청에 보내야 한다");
+assert.match(app, /보조 데이터 포함/, "리포트 본문에 실제 보조 데이터 선택 상태를 표시해야 한다");
 assert.match(app, /function chooseReportOptions/);
 assert.match(app, /report-option-supporting/);
 assert.match(app, /report-option-policy/);

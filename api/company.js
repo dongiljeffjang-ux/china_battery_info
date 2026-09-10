@@ -170,6 +170,7 @@ async function runTimelineReport(request, response) {
   const events = cleanTimelineEvents(request.body?.events);
   const reportMode = ["direction", "pattern", "inflection_point"].includes(String(request.body?.reportMode || ""))
     ? String(request.body.reportMode) : "direction";
+  const includeSupporting = request.body?.includeSupporting === true;
   if (!events.length) return response.status(400).json({ status: "no_evidence", message: "현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다." });
   try {
     // 리포트가 사건 조각만 받으면 나열에 머문다. 방향은 숫자에서 먼저 읽히므로 정량 시계열을
@@ -184,8 +185,8 @@ async function runTimelineReport(request, response) {
       () => buildTimelineReport({ companyName: company.name_ko, companyTags: company.type_tags, reportMode, events, metrics, alternatives, policies }),
       { delayMs: 1500 },
     );
-    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, reportMode, events: events.length, reportChars: result.report.markdown_ko.length }));
-    return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, report_mode: reportMode, events, policies, generated_at: new Date().toISOString(), ...result });
+    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, reportMode, includeSupporting, events: events.length, reportChars: result.report.markdown_ko.length }));
+    return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, report_mode: reportMode, include_supporting: includeSupporting, events, policies, generated_at: new Date().toISOString(), ...result });
   } catch (error) {
     console.error("[TIMELINE_REPORT_FAILED]", JSON.stringify({ companyId, message: error.message }));
     return response.status(502).json({ status: "timeline_report_failed", message: error.message });

@@ -928,7 +928,8 @@ function timelineReportParts(payload){
   const title = `${payload.company_name_ko || '기업'} ${modeLabel} 리포트`;
   const generated = payload.generated_at ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(payload.generated_at)) : '';
   const markdown = renderTimelineMarkdown(report.markdown_ko || '생성된 리포트가 비어 있습니다.');
-  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · ${escapeHtml(modeLabel)} · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">시장·기술 이벤트 ${payload.events?.length || 0}건과 중국 정책 ${payload.policies?.length || 0}건을 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
+  const supportingLabel = payload.include_supporting === true ? '보조 데이터 포함' : '핵심 근거만';
+  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · ${escapeHtml(modeLabel)} · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">시장·기술 이벤트 ${payload.events?.length || 0}건 (${supportingLabel})과 중국 정책 ${payload.policies?.length || 0}건을 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
   return { title, body };
 }
 
@@ -995,7 +996,7 @@ async function generateTimelineReport(reportMode = 'direction'){
   try {
     const response = await fetch('/api/company', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'timeline_report', reportMode, includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl, sourceDate: event.sourceDate })) })
+      body: JSON.stringify({ mode: 'timeline_report', reportMode, includeSupporting: options.includeSupporting, includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl, sourceDate: event.sourceDate })) })
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
