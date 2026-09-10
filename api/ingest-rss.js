@@ -5,7 +5,7 @@ import { processPendingArticle, recordProcessing } from "./process-article.js";
 import { generateDailyReport } from "./generate-daily.js";
 import { waitUntil } from "@vercel/functions";
 import { runCurationHop, runReportRenewal } from "../lib/curation.js";
-import { COMPANIES, companiesFor, discoverChinaSources, discoveredVia, discoveryStats, plannedSearchRequests, trackedCompanies } from "../lib/china-sources.js";
+import { COMPANIES, POLICY_COMPANY, POLICY_COMPANY_ID, companiesFor, discoverChinaSources, discoveredVia, discoveryStats, plannedSearchRequests, trackedCompanies } from "../lib/china-sources.js";
 import { logPipeline } from "../lib/pipeline-log.js";
 import { llmConfig, createJsonResponse } from "../lib/llm-provider.js";
 import { retryOnceOnTimeout } from "../lib/timeout-retry.js";
@@ -79,6 +79,7 @@ const HIGH_SIGNAL_TERMS = [
   "磷酸锰铁锂", "钠电", "专利", "标准", "回收", "capacity", "production", "order", "certification", "shipment",
   "revenue", "overseas", "investment", "acquisition", "solid-state", "silicon"
 ];
+HIGH_SIGNAL_TERMS.push("政策", "法规", "条例", "公告", "补贴", "购置税", "消费税", "出口管制", "退税", "强制标准", "policy", "regulation", "subsidy", "tax", "export control");
 const LOW_SIGNAL_TERMS = ["视频", "faq", "值不值", "广告", "车主", "落地价", "车型", "测评", "评测", "怎么买", "怎么选", "对比", "续航"];
 
 function isCronRequest(request) {
@@ -197,13 +198,15 @@ async function selectHeadlineTop10(pilot = false) {
   // 뉴스는 최근 3일 창에서 Top 10. 공시는 45일 창에서 별도 몫으로 뽑아 밀린 재고를 조금씩 소화한다.
   const news = pick(rows || [], (article) =>
     article.source_tier !== "official_disclosure"
+    && !article.article_company?.some(link => link.company_id === POLICY_COMPANY_ID)
     && (article.source_tier.startsWith("web_search_") || article.source_name === "CATL Newsroom")
   ).slice(0, TOP10_LIMIT);
   const disclosures = pick(disclosureRows || [], () => true).slice(0, DISCLOSURE_PER_RUN);
   const bootstrap = pick(bootstrapRows || [], () => true).slice(0, BOOTSTRAP_PER_RUN);
+  const policies = pick(rows || [], article => article.article_company?.some(link => link.company_id === POLICY_COMPANY_ID)).slice(0, 4);
   // 최근에 발견된 bootstrap 기사는 news 창(3일)에도 걸릴 수 있다. 같은 기사를 두 번 처리하지 않는다.
   const combined = new Map();
-  for (const article of [...news, ...disclosures, ...bootstrap]) combined.set(article.id, article);
+  for (const article of [...policies, ...news, ...disclosures, ...bootstrap]) combined.set(article.id, article);
   return [...combined.values()];
 }
 
@@ -215,7 +218,7 @@ async function processSelectedBatch(rows, deadline = Infinity) {
       // 예산이 다하면 남은 기사는 다음 호출이 이어받는다. 기사 하나를 반쯤 처리하다 잘리는 것보다 낫다.
       if (Date.now() > deadline) break;
       const article = rows[next++];
-      const companyId = article.article_company?.[0]?.company_id;
+      const companyId = article.article_company?.some(link => link.company_id === POLICY_COMPANY_ID) ? POLICY_COMPANY_ID : article.article_company?.[0]?.company_id;
       if (!companyId) continue;
       try {
         outcomes.push({ articleId: article.id, ...(await processPendingArticle(article.id, companyId)) });
@@ -867,7 +870,7 @@ async function handleRequest(request, response) {
     runId = await acquireRun();
     if (!runId) return response.status(409).json({status:'collection_in_progress',message:'다른 수집·본문 처리·Daily 생성이 진행 중입니다. 추가 실행은 차단했습니다. 중단된 실행의 잠금은 마지막 단계 시작 후 최대 10분 뒤 만료됩니다.'});
     request.runId = runId;
-    await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: COMPANIES.map(({ id, name_ko, name_zh, name_en, type_tags }) => ({ id, name_ko, name_zh, name_en, type_tags })) });
+    await supabaseRest("company?on_conflict=id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: [...COMPANIES, POLICY_COMPANY].map(({ id, name_ko, name_zh, name_en, type_tags }) => ({ id, name_ko, name_zh, name_en, type_tags })) });
     stage = "source_collection";
     const isPilot = request.query?.pilot === '1';
     // 파일럿(3개사 검증)은 bootstrap을 켜지 않는다. 검증 대상이 정해져 있어 과거 백필이 필요 없다.
@@ -882,7 +885,7 @@ async function handleRequest(request, response) {
     const articleRows = matchedCandidates.map(({ candidate }) => ({
         canonical_url: candidate.url, source_name: candidate.source, title_original: candidate.title,
         source_language: "zh", published_at: safePublishedAt(candidate.publishedAt),
-        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "web_search_news" ? `web_search_${candidate.bootstrap ? "bootstrap_" : ""}${candidate.searchProvider || "discovered"}` : "needs_review",
+        verification_status: "pending", source_tier: candidate.kind === "disclosure" ? "official_disclosure" : candidate.kind === "policy_news" ? `web_search_policy_${candidate.searchProvider || "discovered"}` : candidate.kind === "web_search_news" ? `web_search_${candidate.bootstrap ? "bootstrap_" : ""}${candidate.searchProvider || "discovered"}` : "needs_review",
         discovered_via: discoveredVia(candidate),
     }));
     stage = "article_storage";

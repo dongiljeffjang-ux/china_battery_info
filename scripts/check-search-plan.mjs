@@ -24,7 +24,7 @@ const pilot = buildSearchGroups('deepseek', true);
 assert.deepEqual(new Set(pilot.flatMap((g) => g.ids)), new Set(['catl', 'hunan-yuneng', 'btr']));
 
 const planned = plannedSearchRequests(false);
-assert.equal(planned, buildSearchGroups('openai').length + buildSearchGroups('deepseek').length);
+assert.equal(planned, buildSearchGroups('openai').length + buildSearchGroups('deepseek').length + 2);
 assert.ok(searchBudgetFor(planned).search > planned, 'budget exceeds plan');
 
 // Bootstrap: 검증 기사 0건인 핵심 비상장사(Reshine·Kaijin)를 처음 한 번 365일 단독 검색한다.
@@ -46,7 +46,7 @@ for (const provider of ['openai', 'deepseek']) {
 const plannedWithBootstrap = plannedSearchRequests(false, bootstrapIds);
 assert.equal(
   plannedWithBootstrap,
-  buildSearchGroups('openai', false, bootstrapIds).length + buildSearchGroups('deepseek', false, bootstrapIds).length,
+  buildSearchGroups('openai', false, bootstrapIds).length + buildSearchGroups('deepseek', false, bootstrapIds).length + 2,
 );
 assert.ok(plannedWithBootstrap > planned, 'bootstrap adds extra requests');
 

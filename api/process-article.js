@@ -2,7 +2,7 @@ import { hasDatabaseConfig, supabaseRest } from "../lib/supabase.js";
 import { flushTraces } from "../lib/tracing.js";
 import { resolveGoogleNewsUrl } from "../lib/google-news.js";
 import { createJsonResponse, llmConfig } from "../lib/llm-provider.js";
-import { COMPANIES } from "../lib/china-sources.js";
+import { COMPANIES, POLICY_COMPANY, POLICY_COMPANY_ID } from "../lib/china-sources.js";
 import { groupSummary, matchGroupEntities } from "../lib/company-groups.js";
 import { embedVerifiedArticle, embedEvents } from "../lib/vector-ingestion.js";
 import { LAYER_ENUM, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeline-layers.js";
@@ -208,9 +208,11 @@ export async function processPendingArticle(articleId, companyId) {
 
   const primaryProvider = llmConfig("openai") ? "openai" : "deepseek";
   const verifierProvider = llmConfig("deepseek") ? "deepseek" : primaryProvider;
-  const company = COMPANIES.find((item) => item.id === companyId);
+  const company = companyId === POLICY_COMPANY_ID ? POLICY_COMPANY : COMPANIES.find((item) => item.id === companyId);
   const group = company ? groupSummary(company.id) : null;
-  const companyContext = company ? `서비스 표준 회사명: ${company.name_ko}${group ? `
+  const companyContext = companyId === POLICY_COMPANY_ID
+    ? "분석 대상: 중국 중앙정부의 배터리·NEV·ESS 정책. 정책의 발표·시행·유예·폐지 사실을 하나의 사건으로 추출하고, 특정 기업의 사건으로 바꾸지 마라. trajectory_track은 market, layer_key는 unclassified로 둔다."
+    : company ? `서비스 표준 회사명: ${company.name_ko}${group ? `
 그룹: ${group.name_ko}
 그룹 포함 검색 법인: ${group.members_ko.join(", ")}` : ""}` : "";
   const result = await analyzeArticle(article, bodyText, primaryProvider, companyContext);

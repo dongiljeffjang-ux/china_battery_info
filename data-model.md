@@ -1,5 +1,9 @@
 # 데이터 모델과 지식화 규칙
 
+## 중국 정책 자료 (2026-09-10)
+
+과거 연혁은 `lib/policy-history.js`의 35개 자료로 보존하며 발표일·시행일 원표기와 문건번호·부처·첨부 검증 표기를 갖는다. `policy-context.js`가 시간축 항목으로 변환한다. 신규 정책은 기존 `company`의 내부 분류 ID `china-policy`와 `article_company`·`event`를 재사용하며 실기업 목록에는 포함하지 않는다. `compare_report_history.report.policy_context`는 보고서 당시 정책 근거 배열, `policy_analysis_ko`는 LLM 해석이다. 기존 기업 이벤트에 정책을 복제하지 않는다. 별도 스키마 변경은 없다.
+
 > 현재 운영 Supabase 스키마는 `supabase/schema.sql`, 구현 차이는 `docs/HANDOFF.md`를 우선한다.
 
 ## 1. 핵심 원칙

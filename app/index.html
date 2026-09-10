@@ -7,7 +7,7 @@
     <title>China Battery Lens</title>
     <link rel="icon" type="image/svg+xml" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
     <link rel="apple-touch-icon" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
-    <link rel="stylesheet" href="./styles.css?v=20260908-traj-fill" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-policy-axis" />
     <link rel="stylesheet" href="./access.css?v=20260901b" />
   </head>
   <body>
@@ -176,6 +176,10 @@
           <div class="track-legend"><span><i class="dot market"></i>시장: 실적·생산기반 / 고객·해외</span><span><i class="dot tech"></i>기술: 소재·공정 / IP·인증·양산</span><span>위가 최근 · 아래가 과거</span></div>
           <div id="dual-track" class="dual-track"></div>
         </section>
+        <section class="dual-track-section policy-axis" aria-labelledby="company-policy-title" data-outline-label="중국 정책 시간축">
+          <div class="section-heading"><div><p class="eyebrow">CHINA POLICY</p><h2 id="company-policy-title">배터리·NEV·ESS 정책 시간축</h2></div><span class="source-rule">전 기업 공통 외부 변수</span></div>
+          <div id="company-policy-axis"></div>
+        </section>
         <section id="company-timeline-report-panel" class="company-timeline-report-panel" hidden aria-live="polite"></section>
       </section>
 
@@ -198,6 +202,7 @@
           </div>
         </div>
           <div id="comparison-grid" class="comparison-stack" data-outline-label="비교 시간축"></div>
+          <section class="dual-track-section policy-axis" data-outline-label="중국 정책 시간축"><div class="section-heading"><div><p class="eyebrow">CHINA POLICY</p><h2>배터리·NEV·ESS 정책 시간축</h2></div><span class="source-rule">두 기업 공통 외부 변수</span></div><div id="compare-policy-axis"></div></section>
           <section id="compare-report-history" class="compare-report-history" data-outline-label="저장된 리포트"></section>
           <section id="compare-report-panel" class="compare-report-panel" data-outline-label="생성 리포트" hidden aria-live="polite"></section>
       </section>
@@ -225,7 +230,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260910-page-outline"></script>
+    <script src="./app.js?v=20260910-policy-axis"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

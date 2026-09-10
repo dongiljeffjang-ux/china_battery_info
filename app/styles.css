@@ -245,6 +245,7 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
    시장(--market 파랑)·기술(--tech 갈색) 축 색과는 겹치지 않게 골랐다. */
 :root{--pick-a:#10365f;--pick-b:#0c6b4e}
 .compare-controls{display:grid;gap:12px;align-items:stretch;margin-bottom:22px}
+.policy-list{display:grid;gap:0;border-top:1px solid var(--line)}.policy-item{display:grid;grid-template-columns:120px 1fr;gap:18px;padding:14px 4px;border-bottom:1px solid var(--line)}.policy-item time{font-size:12px;font-weight:700;color:var(--good);font-variant-numeric:tabular-nums}.policy-item h3{margin:0 0 5px;font-size:14px}.policy-item p{margin:0 0 5px;color:#526277;font-size:12.5px;line-height:1.65}.policy-item span,.policy-item a{font-size:11px;color:var(--blue)}@media(max-width:760px){.policy-item{grid-template-columns:1fr;gap:5px}}
 .compare-picks{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .compare-pick{min-width:0;border-left-width:3px}
 .compare-pick select{width:100%;min-width:0}
@@ -425,3 +426,6 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .timeline-report-markdown a{color:var(--blue)}
 /* 뉴스 사실 본문도 제목과 같은 카드 본문 폭을 쓴다. */
 .news-fact{max-width:none}
+.matrix-cell.policy{background:#f5f8f5;font-size:12px;line-height:1.6;min-width:240px}
+.comparison-policy{position:relative;background:#f5f8f5;border-left:3px solid #52715c;padding:10px 12px;margin:8px 0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.comparison-policy summary{cursor:pointer;font-weight:700}.comparison-policy p{margin:8px 0}.comparison-policy small{color:#617187}

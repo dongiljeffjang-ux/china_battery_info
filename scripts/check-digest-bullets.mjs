@@ -39,6 +39,6 @@ const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8
 assert.ok(css.includes(".digest-points{"), "불릿 목록 스타일이 있어야 한다");
 assert.ok(css.includes('.matrix-details li::before{content:"-"'), "시계열 상세에는 요청한 하이픈 말머리가 있어야 한다");
 const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
-assert.match(html, /app\.js\?v=20260910-page-outline/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
+assert.match(html, /app\.js\?v=20260910-policy-axis/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
 
 console.log("ok  digest-bullets");
