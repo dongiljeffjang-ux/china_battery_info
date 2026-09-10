@@ -2268,7 +2268,14 @@ function activateView(view){
   // 히스토리는 다른 기기·다른 탭에서도 쌓이므로 비교 화면에 들어올 때마다 다시 읽는다.
   if (view === 'compare') loadCompareReportHistory();
 }
+function viewFromLocationHash(hash = window.location.hash){
+  const view = String(hash || '').replace(/^#/, '');
+  return ['daily', 'companies', 'compare'].includes(view) ? view : 'daily';
+}
 document.querySelectorAll('.nav-link').forEach(link => link.addEventListener('click', () => activateView(link.dataset.view)));
+// /admin의 메뉴는 /#companies처럼 페이지를 새로 연다. 클릭 핸들러는 그 요청에 관여하지 않으므로,
+// 첫 로드·뒤로가기·직접 URL 모두 해시를 읽어 같은 화면을 연다.
+window.addEventListener('hashchange', () => activateView(viewFromLocationHash()));
 
 
 document.querySelector('#refresh-button').addEventListener('click', async () => { companyTimelineCache.clear(); renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews(); renderCompanyPicker(); await loadDashboardFromApi(); await renderCompany(); await renderComparison(); });
@@ -2384,6 +2391,9 @@ async function runEmbedBackfill(){
   }
 }
 async function initialize(){
+  // 카탈로그·대시보드 요청이 끝날 때까지 기본 Daily가 보이면 /#companies 직접 링크가 Daily처럼 보인다.
+  // 먼저 URL의 화면을 켜고, 그 다음 해당 화면의 데이터를 채운다.
+  activateView(viewFromLocationHash());
   await loadCompanyCatalog();
   const compareA = document.querySelector('#compare-a');
   const compareB = document.querySelector('#compare-b');
