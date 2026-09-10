@@ -172,7 +172,7 @@
               <p class="eyebrow">MARKET × TECHNOLOGY</p>
               <h2 id="tracks-title">시장·기술 레이어별 시간축</h2>
             </div>
-            <div class="company-actions"><button id="company-timeline-report" class="secondary-button" type="button">시계열 리포트 생성</button><label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 공시 핵심 근거와 기술 이벤트를 함께 표시해 시장·기술 두 축을 유지합니다. 기술 참고 이벤트는 옅은 글씨로 구분합니다. 이 옵션을 켜면 참고(reference) 등급의 시장 기사와 웹 검색 백필도 함께 보입니다. 최신 범위는 넓어지지만 확정도는 낮으니 참고용으로 보세요.">?</span></label><label class="supporting-toggle"><input type="checkbox" id="include-policy"> 정책 표시</label></div>
+            <div class="company-actions"><div class="timeline-report-actions" role="group" aria-label="시계열 리포트 종류"><button class="secondary-button timeline-report-button" type="button" data-timeline-report-mode="direction">전략 방향</button><button class="secondary-button timeline-report-button" type="button" data-timeline-report-mode="pattern">패턴 인사이트</button><button class="secondary-button timeline-report-button" type="button" data-timeline-report-mode="inflection_point">전략 분기점</button></div><label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 공시 핵심 근거와 기술 이벤트를 함께 표시해 시장·기술 두 축을 유지합니다. 기술 참고 이벤트는 옅은 글씨로 구분합니다. 이 옵션을 켜면 참고(reference) 등급의 시장 기사와 웹 검색 백필도 함께 보입니다. 최신 범위는 넓어지지만 확정도는 낮으니 참고용으로 보세요.">?</span></label><label class="supporting-toggle"><input type="checkbox" id="include-policy"> 정책 표시</label></div>
           </div>
           <div class="track-legend"><span><i class="dot market"></i>시장: 실적·생산기반 / 고객·해외</span><span><i class="dot tech"></i>기술: 소재·공정 / IP·인증·양산</span><span>위가 최근 · 아래가 과거</span></div>
           <div id="dual-track" class="dual-track"></div>
@@ -180,15 +180,14 @@
         <section id="company-timeline-report-panel" class="company-timeline-report-panel" hidden aria-live="polite"></section>
       </section>
 
-      <dialog id="timeline-report-mode-dialog" class="report-mode-dialog" aria-labelledby="timeline-report-mode-title">
+      <dialog id="report-options-dialog" class="report-options-dialog" aria-labelledby="report-options-title">
         <form method="dialog">
-          <header><p class="eyebrow">COMPANY TIMELINE REPORT</p><h2 id="timeline-report-mode-title">어떤 관점으로 분석할까요?</h2><p>같은 시계열도 선택한 질문에 따라 다른 근거와 구조로 읽습니다.</p></header>
-          <div class="report-mode-options">
-            <button value="direction" data-report-mode="direction"><strong>전략 방향</strong><span>성장 방식과 전략 중심의 변화를 읽습니다.</span></button>
-            <button value="pattern" data-report-mode="pattern"><strong>패턴 인사이트</strong><span>시장·기술·정책·실적 사이의 연결을 찾습니다.</span></button>
-            <button value="inflection_point" data-report-mode="inflection_point"><strong>전략 분기점</strong><span>진행 중인 변화가 갈릴 경로와 의미를 읽습니다.</span></button>
+          <header><p class="eyebrow">REPORT OPTIONS</p><h2 id="report-options-title">리포트 생성 옵션</h2><p id="report-options-description">리포트에 포함할 근거 범위를 선택하세요.</p></header>
+          <div class="report-options-fields">
+            <label><input type="checkbox" id="report-option-supporting"> 보조 데이터 포함 <span>참고 기사와 웹 백필까지 함께 읽습니다.</span></label>
+            <label><input type="checkbox" id="report-option-policy"> 중국 정책 반영 <span>정책의 적용 대상·시점과 기업 근거의 관련성을 함께 검토합니다.</span></label>
           </div>
-          <button class="secondary-button report-mode-cancel" value="cancel">취소</button>
+          <footer><button class="secondary-button" value="cancel">취소</button><button class="primary-button" value="generate">보고서 생성</button></footer>
         </form>
       </dialog>
 

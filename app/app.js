@@ -579,16 +579,6 @@ async function refreshSupportingViews(anchor){
   await new Promise(resolve => requestAnimationFrame(resolve));
   window.scrollBy(0, anchor.getBoundingClientRect().top - topBefore);
 }
-// 리포트는 화면 토글 상태를 암묵적으로 따라가지 않는다. 생성 직전에 사용자가 핵심 근거만
-// 볼지, 아직 공시로 확정되지 않은 참고 기사·웹 백필까지 넓힐지를 설명과 함께 고른다.
-async function chooseReportSupporting(){
-  const selected = window.confirm('리포트에 보조 정보를 포함할까요?\n\n확인: 거래소 공시·본문 검증을 통과한 핵심 근거에 더해, 아직 공시로 확정되지 않은 참고 기사와 웹 백필도 포함합니다. 최신 범위는 넓어지지만 확정도는 낮습니다.\n\n취소: 핵심 근거만 사용합니다.');
-  if (includeSupporting === selected) return selected;
-  includeSupporting = selected;
-  [document.querySelector('#include-supporting'), document.querySelector('#include-supporting-compare')].filter(Boolean).forEach(box => { box.checked = selected; });
-  await refreshSupportingViews(document.querySelector('#include-supporting'));
-  return selected;
-}
 // 드롭다운 대신 밸류체인 탭 → 회사 칩으로 고른다. 칩의 아이콘은 중문 법인명 첫 글자다.
 function renderCompanyPicker(){
   const tabs = document.querySelector('#company-chain-tabs');
@@ -802,8 +792,8 @@ async function renderCompany(){
   const hidden = timeline.events.length - shown.length;
   const evidenceKey = shown.map(event => event.id).join(',');
   lastCompanyTimeline = { companyId: requestedId, companyName: company.name_ko, events: shown };
-  const reportButton = document.querySelector('#company-timeline-report');
-  if (reportButton) reportButton.disabled = !shown.length;
+  const reportButtons = document.querySelectorAll('[data-timeline-report-mode]');
+  reportButtons.forEach(button => { button.disabled = !shown.length; });
   const reportPanel = document.querySelector('#company-timeline-report-panel');
   // 다른 기업으로 바꾸면 앞 기업의 일회성 리포트를 계속 보여 주지 않는다.
   if (reportPanel && (reportPanel.dataset.companyId !== requestedId || reportPanel.dataset.evidenceKey !== evidenceKey)) {
@@ -967,25 +957,40 @@ function renderTimelineReportPanel(payload){
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-async function chooseTimelineReportMode(){
-  const dialog = document.querySelector('#timeline-report-mode-dialog');
-  if (!dialog) return 'direction';
+async function chooseReportOptions({ title, description }){
+  const dialog = document.querySelector('#report-options-dialog');
+  if (!dialog) return { includeSupporting, includePolicy };
+  dialog.querySelector('#report-options-title').textContent = title;
+  dialog.querySelector('#report-options-description').textContent = description;
+  dialog.querySelector('#report-option-supporting').checked = includeSupporting;
+  dialog.querySelector('#report-option-policy').checked = includePolicy;
   return new Promise(resolve => {
-    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'cancel' ? '' : dialog.returnValue || 'direction'), { once: true });
+    dialog.addEventListener('close', () => {
+      if (dialog.returnValue !== 'generate') return resolve(null);
+      resolve({
+        includeSupporting: dialog.querySelector('#report-option-supporting').checked,
+        includePolicy: dialog.querySelector('#report-option-policy').checked
+      });
+    }, { once: true });
     dialog.showModal();
   });
 }
 
-async function generateTimelineReport(){
-  const reportMode = await chooseTimelineReportMode();
-  if (!reportMode) return;
-  await chooseReportSupporting();
-  const includePolicyInReport = window.confirm('중국 정책을 이 리포트 분석에 반영할까요?\n\n확인: 정책의 적용 대상·시점과 기업의 제품·수요·원가·생산·수출 조건의 관련성을 근거 범위에서 검토합니다.\n취소: 시장·기술 기업 근거만으로 분석합니다.');
+async function generateTimelineReport(reportMode = 'direction'){
+  if (!timelineReportModeLabel[reportMode]) return;
+  const modeLabel = timelineReportModeLabel[reportMode];
+  const options = await chooseReportOptions({ title: `${modeLabel} 리포트`, description: '리포트에 포함할 근거 범위를 선택한 뒤 생성을 시작하세요.' });
+  if (!options) return;
+  const includePolicyInReport = options.includePolicy;
+  if (includeSupporting !== options.includeSupporting) {
+    includeSupporting = options.includeSupporting;
+    [document.querySelector('#include-supporting'), document.querySelector('#include-supporting-compare')].filter(Boolean).forEach(box => { box.checked = includeSupporting; });
+    await refreshSupportingViews(document.querySelector('#include-supporting'));
+  }
   if (!lastCompanyTimeline?.events?.length) { window.alert('현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다.'); return; }
   const snapshot = lastCompanyTimeline;
-  const button = document.querySelector('#company-timeline-report');
-  if (button) button.disabled = true;
-  const modeLabel = timelineReportModeLabel[reportMode] || '전략 방향';
+  const reportButtons = document.querySelectorAll('[data-timeline-report-mode]');
+  reportButtons.forEach(button => { button.disabled = true; });
   showBusy(`${modeLabel} 리포트 생성 중`, `선택한 기업의 현재 화면 이벤트 ${snapshot.events.length}건을 ${modeLabel} 관점으로 읽습니다. 웹 검색과 DB 저장은 하지 않습니다. 1분 안팎 걸립니다.`);
   try {
     const response = await fetch('/api/company', {
@@ -1000,7 +1005,7 @@ async function generateTimelineReport(){
     window.alert(`시계열 리포트를 만들지 못했습니다: ${error.message}`);
   } finally {
     hideBusy();
-    if (button && currentCompany === snapshot.companyId) button.disabled = !lastCompanyTimeline?.events?.length;
+    if (currentCompany === snapshot.companyId) reportButtons.forEach(button => { button.disabled = !lastCompanyTimeline?.events?.length; });
   }
 }
 // 훑어보는 화면에서 무엇을 먼저 보여줄지 정하는 중요도. 정기보고서와 핵심 등급, 수치가 있는 사실을 앞에 둔다.
@@ -2256,8 +2261,14 @@ async function synthesizeReports(){
 // 화면에서 제목만 보이는 보조 데이터도 툴팁 내용(사실 전문·발생 법인·출처)은 그대로 리포트에 간다.
 const compareReportEvent = event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceDate: event.sourceDate });
 async function generateCompareReport(){
-  await chooseReportSupporting();
-  const includePolicyInReport = window.confirm('중국 정책을 이 비교 리포트 분석에 반영할까요?\n\n확인: 두 기업에 대한 정책의 적용 대상·시점과 사업 조건의 관련성을 근거 범위에서 비교합니다.\n취소: 시장·기술 기업 근거만으로 비교합니다.');
+  const options = await chooseReportOptions({ title: '비교 리포트', description: '리포트에 포함할 근거 범위를 선택한 뒤 생성을 시작하세요.' });
+  if (!options) return;
+  const includePolicyInReport = options.includePolicy;
+  if (includeSupporting !== options.includeSupporting) {
+    includeSupporting = options.includeSupporting;
+    [document.querySelector('#include-supporting'), document.querySelector('#include-supporting-compare')].filter(Boolean).forEach(box => { box.checked = includeSupporting; });
+    await refreshSupportingViews(document.querySelector('#include-supporting-compare'));
+  }
   if (!lastComparison || (!lastComparison.eventsA.length && !lastComparison.eventsB.length)) {
     window.alert('비교할 이벤트가 화면에 없습니다. 두 기업을 고른 뒤 다시 시도해 주세요.');
     return;
@@ -2578,7 +2589,9 @@ async function initialize(){
   makeChainTabs(document.querySelector('#compare-chain-a'), chainA, chain => { makeSelect(compareA, '', chain); renderComparison(); });
   makeChainTabs(document.querySelector('#compare-chain-b'), chainB, chain => { makeSelect(compareB, '', chain); renderComparison(); });
   document.querySelector('#compare-report').addEventListener('click', generateCompareReport);
-  document.querySelector('#company-timeline-report').addEventListener('click', generateTimelineReport);
+  document.querySelectorAll('[data-timeline-report-mode]').forEach(button => {
+    button.addEventListener('click', () => generateTimelineReport(button.dataset.timelineReportMode));
+  });
   // 목록은 비교 화면을 열 때 activateView가 읽는다. 첫 화면은 Daily라 여기서 미리 받아둘 이유가 없다.
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);
