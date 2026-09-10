@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { dedupeTimelineEvents, isTimelineBusinessEvent } from "../lib/timeline-visibility.js";
 
-const event = (fact, layer_key = "supply-performance") => ({ layer_key, title_ko: fact, fact_ko: fact });
+const event = (fact, layer_key = "supply-performance", evidence_kind = "article") => ({ layer_key, evidence_kind, title_ko: fact, fact_ko: fact });
 
 assert.equal(isTimelineBusinessEvent(event("고부채 피보증 대상에 대한 보증 잔액 18억 위안")), false);
 assert.equal(isTimelineBusinessEvent(event("모집자금 전용계좌 잔액 3억 위안")), false);
@@ -10,6 +10,18 @@ assert.equal(isTimelineBusinessEvent(event("2025년 매출 120억 위안, 순이
 assert.equal(isTimelineBusinessEvent(event("양극재 출하량 12만 톤으로 증가, 시장점유율 3위")), true);
 assert.equal(isTimelineBusinessEvent(event("제품 믹스 개선으로 매출총이익률 4%p 상승")), true);
 assert.equal(isTimelineBusinessEvent(event("유럽 고객과 5년 공급계약 체결", "customer-commercialization")), true);
+
+// 정기보고서의 세부 공시 사실은 DB·검색 코퍼스에 남기되 기업 시계열에는 핵심 정량 신호만 보인다.
+const report = (fact, layer = "investment-production") => event(fact, layer, "periodic_report");
+assert.equal(isTimelineBusinessEvent(report("외환 파생상품 투자 실제 수익 1,240만 위안")), false);
+assert.equal(isTimelineBusinessEvent(report("2026년 6월 말 플래시 충전소 7,018기를 구축했다")), false);
+assert.equal(isTimelineBusinessEvent(report("자회사 대상 보증 승인 한도 8,890,966만 위안, 실제 발생액 4,314,564만 위안")), false);
+assert.equal(isTimelineBusinessEvent(report("동력전지 생산능력은 30GWh이다")), true);
+assert.equal(isTimelineBusinessEvent(report("양극재 출하량은 12만 톤이다")), true);
+assert.equal(isTimelineBusinessEvent(report("2025년 매출 120억 위안")), true);
+assert.equal(isTimelineBusinessEvent(report("2025년 영업이익 8억 위안")), true);
+assert.equal(isTimelineBusinessEvent(event("플래시 충전소 7,018기 구축", "investment-production", "article")), true,
+  "뉴스의 사업 이벤트는 공시 세부 필터로 숨기지 않는다");
 
 const duplicateAgreement = dedupeTimelineEvents([
   { occurred_at: "2026-09-03", layer_key: "investment-production", title_ko: "동박 생산능력 40만 톤 공동 구축 협약 체결", fact_ko: "CATL이 협력사 2곳과 향후 3년간 동박 40만 톤 생산능력을 공동 신설한다." },

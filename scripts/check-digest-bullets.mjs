@@ -27,13 +27,18 @@ assert.equal(factWithoutTitle("2025년 매출 4,237억 위안", "2025년 영업�
 // 정규식 특수문자가 든 제목도 안전하다.
 assert.equal(factWithoutTitle("특허(발명) 등록", "특허(발명) 등록은 3건이다."), "3건이다.");
 
-// 화면 두 곳이 불릿 목록으로 그린다. 도우미만 있고 안 쓰면 아무것도 바뀌지 않는다.
+// 보고서 카드와 시계열 표가 불릿 목록으로 그린다. 도우미만 있고 안 쓰면 아무것도 바뀌지 않는다.
 assert.ok(src.includes('<ul class="digest-points">${points.map(point => `<li>${escapeHtml(point)}</li>`).join(\'\')}</ul>'), "핵심 사실 카드가 불릿으로 그려야 한다");
+assert.ok(src.includes('<ul class="matrix-details">${detailPoints.map(point => `<li>${escapeHtml(clipText(point, 120))}</li>`).join(\'\')}</ul>'),
+  "시계열 표 제목 아래에도 핵심 내용이 불릿으로 보여야 한다");
+assert.match(src, /const detailPoints = splitSentences\(factWithoutTitle\([\s\S]{0,180}?\)\)\.slice\(0, 2\)/,
+  "시계열 표는 제목 중복을 제거하고 핵심 문장을 두 개까지만 보여야 한다");
 assert.ok(!src.includes('<span class="digest-detail">'), "옛 한 덩어리 설명 span은 남으면 안 된다");
 assert.ok(/traj-detail-item[\s\S]{0,600}factWithoutTitle\(/.test(src), "궤적 상세 카드도 같은 규칙을 써야 한다");
 const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8");
 assert.ok(css.includes(".digest-points{"), "불릿 목록 스타일이 있어야 한다");
+assert.ok(css.includes('.matrix-details li::before{content:"-"'), "시계열 상세에는 요청한 하이픈 말머리가 있어야 한다");
 const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
-assert.match(html, /app\.js\?v=(?:20260909-(?:digest-bullets|search-rewrite)|20260910-hash-routing)/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
+assert.match(html, /app\.js\?v=20260910-timeline-detail/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
 
 console.log("ok  digest-bullets");
