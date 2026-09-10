@@ -25,7 +25,7 @@ assert.match(lib, /import \{ metricTable \} from "\.\/timeline-report\.js"/);
 assert.match(lib, /function serializeMetrics/);
 assert.match(lib, /metricsA = \[\], metricsB = \[\]/);
 assert.match(lib, /정량 시계열 표에 적힌 사실만 근거/);
-assert.match(api, /Promise\.all\(\[loadReportMetrics\(a\.id\), loadReportMetrics\(b\.id\), loadPolicyEvents\(\)\]\)/, "비교 리포트도 두 기업의 정량 시계열을 읽어야 한다");
+assert.match(api, /includePolicy \? loadPolicyEvents\(\) : Promise\.resolve\(\[\]\)/, "사용자가 선택한 경우에만 비교 리포트가 정책 근거를 읽어야 한다");
 assert.match(api, /eventsA, eventsB, metricsA, metricsB, policies, pairContext: pairContextValue/, "비교 리포트에 정량 시계열을 넘겨야 한다");
 assert.match(app, /비교 관계 ·/);
 assert.match(app, /pair_context/);

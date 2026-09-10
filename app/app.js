@@ -592,9 +592,11 @@ async function loadDashboardFromApi(){
 }
 let currentChain = 'cathode';
 let includeSupporting = false;
+let includePolicy = true;
 
-// 기업 시계열은 공시 원문에서 나온 사실과 핵심 등급 기사만 기본으로 보여준다.
-// 참고 등급 기사와 웹 검색 백필은 '보조 데이터 포함'을 켤 때만 나온다.
+// 기본 시계열은 시장·기술 두 축을 모두 유지한다. 시장은 공시 핵심 근거만,
+// 기술은 출처 등급과 무관하게 표시하되 참고 근거는 화면에서 옅게 구분한다.
+// '보조 데이터 포함'을 켜면 참고 등급 시장 기사와 웹 검색 백필까지 더한다.
 const evidenceLabels = { annual_report: '연차보고서', periodic_report: '반기·분기보고서', disclosure: '거래소 공시', article: '언론', web_backfill: '웹 검색' };
 function isPrimaryEvidence(event){
   // 거래소 공시는 회사가 직접 낸 1차 출처라 정기보고서와 같은 핵심 등급으로 본다.
@@ -602,7 +604,7 @@ function isPrimaryEvidence(event){
   return event.kind === 'article' && event.eligibility === '핵심';
 }
 function visibleEvents(timeline){
-  return includeSupporting ? timeline.events : timeline.events.filter(isPrimaryEvidence);
+  return includeSupporting ? timeline.events : timeline.events.filter(event => isPrimaryEvidence(event) || event.track === 'tech');
 }
 // 보조 데이터는 같은 시계열을 넓혀 보는 옵션일 뿐, 사용자를 페이지 맨 위로 보내면 안 된다.
 // 기업 프로필·차트가 다시 그려져도 토글의 화면상 위치를 기준으로 스크롤을 되돌린다.
@@ -840,23 +842,24 @@ async function renderCompany(){
   }
   if (state) {
     state.textContent = notice || (shown.length
-      ? `공시·핵심 근거 이벤트 ${shown.length}건을 표시합니다.${hidden ? ` 보조 데이터 ${hidden}건은 숨겨져 있습니다.` : ''}`
-      : '표시할 공시 기반 이벤트가 없습니다. 연차보고서 요약을 실행하면 이 화면에 채워집니다.');
+      ? `공시 핵심 근거와 기술 이벤트 ${shown.length}건을 표시합니다.${hidden ? ` 참고 시장 데이터 ${hidden}건은 숨겨져 있습니다.` : ''}`
+      : '표시할 공시 기반 또는 기술 이벤트가 없습니다. 연차보고서 요약을 실행하면 이 화면에 채워집니다.');
   }
   renderTrajectory(timeline);
   renderCompanyEvents(timeline);
   renderLayerMatrix(timeline);
-  renderPolicyAxis(document.querySelector('#company-policy-axis'), timeline.policies);
 }
 
-function policyCell(policies, period){
-  return (policies || []).filter(policy => periodOf(policy.date) === period).map(policy => `<div class="matrix-item"><span class="matrix-title">${escapeHtml(policy.title)}</span><p>${escapeHtml(policy.fact)}</p><small>${escapeHtml(displayDate(policy))} · ${sourceLink(policy)}</small></div>`).join('') || '—';
+function policyInlineItems(policies){
+  return (policies || []).map(policy => {
+    const fact = String(policy.fact || '').replace(/\s+/g, ' ').trim();
+    const summary = fact.length > 150 ? `${fact.slice(0, 147)}…` : fact;
+    const tip = [fact, `정책 시점: ${displayDate(policy)}`, `출처: ${policy.sourceName || ''}`].filter(Boolean).join('\n\n');
+    return `<div class="policy-inline-item" data-tip="${escapeHtml(tip)}"><span class="policy-inline-tag">정책</span><span class="policy-inline-title">${escapeHtml(policy.title)}</span>${summary ? `<span class="policy-inline-summary">${escapeHtml(summary)}</span>` : ''}</div>`;
+  }).join('');
 }
-function renderPolicyAxis(target, policies){
-  if (!target) return;
-  if (!(policies || []).length) { target.innerHTML = '<p class="summary-empty">등록된 주요 정책이 없습니다.</p>'; return; }
-  const ordered = [...policies].sort((a, b) => b.date.localeCompare(a.date));
-  target.innerHTML = `<div class="policy-list">${ordered.map(policy => `<article class="policy-item"><time>${escapeHtml(displayDate(policy))}</time><div><h3>${escapeHtml(policy.title)}</h3><p>${escapeHtml(policy.fact)}</p><span>${sourceLink(policy)}</span></div></article>`).join('')}</div>`;
+function policyCell(policies, period){
+  return policyInlineItems((policies || []).filter(policy => periodOf(policy.date) === period));
 }
 
 // 리포트 출력은 제한된 Markdown(제목·불릿·표·문단)만 HTML로 바꾼다. 모델 문자열은 항상
@@ -974,6 +977,7 @@ function renderTimelineReportPanel(payload){
 
 async function generateTimelineReport(){
   await chooseReportSupporting();
+  const includePolicyInReport = window.confirm('중국 정책을 이 리포트 분석에 반영할까요?\n\n확인: 정책의 적용 대상·시점과 기업의 제품·수요·원가·생산·수출 조건의 관련성을 근거 범위에서 검토합니다.\n취소: 시장·기술 기업 근거만으로 분석합니다.');
   if (!lastCompanyTimeline?.events?.length) { window.alert('현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다.'); return; }
   const snapshot = lastCompanyTimeline;
   const button = document.querySelector('#company-timeline-report');
@@ -982,7 +986,7 @@ async function generateTimelineReport(){
   try {
     const response = await fetch('/api/company', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'timeline_report', companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, sourceName: event.sourceName, sourceUrl: event.sourceUrl })) })
+      body: JSON.stringify({ mode: 'timeline_report', includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, sourceName: event.sourceName, sourceUrl: event.sourceUrl })) })
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
@@ -1716,12 +1720,13 @@ const MATRIX_GROUPS = [
 function renderLayerMatrix(timeline){
   const target = document.querySelector('#dual-track');
   const events = visibleEvents(timeline);
+  const policies = includePolicy ? (timeline.policies || []) : [];
   const notice = timelineNotice(timeline.status);
-  if (!events.length && !timeline.policies?.length) {
+  if (!events.length && !policies.length) {
     target.innerHTML = `<p>${escapeHtml(notice || '선택한 기업에 표시할 공시 기반 이벤트가 아직 없습니다.')}</p>`;
     return;
   }
-  const periods = timelinePeriods([...events, ...(timeline.policies || [])]).slice().reverse();
+  const periods = timelinePeriods([...events, ...policies]).slice().reverse();
   // 미분류는 트랙만 알 수 있으므로 그 트랙의 첫 묶음에 넣고 '미분류' 표시를 단다.
   const groupOf = event => {
     const found = MATRIX_GROUPS.find(group => group.layers.includes(event.layer));
@@ -1749,9 +1754,10 @@ function renderLayerMatrix(timeline){
   const body = periods.map(period => {
     // 셀에도 축 클래스를 달아 시장·기술 절반이 배경색으로 갈리게 한다.
     const cells = MATRIX_GROUPS.map(group => `<td class="matrix-cell ${group.track}">${cell(group, period)}</td>`);
-    return `<tr>${cells[0]}${cells[1]}<th class="matrix-period">${period}</th>${cells[2]}${cells[3]}<td class="matrix-cell policy">${policyCell(timeline.policies, period)}</td></tr>`;
+    const policy = policyCell(policies, period);
+    return `<tr>${cells[0]}${cells[1]}<th class="matrix-period">${period}</th>${cells[2]}${cells[3]}</tr>${policy ? `<tr class="policy-inline-row"><td colspan="5">${policy}</td></tr>` : ''}`;
   }).join('');
-  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><colgroup><col class="matrix-layer-col"><col class="matrix-layer-col"><col class="matrix-time-col"><col class="matrix-layer-col"><col class="matrix-layer-col"><col class="matrix-layer-col"></colgroup><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th><th class="matrix-track">중국 정책</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}<th>발표·시행</th></tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 자세한 사실과 원래 레이어는 항목에 마우스를 올리면 보입니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
+  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><colgroup><col class="matrix-layer-col"><col class="matrix-layer-col"><col class="matrix-time-col"><col class="matrix-layer-col"><col class="matrix-layer-col"></colgroup><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 정책은 해당 시점 아래 한 줄로 간추려 표시하며, 마우스를 올리면 전체 내용을 볼 수 있습니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
 }
 
 // 벡터 지식에 질문한다. 근거가 없으면 답을 만들지 않고 무엇을 확인할지 안내받는다.
@@ -2190,6 +2196,7 @@ async function synthesizeReports(){
 }
 async function generateCompareReport(){
   await chooseReportSupporting();
+  const includePolicyInReport = window.confirm('중국 정책을 이 비교 리포트 분석에 반영할까요?\n\n확인: 두 기업에 대한 정책의 적용 대상·시점과 사업 조건의 관련성을 근거 범위에서 비교합니다.\n취소: 시장·기술 기업 근거만으로 비교합니다.');
   if (!lastComparison || (!lastComparison.eventsA.length && !lastComparison.eventsB.length)) {
     window.alert('비교할 이벤트가 화면에 없습니다. 두 기업을 고른 뒤 다시 시도해 주세요.');
     return;
@@ -2203,6 +2210,7 @@ async function generateCompareReport(){
       body: JSON.stringify({
         mode: 'compare_report',
         includeSupporting,
+        includePolicy: includePolicyInReport,
         companyA: lastComparison.a, companyB: lastComparison.b,
         eventsA: lastComparison.eventsA.map(event => ({ id: event.id, date: event.date, track: event.track, title: event.title, fact: event.fact, sourceName: event.sourceName })),
         eventsB: lastComparison.eventsB.map(event => ({ id: event.id, date: event.date, track: event.track, title: event.title, fact: event.fact, sourceName: event.sourceName }))
@@ -2237,11 +2245,10 @@ async function renderComparison(){
   const [timelineA, timelineB] = await Promise.all([loadCompanyTimeline(a), loadCompanyTimeline(b)]);
   if (selectA.value !== a || selectB.value !== b) return;
   const eventsA = visibleEvents(timelineA), eventsB = visibleEvents(timelineB);
-  renderPolicyAxis(document.querySelector('#compare-policy-axis'), timelineA.policies?.length ? timelineA.policies : timelineB.policies);
   // 리포트는 화면에 그려진 것과 같은 근거를 써야 한다. 여기서 확정된 목록을 그대로 보관한다.
   lastComparison = { a, b, eventsA, eventsB };
   // 축은 정밀도 표기로 묶는다. 연간 집계 여러 건이 12월 31일 한 칸에 쌓이면 그 해의 일로 읽히지 않는다.
-  const policies = timelineA.policies || timelineB.policies || [];
+  const policies = includePolicy ? (timelineA.policies || timelineB.policies || []) : [];
   const dates = [...new Set([...eventsA, ...eventsB, ...policies].map(event => displayDate(event)))]
     .sort((x, y) => sortKeyOf([...eventsA, ...policies], eventsB, y).localeCompare(sortKeyOf([...eventsA, ...policies], eventsB, x)));
   if (!dates.length) {
@@ -2277,8 +2284,8 @@ async function renderComparison(){
   const ratio = Math.max(eventsA.length, eventsB.length) / Math.max(1, Math.min(eventsA.length, eventsB.length));
   const asym = ratio >= 2 ? `<p class="coverage-warn">근거 두께가 ${ratio.toFixed(1)}배 차이 납니다. 빈칸은 "확인된 사실 없음"이지 "일이 없었다"가 아닙니다.</p>` : '';
   // 5열: 기업A 기술 | 기업A 시장 | 공통 시간축 | 기업B 시장 | 기업B 기술. 시장 열을 시간축 양옆에 붙여 대비시킨다.
-  const COLS = 'grid-template-columns:1fr 1fr 118px 1fr 1fr 240px;gap:12px';
-  target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:1360px">${asym}<div style="display:grid;${COLS};align-items:end;margin-bottom:4px"><div class="cmp-head-a" style="grid-column:1/3"><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2><p class="coverage-note">${escapeHtml(covA)}</p></div><div style="text-align:center;color:#617187;font-size:12px">공통<br>시간축</div><div class="cmp-head-b" style="grid-column:4/6;text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2><p class="coverage-note">${escapeHtml(covB)}</p></div><div><h2>중국 정책</h2></div></div><div style="display:grid;${COLS};margin-bottom:10px"><div class="cmp-tracklabel tech" style="text-align:right">기술</div><div class="cmp-tracklabel market" style="text-align:right">시장</div><div></div><div class="cmp-tracklabel market">시장</div><div class="cmp-tracklabel tech">기술</div><div class="cmp-tracklabel">공통 외부 변수</div></div><div style="position:relative">${dates.map((date, index) => `<div style="display:grid;${COLS};align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'tech', 'right', a)}</div><div>${eventCell(eventsA, date, 'market', 'right', a)}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'market', 'left', b)}</div><div>${eventCell(eventsB, date, 'tech', 'left', b)}</div><div>${policies.filter(policy => displayDate(policy) === date).map(policy => `<details class="comparison-policy"><summary>정책 · ${escapeHtml(policy.title)}</summary><p>${escapeHtml(policy.fact)}</p><small>${sourceLink(policy)}</small></details>`).join('')}</div></div>`).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
+  const COLS = 'grid-template-columns:1fr 1fr 118px 1fr 1fr;gap:12px';
+  target.innerHTML = `<section class="compare-card" style="padding:22px;overflow-x:auto"><div style="min-width:1120px">${asym}<div style="display:grid;${COLS};align-items:end;margin-bottom:4px"><div class="cmp-head-a" style="grid-column:1/3"><p class="eyebrow">기업 A</p><h2>${escapeHtml(displayName(a))}</h2><p class="coverage-note">${escapeHtml(covA)}</p></div><div style="text-align:center;color:#617187;font-size:12px">공통<br>시간축</div><div class="cmp-head-b" style="grid-column:4/6;text-align:right"><p class="eyebrow">기업 B</p><h2>${escapeHtml(displayName(b))}</h2><p class="coverage-note">${escapeHtml(covB)}</p></div></div><div style="display:grid;${COLS};margin-bottom:10px"><div class="cmp-tracklabel tech" style="text-align:right">기술</div><div class="cmp-tracklabel market" style="text-align:right">시장</div><div></div><div class="cmp-tracklabel market">시장</div><div class="cmp-tracklabel tech">기술</div></div><div style="position:relative">${dates.map((date, index) => { const policy = policyInlineItems(policies.filter(item => displayDate(item) === date)); return `<div style="display:grid;${COLS};align-items:center;min-height:104px"><div>${eventCell(eventsA, date, 'tech', 'right', a)}</div><div>${eventCell(eventsA, date, 'market', 'right', a)}</div><div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative">${index < dates.length - 1 ? '<span style="position:absolute;top:50%;bottom:-52px;border-left:2px solid #b8c9d9"></span>' : ''}<span style="position:relative;width:14px;height:14px;border-radius:50%;background:#10365f;border:3px solid #eaf3fb"></span><time style="position:relative;margin-top:5px;color:#617187;font-size:12px;font-weight:700">${date}</time></div><div>${eventCell(eventsB, date, 'market', 'left', b)}</div><div>${eventCell(eventsB, date, 'tech', 'left', b)}</div></div>${policy ? `<div class="comparison-policy-row">${policy}</div>` : ''}`; }).join('')}</div><p style="margin:8px 0 0;text-align:center;color:#617187;font-size:12px">과거 ↓</p></div></section>`;
 }
 function activateView(view){
   document.querySelectorAll('.view').forEach(el => el.classList.toggle('is-visible', el.id === view));
@@ -2495,6 +2502,15 @@ async function initialize(){
     box.addEventListener('change', async () => {
       includeSupporting = box.checked;
       supportingToggles.forEach(other => { other.checked = includeSupporting; });
+      await refreshSupportingViews(box);
+    });
+  });
+  const policyToggles = [document.querySelector('#include-policy'), document.querySelector('#include-policy-compare')].filter(Boolean);
+  policyToggles.forEach(box => {
+    box.checked = includePolicy;
+    box.addEventListener('change', async () => {
+      includePolicy = box.checked;
+      policyToggles.forEach(other => { other.checked = includePolicy; });
       await refreshSupportingViews(box);
     });
   });

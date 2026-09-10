@@ -426,6 +426,11 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .timeline-report-markdown a{color:var(--blue)}
 /* 뉴스 사실 본문도 제목과 같은 카드 본문 폭을 쓴다. */
 .news-fact{max-width:none}
-.matrix-cell.policy{background:#f5f8f5;font-size:12px;line-height:1.6;min-width:240px}
-.comparison-policy{position:relative;background:#f5f8f5;border-left:3px solid #52715c;padding:10px 12px;margin:8px 0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
-.comparison-policy summary{cursor:pointer;font-weight:700}.comparison-policy p{margin:8px 0}.comparison-policy small{color:#617187}
+.policy-inline-row td,.comparison-policy-row{padding:7px 12px;background:#f5f8f5;border-top:1px solid #dce8dc;border-bottom:1px solid #dce8dc}
+.comparison-policy-row{margin:0 0 8px}
+.policy-inline-item{display:flex;align-items:baseline;gap:7px;min-width:0;font-size:12px;line-height:1.5;cursor:help}
+.policy-inline-tag{flex:none;padding:1px 6px;border-radius:99px;background:#e5efe5;color:#52715c;font-size:10px;font-weight:700}
+.policy-inline-title{flex:none;color:#314d38;font-weight:700}.policy-inline-summary{min-width:0;color:#617187;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Daily 해석 카드와 다음 키워드 분석 카드를 분리해 읽기 호흡을 준다. */
+.daily-insight + .news-section{margin-top:28px}

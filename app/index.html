@@ -7,7 +7,7 @@
     <title>China Battery Lens</title>
     <link rel="icon" type="image/svg+xml" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
     <link rel="apple-touch-icon" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
-    <link rel="stylesheet" href="./styles.css?v=20260910-policy-axis" />
+    <link rel="stylesheet" href="./styles.css?v=20260910-timeline-balance" />
     <link rel="stylesheet" href="./access.css?v=20260901b" />
   </head>
   <body>
@@ -171,14 +171,10 @@
               <p class="eyebrow">MARKET × TECHNOLOGY</p>
               <h2 id="tracks-title">시장·기술 레이어별 시간축</h2>
             </div>
-            <div class="company-actions"><button id="company-timeline-report" class="secondary-button" type="button">시계열 리포트 생성</button><label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 거래소 공시·본문 검증을 통과한 핵심(core) 사실만 표시합니다. 이 옵션을 켜면 아직 공시로 확정되지 않은 참고(reference) 등급 데이터도 함께 보입니다: 언론 기사, 그리고 상장사 올해분·비상장사의 뉴스 웹 백필. 이 레이어별 시간축과 기업 비교 화면에 반영됩니다. 최신 소식을 폭넓게 보되 확정도는 낮으니 참고용으로 보세요.">?</span></label></div>
+            <div class="company-actions"><button id="company-timeline-report" class="secondary-button" type="button">시계열 리포트 생성</button><label class="supporting-toggle"><input type="checkbox" id="include-supporting"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 공시 핵심 근거와 기술 이벤트를 함께 표시해 시장·기술 두 축을 유지합니다. 기술 참고 이벤트는 옅은 글씨로 구분합니다. 이 옵션을 켜면 참고(reference) 등급의 시장 기사와 웹 검색 백필도 함께 보입니다. 최신 범위는 넓어지지만 확정도는 낮으니 참고용으로 보세요.">?</span></label><label class="supporting-toggle"><input type="checkbox" id="include-policy"> 정책 표시</label></div>
           </div>
           <div class="track-legend"><span><i class="dot market"></i>시장: 실적·생산기반 / 고객·해외</span><span><i class="dot tech"></i>기술: 소재·공정 / IP·인증·양산</span><span>위가 최근 · 아래가 과거</span></div>
           <div id="dual-track" class="dual-track"></div>
-        </section>
-        <section class="dual-track-section policy-axis" aria-labelledby="company-policy-title" data-outline-label="중국 정책 시간축">
-          <div class="section-heading"><div><p class="eyebrow">CHINA POLICY</p><h2 id="company-policy-title">배터리·NEV·ESS 정책 시간축</h2></div><span class="source-rule">전 기업 공통 외부 변수</span></div>
-          <div id="company-policy-axis"></div>
         </section>
         <section id="company-timeline-report-panel" class="company-timeline-report-panel" hidden aria-live="polite"></section>
       </section>
@@ -198,11 +194,10 @@
           </div>
           <div class="compare-actions-row">
             <button id="compare-report" class="secondary-button" type="button">비교 리포트 생성</button>
-            <label class="supporting-toggle"><input type="checkbox" id="include-supporting-compare"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 거래소 공시·본문 검증을 통과한 핵심(core) 사실만 표시합니다. 이 옵션을 켜면 아직 공시로 확정되지 않은 참고(reference) 등급 데이터도 함께 보입니다: 언론 기사, 그리고 상장사 올해분·비상장사의 뉴스 웹 백필. 기업 시계열 화면과 이 비교 화면에 함께 적용됩니다. 최신 소식을 폭넓게 보되 확정도는 낮으니 참고용으로 보세요.">?</span></label>
+            <label class="supporting-toggle"><input type="checkbox" id="include-supporting-compare"> 보조 데이터 포함<span class="help-icon" tabindex="0" role="img" aria-label="보조 데이터 포함 설명" data-tip="기본 화면은 공시 핵심 근거와 기술 이벤트를 함께 표시해 시장·기술 두 축을 유지합니다. 기술 참고 이벤트는 옅은 글씨로 구분합니다. 이 옵션을 켜면 참고(reference) 등급의 시장 기사와 웹 검색 백필도 함께 보입니다. 최신 범위는 넓어지지만 확정도는 낮으니 참고용으로 보세요.">?</span></label><label class="supporting-toggle"><input type="checkbox" id="include-policy-compare"> 정책 표시</label>
           </div>
         </div>
           <div id="comparison-grid" class="comparison-stack" data-outline-label="비교 시간축"></div>
-          <section class="dual-track-section policy-axis" data-outline-label="중국 정책 시간축"><div class="section-heading"><div><p class="eyebrow">CHINA POLICY</p><h2>배터리·NEV·ESS 정책 시간축</h2></div><span class="source-rule">두 기업 공통 외부 변수</span></div><div id="compare-policy-axis"></div></section>
           <section id="compare-report-history" class="compare-report-history" data-outline-label="저장된 리포트"></section>
           <section id="compare-report-panel" class="compare-report-panel" data-outline-label="생성 리포트" hidden aria-live="polite"></section>
       </section>
@@ -230,7 +225,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260910-policy-axis"></script>
+    <script src="./app.js?v=20260910-timeline-balance"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

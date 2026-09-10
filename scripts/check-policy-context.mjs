@@ -19,18 +19,20 @@ const input = buildTimelineInput({ companyName: '테스트 기업', events: [], 
 assert.ok(input.includes(policyEvidenceText(policies)));
 assert.match(input, /원문 독립 검증 완료 사실이 아니다/);
 
-// Execute the actual UI policy renderers: period alignment and HTML escaping.
+// Execute the visible policy column renderer: period alignment and HTML escaping.
 const app = readFileSync(new URL('../app/app.js', import.meta.url), 'utf8');
-const source = app.slice(app.indexOf('function policyCell('), app.indexOf('// 리포트 출력은 제한된 Markdown('));
+const source = app.slice(app.indexOf('function policyInlineItems('), app.indexOf('// 리포트 출력은 제한된 Markdown('));
 const escapeHtml = value => String(value || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-const { policyCell, renderPolicyAxis } = new Function('escapeHtml', 'periodOf', 'displayDate', 'sourceLink', source + '\nreturn { policyCell, renderPolicyAxis };')(escapeHtml, date => date.slice(0, 4), event => event.date, event => escapeHtml(event.sourceName));
+const { policyCell } = new Function('escapeHtml', 'periodOf', 'displayDate', 'sourceLink', source + '\nreturn { policyCell };')(escapeHtml, date => date.slice(0, 4), event => event.date, event => escapeHtml(event.sourceName));
 const fake = [{ date: '2026-09-01', title: '<script>bad</script>', fact: '시행 내용', sourceName: '첨부 미검증' }];
-assert.equal(policyCell(fake, '2025'), '—');
+assert.equal(policyCell(fake, '2025'), '');
 assert.match(policyCell(fake, '2026'), /&lt;script&gt;/);
-const target = { innerHTML: '' };
-renderPolicyAxis(target, fake);
-assert.ok(target.innerHTML.includes('시행 내용'));
-assert.ok(!target.innerHTML.includes('<script>'));
-renderPolicyAxis(target, []);
-assert.ok(!target.innerHTML.includes('시행 내용'));
+assert.doesNotMatch(app, /function renderPolicyAxis\(/, '중복되는 전체 정책 목록 렌더러를 두지 않는다');
+const index = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
+assert.doesNotMatch(index, /company-policy-axis|compare-policy-axis|배터리·NEV·ESS 정책 시간축/, '별도 정책 목록 섹션을 렌더하지 않는다');
+assert.match(app, /let includePolicy = true/, '정책 한 줄 표시는 기본으로 켜져 있어야 한다');
+assert.match(app, /policy-inline-row/, '정책은 별도 열이 아니라 해당 시점 아래의 보조 행이어야 한다');
+assert.match(index, /id="include-policy"/, '기업 화면에서 정책 표시를 선택할 수 있어야 한다');
+assert.match(index, /id="include-policy-compare"/, '비교 화면에서 정책 표시를 선택할 수 있어야 한다');
+assert.match(app, /includePolicy: includePolicyInReport/, '리포트 생성 시 정책 반영 여부를 서버에 전달해야 한다');
 console.log(`policy context checks passed: 35 policies, ${policies.length} dated entries`);

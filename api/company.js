@@ -158,7 +158,8 @@ async function runTimelineReport(request, response) {
     // 리포트가 사건 조각만 받으면 나열에 머문다. 방향은 숫자에서 먼저 읽히므로 정량 시계열을
     // 함께 준다. 거래소 표준 손익(연간·당해 누적)과 보고서 원문에서 뽑은 물량(출하·장착·생산능력).
     // 실패해도 리포트는 사건만으로 낸다 — 숫자가 빠진 채 나오는 쪽이 아예 안 나오는 것보다 낫다.
-    const [metrics, policies] = await Promise.all([loadReportMetrics(companyId), loadPolicyEvents()]);
+    const includePolicy = request.body?.includePolicy === true;
+    const [metrics, policies] = await Promise.all([loadReportMetrics(companyId), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
     // 리포트 모델은 간헐적으로 첫 응답이 지연될 수 있다. 같은 입력을 즉시 사용자 실패로
     // 돌려주지 말고, 네트워크/상류 시간 초과일 때만 한 번 다시 시도한다. 스키마·입력 오류는
     // 재시도해도 해결되지 않으므로 그대로 반환한다.
@@ -189,7 +190,8 @@ async function runCompareReport(request, response) {
   try {
     // 두 회사의 정량 시계열도 같은 기간·단위 기준으로 넣어, 사건 나열만으로 비교하지 않는다.
     // 숫자 조회가 한쪽에서 실패해도 해당 회사의 이벤트 근거로 리포트는 계속 만든다.
-    const [metricsA, metricsB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), loadPolicyEvents()]);
+    const includePolicy = request.body?.includePolicy === true;
+    const [metricsA, metricsB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
     const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB, metricsA, metricsB, policies, pairContext: pairContextValue });
     result.report.policy_context = policies;
     // 웹 검증이 확인한 것은 리포트에만 두지 않고 DB에 되돌린다. 실패해도 리포트는 그대로 낸다.
