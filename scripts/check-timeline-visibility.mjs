@@ -11,7 +11,8 @@ assert.equal(isTimelineBusinessEvent(event("양극재 출하량 12만 톤으로 
 assert.equal(isTimelineBusinessEvent(event("제품 믹스 개선으로 매출총이익률 4%p 상승")), true);
 assert.equal(isTimelineBusinessEvent(event("유럽 고객과 5년 공급계약 체결", "customer-commercialization")), true);
 
-// 정기보고서의 세부 공시 사실은 DB·검색 코퍼스에 남기되 기업 시계열에는 핵심 정량 신호만 보인다.
+// 시장 정기보고서의 세부 공시 사실은 DB·검색 코퍼스에 남기되 기업 시계열에는 핵심 정량 신호만 보인다.
+// 기술 정기보고서는 정량 키워드가 없어도 개발·특허·공정 등 사업 사실을 시계열에 보인다.
 const report = (fact, layer = "investment-production") => event(fact, layer, "periodic_report");
 assert.equal(isTimelineBusinessEvent(report("외환 파생상품 투자 실제 수익 1,240만 위안")), false);
 assert.equal(isTimelineBusinessEvent(report("2026년 6월 말 플래시 충전소 7,018기를 구축했다")), false);
@@ -20,6 +21,14 @@ assert.equal(isTimelineBusinessEvent(report("동력전지 생산능력은 30GWh�
 assert.equal(isTimelineBusinessEvent(report("양극재 출하량은 12만 톤이다")), true);
 assert.equal(isTimelineBusinessEvent(report("2025년 매출 120억 위안")), true);
 assert.equal(isTimelineBusinessEvent(report("2025년 영업이익 8억 위안")), true);
+assert.equal(isTimelineBusinessEvent({
+  ...report("전고체 배터리 시제품 개발을 진행했다", "technology-development"),
+  trajectory_track: "technology",
+}), true);
+assert.equal(isTimelineBusinessEvent({
+  ...report("상반기 특허 180건을 출원했다", "technology-ip-standard"),
+  trajectory_track: "technology",
+}), true);
 assert.equal(isTimelineBusinessEvent({
   ...report("2025년 지배주주 순이익 722억 위안"),
   original_excerpt_ko: "회사는 매출 4,237억 위안과 지배주주 순이익 722억 위안을 기록했다.",
