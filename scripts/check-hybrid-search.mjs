@@ -11,7 +11,7 @@ process.env.OPENAI_API_KEY = "test-key";
 process.env.SUPABASE_URL = "https://example.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test";
 
-const { buildLexicalQuery, demotePeriodMismatches, demoteUnrelatedCompanies, expandDomainQuestion, fuseByRrf, questionCompanyTerms, questionPeriods, sanitizeRewrittenQueries, searchKnowledge } = await import("../lib/knowledge-search.js");
+const { buildLexicalQuery, demotePeriodMismatches, demoteUnrelatedCompanies, expandDomainQuestion, fuseByRrf, questionCompanyTerms, questionCompanyGroups, questionValueChainGroups, questionPeriods, sanitizeRewrittenQueries, searchKnowledge } = await import("../lib/knowledge-search.js");
 
 // --- 1) 질의 조립 -----------------------------------------------------------
 
@@ -66,6 +66,17 @@ for (const [question, expected] of [["파라시스 2026년 상반기 신규 고�
 assert.deepEqual(questionCompanyTerms("전고체 배터리 양산 시점"), [], "회사가 없으면 필수 조건도 없다");
 assert.equal(buildLexicalQuery("전고체 배터리 양산 시점", { requiredTerms: [] }),
   buildLexicalQuery("전고체 배터리 양산 시점"), "필수 조건이 없으면 질의가 예전과 같아야 한다");
+
+// 밸류체인 라벨이 회사 범위를 뜻할 때는 type_tags 집합을 하나의 필수 OR 그룹으로
+// 만든다. 주제어로만 쓰인 '양극재 증설'은 회사 필터를 만들지 않는다.
+const cellGroups = questionValueChainGroups("셀사의 LFP 생산 캐파");
+assert.equal(cellGroups.length, 1, "셀사 질문은 셀 회사 집합 하나를 필수 그룹으로 만든다");
+assert.ok(cellGroups[0].includes("CATL") && cellGroups[0].includes("BYD"), "셀 그룹에 대표 셀사 별칭이 포함돼야 한다");
+const cellQuery = buildLexicalQuery("셀사의 LFP 생산 캐파", { requiredGroups: cellGroups });
+assert.equal((cellQuery.match(/\+\(/g) || []).length, 1, "셀사 회사 집합은 필수 그룹 하나여야 한다");
+assert.equal(questionValueChainGroups("양극재 증설").length, 0, "주제어만 있는 양극재 질문은 회사 필터를 만들지 않는다");
+assert.equal(questionValueChainGroups("양극재 회사의 LFP 캐파").length, 1, "양극재 회사 표현은 소재사 집합을 필수 그룹으로 만든다");
+assert.equal(questionValueChainGroups("음극재 업체 생산능력").length, 1, "음극재 업체 표현은 소재사 집합을 필수 그룹으로 만든다");
 
 const scoped = buildLexicalQuery(expandDomainQuestion("파라시스 2026년 상반기 신규 고객"),
   { requiredTerms: questionCompanyTerms("파라시스 2026년 상반기 신규 고객") });
@@ -154,7 +165,6 @@ assert.ok(collapsed.indexOf("ea") < collapsed.indexOf("a3"), "같은 기사의 e
 // 2026-09-09: "reshine과 CATL 협력 관계"에 진촨루이샹·CATL 협력 청크 3건이 있는데도 상위 10건에 없었다.
 // 두 회사 표기를 한 그룹에 OR로 넣으면 청크가 많은 CATL이 다른 회사 이야기를 밀어낸다. 회사별로
 // +그룹을 나누자 그 3건이 1~3위가 됐다(운영 DB 실측).
-const { questionCompanyGroups } = await import("../lib/knowledge-search.js");
 const pairGroups = questionCompanyGroups("reshine과 CATL 협력 관계");
 assert.equal(pairGroups.length, 2, `두 회사가 각각 묶여야 한다: ${pairGroups.length}`);
 const pairQuery = buildLexicalQuery("reshine과 CATL 협력 관계", { requiredGroups: pairGroups });
