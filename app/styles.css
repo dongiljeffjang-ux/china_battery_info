@@ -379,6 +379,8 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .traj-flag line{stroke:var(--line);stroke-width:1}
 .traj-flag circle{fill:var(--market)}
 .traj-flag.tech circle{fill:var(--tech)}
+.traj-lane-labels text{font-size:10px;font-weight:700;fill:var(--market)}
+.traj-lane-labels text:last-child{fill:var(--tech)}
 .traj-flag:hover circle,.traj-flag:focus circle{r:6}
 .traj-flag:hover line,.traj-flag:focus line{stroke:var(--muted)}
 .traj-flag.active circle{stroke:var(--ink);stroke-width:2}

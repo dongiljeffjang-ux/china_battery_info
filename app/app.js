@@ -594,9 +594,9 @@ let currentChain = 'cathode';
 let includeSupporting = false;
 let includePolicy = true;
 
-// 기본 시계열은 시장·기술 두 축을 모두 유지한다. 시장은 공시 핵심 근거만,
-// 기술은 출처 등급과 무관하게 표시하되 참고 근거는 화면에서 옅게 구분한다.
-// '보조 데이터 포함'을 켜면 참고 등급 시장 기사와 웹 검색 백필까지 더한다.
+// 기업 시계열 표는 공시 원문에서 나온 사실과 핵심 등급 기사만 기본으로 보여준다.
+// 참고 등급 기사와 웹 검색 백필은 시장·기술 구분과 무관하게 '보조 데이터 포함'을
+// 켰을 때만 나온다. 연차보고서 그래프 아래의 시장·기술 레인은 이 필터와 별개다.
 const evidenceLabels = { annual_report: '연차보고서', periodic_report: '반기·분기보고서', disclosure: '거래소 공시', article: '언론', web_backfill: '웹 검색' };
 function isPrimaryEvidence(event){
   // 거래소 공시는 회사가 직접 낸 1차 출처라 정기보고서와 같은 핵심 등급으로 본다.
@@ -604,7 +604,7 @@ function isPrimaryEvidence(event){
   return event.kind === 'article' && event.eligibility === '핵심';
 }
 function visibleEvents(timeline){
-  return includeSupporting ? timeline.events : timeline.events.filter(event => isPrimaryEvidence(event) || event.track === 'tech');
+  return includeSupporting ? timeline.events : timeline.events.filter(isPrimaryEvidence);
 }
 // 보조 데이터는 같은 시계열을 넓혀 보는 옵션일 뿐, 사용자를 페이지 맨 위로 보내면 안 된다.
 // 기업 프로필·차트가 다시 그려져도 토글의 화면상 위치를 기준으로 스크롤을 되돌린다.
@@ -842,8 +842,8 @@ async function renderCompany(){
   }
   if (state) {
     state.textContent = notice || (shown.length
-      ? `공시 핵심 근거와 기술 이벤트 ${shown.length}건을 표시합니다.${hidden ? ` 참고 시장 데이터 ${hidden}건은 숨겨져 있습니다.` : ''}`
-      : '표시할 공시 기반 또는 기술 이벤트가 없습니다. 연차보고서 요약을 실행하면 이 화면에 채워집니다.');
+      ? `공시·핵심 근거 이벤트 ${shown.length}건을 표시합니다.${hidden ? ` 보조 데이터 ${hidden}건은 숨겨져 있습니다.` : ''}`
+      : '표시할 공시 기반 이벤트가 없습니다. 연차보고서 요약을 실행하면 이 화면에 채워집니다.');
   }
   renderTrajectory(timeline);
   renderCompanyEvents(timeline);
@@ -1560,6 +1560,12 @@ function renderTrajectory(timeline){
   };
   const marketBase = G.axisY + 12;
   const techBase = marketBase + laneRows * G.laneGap + 8;
+  // 사건이 없는 트랙도 레인 이름은 남긴다. 점만 그리면 기술 사건이 없는 기간에는
+  // 아래 줄 자체가 사라진 것처럼 보여 시장·기술 두 축을 구분하기 어렵다.
+  const laneLabels = `<g class="traj-lane-labels" aria-hidden="true">
+    <text x="${G.padX - 16}" y="${(marketBase + 3).toFixed(1)}" text-anchor="end">시장</text>
+    <text x="${G.padX - 16}" y="${(techBase + 3).toFixed(1)}" text-anchor="end">기술</text>
+  </g>`;
 
   // 선은 그 해가 시작되는 1월 1일에, 라벨은 그 해 구간의 가운데에 둔다.
   // 둘을 같은 자리에 두면 12월 31일에 찍히는 연간 값 바로 오른쪽에 다음 해 라벨이 서서,
@@ -1610,6 +1616,7 @@ function renderTrajectory(timeline){
         ? `${segments.slice(1).map((segment, index) => `<path class="traj-line link" d="${path([segments[index].rows.at(-1), segment.rows[0]])}"/>`).join('')}${segments.filter(segment => segment.rows.length > 1).map(segment => `<path class="traj-line" d="${path(segment.rows)}"/>`).join('')}`
         : `${tailPoints.length && annualPoints.length ? `<path class="traj-line link" d="${path([annualPoints.at(-1), ...tailPoints])}"/>` : ''}${annualPoints.length > 1 ? `<path class="traj-line" d="${path(annualPoints)}"/>` : ''}`}
       ${rows.map((row, index) => point(row, !trajectoryQuarterly || !row.at.interim || index === rows.length - 1)).join('')}
+      ${laneLabels}
       ${marketFlags.map(item => flagMark(item, 'market', marketBase)).join('')}
       ${techFlags.map(item => flagMark(item, 'tech', techBase)).join('')}
     </svg></div>${picker.other}</div>
@@ -1742,9 +1749,12 @@ function renderLayerMatrix(timeline){
       // 제목만으로는 규모·단계·상대방을 알 수 없으므로 제목과 겹치지 않는 사실을
       // 두 줄까지 개조식으로 보인다. 전체 근거는 기존 툴팁에 유지한다.
       const displayTitle = shortTitle(stripCompanySubject(event.title, timeline.companyId || currentCompany));
-      const detailPoints = splitSentences(factWithoutTitle(displayTitle, event.fact, event.title)).slice(0, 2);
+      const detailPoints = splitSentences(factWithoutTitle(displayTitle, event.fact, event.title))
+        .map(point => point.replace(/^[\s•·\-–—]+/, '').trim())
+        .filter(Boolean)
+        .slice(0, 2);
       const detail = detailPoints.length
-        ? `<ul class="matrix-details">${detailPoints.map(point => `<li>${escapeHtml(clipText(point, 120))}</li>`).join('')}</ul>` : '';
+        ? `<ul class="matrix-details">${detailPoints.map(point => `<li>${escapeHtml(clipText(point, 90))}</li>`).join('')}</ul>` : '';
       // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다.
       const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
       return `<div class="matrix-item${supporting}" data-tip="${escapeHtml(tip)}"><span class="matrix-title">${escapeHtml(displayTitle)}</span>${detail}${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
