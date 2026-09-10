@@ -672,6 +672,8 @@ function normalizeEvent(event){
     eligibility: event.timeline_eligibility === 'core' ? '핵심' : event.timeline_eligibility === 'reference' ? '참고' : '',
     sourceName: event.source_name || event.article?.source_name || '출처 미상',
     sourceUrl: event.source_url || event.article?.canonical_url || '',
+    // 기사 발행일. 사건 시점(date)과 다를 수 있다(회고 기사). 기사 없이 들어온 사실은 비워 둔다.
+    sourceDate: /^\d{4}-\d{2}-\d{2}/.test(String(event.article?.published_at || '')) ? String(event.article.published_at).slice(0, 10) : '',
     excerpt: event.original_excerpt || '',
     excerptKo: event.original_excerpt_ko || '',
     kind: event.evidence_kind || 'article',
@@ -997,7 +999,11 @@ function keyMetrics(event){
   return [...new Set(found)].slice(0, 2).join(' · ');
 }
 function eventTip(event){
-  return [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
+  return [event.fact, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', sourceTipText(event)].filter(Boolean).join('\n\n');
+}
+// 툴팁은 마우스를 떼면 사라져 링크를 누를 수 없다. 주소는 확인용 글자로 두고, 누르는 링크는 칸의 '원문'이다.
+function sourceTipText(event){
+  return [`출처: ${event.sourceName}${event.sourceDate ? ` · 발행 ${event.sourceDate}` : ''}`, event.sourceUrl || ''].filter(Boolean).join('\n');
 }
 
 // 제목이 "매출 134억·순이익 11억·출하 13만 톤·…"처럼 길면 앞 두 토막만 남긴다. 나머지는 툴팁에 있다.
@@ -1742,7 +1748,7 @@ function renderLayerMatrix(timeline){
     const matched = events.filter(event => groupOf(event) === group && periodOf(event.date) === period).sort((x, y) => importanceOf(y) - importanceOf(x));
     if (!matched.length) return `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`;
     return matched.map(event => {
-      const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`, alternativeTipText(event.alternatives)].filter(Boolean).join('\n\n');
+      const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', sourceTipText(event), alternativeTipText(event.alternatives)].filter(Boolean).join('\n\n');
       const unclassified = event.layer === UNCLASSIFIED_LAYER ? '<span class="matrix-entity">미분류</span>' : '';
       // 표는 빠르게 훑는 영역이므로 제목 아래에는 한 개의 짧은 핵심 불릿만 둔다.
       // 전체 근거와 수치는 기존 툴팁·원문 링크에서 확인할 수 있다.

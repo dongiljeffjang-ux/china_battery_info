@@ -33,10 +33,15 @@ assert.equal(isTimelineBusinessEvent({
   ...report("특허 820건·자산부채율 61.35%", "technology-ip-standard"),
   trajectory_track: "technology",
 }), true, "기술 보고서에 재무 잡음이 섞여도 기술 사실을 숨기지 않는다");
+// 순이익·연구개발·특허 수치는 시장 레이어 정기보고서여도 핵심으로 보인다(사용자 결정 2026-09-10).
+assert.equal(isTimelineBusinessEvent(report("2025년 지배주주 순이익 722억 위안")), true);
+assert.equal(isTimelineBusinessEvent(report("2025년 연구개발비 3.58억 위안")), true);
+assert.equal(isTimelineBusinessEvent(report("누적 등록특허 126건(발명 56건)")), true);
 assert.equal(isTimelineBusinessEvent({
-  ...report("2025년 지배주주 순이익 722억 위안"),
+  ...report("외환 파생상품 투자 실제 수익 1,240만 위안"),
   original_excerpt_ko: "회사는 매출 4,237억 위안과 지배주주 순이익 722억 위안을 기록했다.",
-}), false, "원문 발췌 주변의 매출 표현 때문에 순이익 이벤트가 통과하면 안 된다");
+}), false, "판정은 제목·사실로만 한다. 원문 발췌 주변의 매출·순이익 표현으로 통과하면 안 된다");
+assert.equal(isTimelineBusinessEvent(report("2025년도 현금배당 총액 3억 위안, 순이익의 30%")), false, "배당 같은 부속 공시는 순이익이 언급돼도 숨긴다");
 assert.equal(isTimelineBusinessEvent(report("상위 5대 고객 매출은 1,474.59억 위안이다", "customer-commercialization")), false);
 assert.equal(isTimelineBusinessEvent(report("1위 고객 판매금액은 501.17억 위안이다", "customer-commercialization")), false);
 assert.equal(isTimelineBusinessEvent(event("플래시 충전소 7,018기 구축", "investment-production", "article")), true,

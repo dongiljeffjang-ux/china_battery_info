@@ -56,7 +56,7 @@ function sortedCatalog() {
   });
 }
 
-const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,fact_ko,display_summary_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier)";
+const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,fact_ko,display_summary_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier,published_at)";
 async function loadPolicyEvents() {
   const live = await supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${POLICY_COMPANY_ID}&timeline_eligibility=neq.exclude&order=occurred_at.asc`);
   return [...historicalPolicies(), ...(live || [])].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));

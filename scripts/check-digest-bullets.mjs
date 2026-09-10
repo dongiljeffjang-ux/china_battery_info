@@ -39,12 +39,15 @@ const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8
 assert.ok(css.includes(".digest-points{"), "불릿 목록 스타일이 있어야 한다");
 assert.ok(css.includes('.matrix-details li::before{content:"-"'), "시계열 상세에는 요청한 하이픈 말머리가 있어야 한다");
 const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
-assert.match(html, /app\.js\?v=20260910-verified-only/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
+assert.match(html, /app\.js\?v=20260910-source-date/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
 // 보조 데이터(사용자 지정 2026-09-10): 칸에는 제목만, 요약·수치는 툴팁. 리포트에는 툴팁 내용이 그대로 간다.
 assert.match(src, /const detail = isPrimaryEvidence\(event\) && detailPoints\.length/, "보조 데이터는 시계열 칸에 요약 줄을 그리지 않는다");
 assert.match(src, /const metrics = isPrimaryEvidence\(event\) \? keyMetrics\(event\) : ''/, "보조 데이터는 비교 칸에 수치 줄을 그리지 않는다");
 assert.match(src, /const compareReportEvent = event => \(\{[\s\S]{0,200}?fact: event\.fact, entity: entityLabel\(event\), sourceName/, "비교 리포트에 사실 전문·발생 법인·출처를 보낸다");
 assert.match(src, /fact: event\.fact, entity: entityLabel\(event\), sourceName: event\.sourceName, sourceUrl/, "시계열 리포트에 사실 전문·발생 법인·출처를 보낸다");
+// 툴팁 출처 줄에 기사 발행일과 출처 주소를 붙인다(사용자 지정 2026-09-10).
+assert.match(src, /function sourceTipText\(event\)\{\n  return \[`출처: \$\{event\.sourceName\}\$\{event\.sourceDate \? ` · 발행 \$\{event\.sourceDate\}` : ''\}`, event\.sourceUrl \|\| ''\]/, "툴팁 출처 줄에 발행일과 주소가 있어야 한다");
+assert.ok(fs.readFileSync(new URL("../api/company.js", import.meta.url), "utf8").includes("article(canonical_url,source_name,source_tier,published_at)"), "기사 발행일을 함께 읽어야 한다");
 // Daily Sankey 기본 기간(사용자 지정 2026-09-10): 평일은 당일~2일 전, 금요일은 3일 전부터.
 assert.match(src, /=== 'Fri' \? -3 : -2;/, "Sankey 기본 기간은 평일 당일~2일 전이어야 한다");
 
