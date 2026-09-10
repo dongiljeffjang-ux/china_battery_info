@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { POLICY_HISTORY } from '../lib/policy-history.js';
-import { historicalPolicies, policyEvidenceText } from '../lib/policy-context.js';
+import { historicalPolicies, policyEvidenceText, POLICY_ANALYSIS_RULE } from '../lib/policy-context.js';
 import { buildTimelineInput } from '../lib/timeline-report.js';
 import { companiesFor, POLICY_COMPANY_ID, TRACKED_COMPANIES } from '../lib/china-sources.js';
 
@@ -18,6 +18,9 @@ assert.ok(!TRACKED_COMPANIES.some(c => c.id === POLICY_COMPANY_ID));
 const input = buildTimelineInput({ companyName: '테스트 기업', events: [], policies });
 assert.ok(input.includes(policyEvidenceText(policies)));
 assert.match(input, /원문 독립 검증 완료 사실이 아니다/);
+assert.match(POLICY_ANALYSIS_RULE, /보고서의 필수 섹션이 아니다/);
+assert.match(POLICY_ANALYSIS_RULE, /그렇지 않은 정책은 부록의 참고자료로 이동하라/);
+assert.match(POLICY_ANALYSIS_RULE, /원문 미검증 정책은 본문에서 상세 해석하지 말고/);
 
 // Execute the visible policy column renderer: period alignment and HTML escaping.
 const app = readFileSync(new URL('../app/app.js', import.meta.url), 'utf8');

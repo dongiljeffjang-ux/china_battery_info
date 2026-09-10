@@ -17,6 +17,10 @@ assert.match(timeline, /계획 생산능력과 가동·생산 실적/, "계획�
 assert.match(timeline, /계약·전략협력·MOU를 실제 출하·매출로 취급하지 않는다/, "계약을 실적으로 읽지 않는다");
 assert.match(timeline, /발표일, 실제 사건 발생일, 통계 대상 기간을 구분한다/, "시점 구분 조항");
 assert.match(timeline, /핵심 변화는 최대 3개만 선정하라/, "핵심 변화 상한");
+assert.match(timeline, /확인된 것 \/ 아직 모르는 것 \/ 다음 확인 지표/, "외부 독자의 판단 구조");
+assert.match(timeline, /영업이익률 = 영업이익 ÷ 매출 × 100/, "비교 가능한 실적의 수익성 계산");
+assert.match(timeline, /기업 자체의 개선과 시장·경쟁사 대비 개선을 구분한다/, "자체 개선과 경쟁우위 구분");
+assert.match(timeline, /같은 수치·한계·결론을 두 번 이상 설명하지 않았는가/, "반복 제거 자체검수");
 // 화면이 Markdown을 렌더링한다. 모델이 HTML을 내면 그대로 문자열이 보인다.
 assert.match(timeline, /반환 형식은 Markdown이다/, "반환 형식을 Markdown으로 못박아야 한다");
 assert.match(timeline, /report_markdown_ko/, "스키마는 Markdown 한 필드다");
