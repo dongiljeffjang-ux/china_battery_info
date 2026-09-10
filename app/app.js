@@ -705,8 +705,13 @@ async function loadCompanyTimeline(companyId){
     financials: payload?.financials || [],
     policies: (payload?.policies || []).map(normalizeEvent).filter(event => /^\d{4}-\d{2}-\d{2}$/.test(event.date)),
     fx: payload?.fx || [],
-    financialsStatus: payload?.financials_status || null
+    financialsStatus: payload?.financials_status || null,
+    // 웹 검증이 찾은 다른 출처. 원래 값은 그대로 두고 그 아래에 함께 보인다.
+    alternatives: Array.isArray(payload?.alternatives) ? payload.alternatives : []
   };
+  const altByEvent = new Map();
+  for (const alt of timeline.alternatives) if (alt.target_kind === 'event' && alt.event_id) altByEvent.set(alt.event_id, [...(altByEvent.get(alt.event_id) || []), alt]);
+  for (const event of timeline.events) event.alternatives = altByEvent.get(event.id) || [];
   if (timeline.status === 'ok') companyTimelineCache.set(companyId, timeline);
   return timeline;
 }
@@ -1290,6 +1295,15 @@ function sourceReportLabel(row){
   if (!hasYear && !kind) return '';
   return `${hasYear ? `${year}년 ` : ''}${kind || '정기보고서'}`;
 }
+// 원래 값은 1차 추출·교차검증을 거친 값이다. 웹 검증이 찾은 다른 출처는 덮어쓰지 않고 따로 적는다.
+function alternativeTipText(alternatives){
+  if (!alternatives?.length) return '';
+  return ['다른 근거(웹 검증 · 원래 값은 유지)', ...alternatives.slice(0, 3).map(alt => `· ${alt.claim_ko}\n  출처 ${alt.source_url}${alt.created_at ? ` · ${String(alt.created_at).slice(0, 10)}` : ''}`)].join('\n');
+}
+function alternativeLinks(alternatives){
+  return (alternatives || []).slice(0, 3).map(alt =>
+    ` <a class="alt-evidence" href="${escapeHtml(alt.source_url)}" target="_blank" rel="noreferrer" data-tip="${escapeHtml(alternativeTipText([alt]))}">다른 근거</a>`).join('');
+}
 function metricTip(row, currency, rate){
   const lines = [`${periodLabel(row)}  ${metricValueText(row, currency, rate)}`, ''];
   if (currency === 'USD' && rate) {
@@ -1311,6 +1325,7 @@ function metricTip(row, currency, rate){
   const basis = String(row.metric).match(/_(cum|plan)_/)?.[1];
   if (basis === 'plan') lines.push(`계획값     ${report ? `${report}가 밝힌 계획` : '보고서가 밝힌 계획'}입니다. 그 기간의 실적이 아닙니다.`);
   if (basis === 'cum') lines.push(`누적값     ${report ? `${report} 기준` : '보고서 기준'} 누적치입니다. 그 기간의 실적이 아닙니다.`);
+  if (row.alternatives?.length) lines.push('', alternativeTipText(row.alternatives));
   return lines.join('\n');
 }
 function clipText(text, limit){
@@ -1359,6 +1374,13 @@ function mergeMetricSources(timeline){
       report_kind: row.report_kind || null, report_at: row.occurred_at || null, source_url: row.source_url || null,
     });
   }
+  const altByCell = new Map();
+  for (const alt of timeline.alternatives || []) {
+    if (alt.target_kind !== 'metric') continue;
+    const key = `${alt.period} ${alt.metric}`;
+    altByCell.set(key, [...(altByCell.get(key) || []), alt]);
+  }
+  for (const row of rows) row.alternatives = altByCell.get(`${row.period} ${row.metric}`) || [];
   return rows;
 }
 // 재무 자동 갱신은 야간 크론이 주기적으로 돌린다. 실패하거나 한동안 돌지 않았으면 화면에
@@ -1491,7 +1513,7 @@ function renderTrajectory(timeline){
       ? `<rect x="${(cx - 3).toFixed(1)}" y="${(cy - 3).toFixed(1)}" width="6" height="6" transform="rotate(45 ${cx.toFixed(1)} ${cy.toFixed(1)})" class="traj-dot interim"/>`
       : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" class="traj-dot${row.verified ? ' verified' : ''}"/>`;
     const anchor = cx > G.width - G.padX - 30 ? 'end' : cx < G.padX + 30 ? 'start' : 'middle';
-    return `<g class="traj-point" data-tip="${escapeHtml(metricTip(row, trajectoryCurrency, rates.get(row.period)))}"><rect x="${(cx - 13).toFixed(1)}" y="${(cy - 13).toFixed(1)}" width="26" height="26" fill="transparent"/>${shape}${showLabel ? `<text x="${cx.toFixed(1)}" y="${(cy - 9).toFixed(1)}" class="traj-point-label" text-anchor="${anchor}">${escapeHtml(metricValueText(row, trajectoryCurrency, rates.get(row.period)))}</text>` : ''}</g>`;
+    return `<g class="traj-point" data-tip="${escapeHtml(metricTip(row, trajectoryCurrency, rates.get(row.period)))}"><rect x="${(cx - 13).toFixed(1)}" y="${(cy - 13).toFixed(1)}" width="26" height="26" fill="transparent"/>${shape}${showLabel ? `<text x="${cx.toFixed(1)}" y="${(cy - 9).toFixed(1)}" class="traj-point-label" text-anchor="${anchor}">${escapeHtml(metricValueText(row, trajectoryCurrency, rates.get(row.period)))}${row.alternatives?.length ? ' *' : ''}</text>` : ''}</g>`;
   };
 
   // 정기보고서 사건은 결산일에 몰린다. 같은 날·같은 트랙이면 점 하나로 묶고 건수를 적는다.
@@ -1720,7 +1742,7 @@ function renderLayerMatrix(timeline){
     const matched = events.filter(event => groupOf(event) === group && periodOf(event.date) === period).sort((x, y) => importanceOf(y) - importanceOf(x));
     if (!matched.length) return `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`;
     return matched.map(event => {
-      const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`].filter(Boolean).join('\n\n');
+      const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', `출처: ${event.sourceName}`, alternativeTipText(event.alternatives)].filter(Boolean).join('\n\n');
       const unclassified = event.layer === UNCLASSIFIED_LAYER ? '<span class="matrix-entity">미분류</span>' : '';
       // 표는 빠르게 훑는 영역이므로 제목 아래에는 한 개의 짧은 핵심 불릿만 둔다.
       // 전체 근거와 수치는 기존 툴팁·원문 링크에서 확인할 수 있다.
@@ -1733,7 +1755,7 @@ function renderLayerMatrix(timeline){
         ? `<ul class="matrix-details">${detailPoints.map(point => `<li>${escapeHtml(clipText(point, 64))}</li>`).join('')}</ul>` : '';
       // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다.
       const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
-      return `<div class="matrix-item${supporting}" data-tip="${escapeHtml(tip)}"><span class="matrix-title">${escapeHtml(displayTitle)}</span>${detail}${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}</div>`;
+      return `<div class="matrix-item${supporting}" data-tip="${escapeHtml(tip)}"><span class="matrix-title">${escapeHtml(displayTitle)}</span>${detail}${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}${alternativeLinks(event.alternatives)}</div>`;
     }).join('');
   };
   const head = MATRIX_GROUPS.map(group => `<th class="matrix-head ${group.track}">${group.label}</th>`);
@@ -1908,8 +1930,12 @@ function compareReportParts(payload){
     <div class="point"><div class="lead"><span class="seg">${escapeHtml(item.segment || '')}</span>${bulletText(item.implication_ko)}</div>
     <div class="txt">${bulletText(item.point_ko)}</div><div class="basis">근거 · ${bulletText(item.basis_ko)}</div></div>`).join('');
   const fixes = (check.corrections || []).map(item => {
-    // DB에 실제로 되돌리는 것은 날짜(시점) 교정뿐이다. 그 밖의 교정은 리포트 본문만 고친 것이라 라벨을 구분한다.
-    const dbNote = item.field === 'occurred_at' && item.event_id ? ' · DB 이벤트 시점 수정 반영' : ' · 리포트 본문만 수정(DB 미반영)';
+    // 날짜 교정은 이벤트 시점을 고치고, 수치·주체 교정은 원래 값을 두고 다른 근거로 붙인다.
+    // db_action이 없는 옛 히스토리는 예전 규칙(날짜만 반영)으로 읽는다.
+    const action = item.db_action || (item.field === 'occurred_at' && item.event_id ? 'date_fixed' : 'report_only');
+    const dbNote = action === 'date_fixed' ? ' · DB 이벤트 시점 수정 반영'
+      : action === 'alternative_added' ? ' · 원래 값은 유지하고 다른 근거로 DB에 병기'
+      : ' · 리포트 본문만 수정(DB 미반영)';
     return `<li><span class="was">${escapeHtml(item.original_ko || '')}</span><span class="now">${escapeHtml(item.corrected_ko || '')}</span><span class="basis">${escapeHtml(item.reason_ko || '')}${dbNote}</span></li>`;
   }).join('');
   const added = (check.added_evidence || []).map(item => `

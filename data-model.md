@@ -71,6 +71,7 @@ erDiagram
 | `manual_metric` | `company_id`, `metric`, `value`, `period`, `source_upload_id` | 캐파·출하량·특허 등 수동 지표 |
 | `user_document` | `organization_id`, `name`, `storage_key`, `access_scope` | 특허 목록 등 사용자 자료 |
 | `pipeline_run` | `source_id`, `started_at`, `status`, `cursor`, `error` | 수집 실행·실패 격리 기록 |
+| `evidence_alternative` | `company_id`, `target_kind`(`metric`/`event`), `event_id`, `period`, `metric`, `claim_ko`, `source_url`, `origin`, `dedupe_key` | 비교 리포트 웹 검증이 찾은 다른 출처의 서술. 원래 `report_metric`·`event` 값을 덮어쓰지 않고 그 아래 "다른 근거"로 함께 보이며, 이후 리포트 입력에 상충 근거로 들어간다. 원래 값이 검증 수준이 더 높다 |
 | `rag_evaluation` | `subject_type`, `chunk_id`, `question_key`, `result_rank`, `verdict`, `issue_tags`, `evaluator` | 벡터 지식의 사람 평가. 청크 품질(`chunk`)과 질문별 검색 정밀도(`retrieval`)를 나눠 기록하며, 파이프라인은 읽지 않는다 |
 
 ## 4. 표준 분류 체계

@@ -175,6 +175,6 @@ assert.match(api, /function cleanEvents[\s\S]{0,300}\.slice\(0, 200\)[\s\S]{0,70
 assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
 assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
 assert.match(api, /report_metric\?select=period,metric,value,unit,yoy_pct_stated/, "보고서 물량을 읽어야 한다");
-assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, events, metrics, policies \}\)/, "정량 행과 기업 유형을 리포트에 넘겨야 한다");
+assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, events, metrics, alternatives, policies \}\)/, "정량 행과 기업 유형을 리포트에 넘겨야 한다");
 
 console.log("timeline report checks passed");

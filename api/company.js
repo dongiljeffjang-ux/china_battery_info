@@ -153,6 +153,11 @@ async function loadReportMetrics(companyId) {
   return [...(money || []), ...(volumes || [])];
 }
 
+// 웹 검증이 붙인 다른 근거. evidence-alternative.sql 적용 전에는 표가 없으므로 빈 배열로 둔다.
+async function loadAlternatives(companyId) {
+  return supabaseRest(`evidence_alternative?select=id,target_kind,event_id,period,metric,original_ko,claim_ko,reason_ko,source_url,origin_note,created_at&company_id=eq.${encodeURIComponent(companyId)}&order=created_at.desc&limit=200`).catch(() => []);
+}
+
 async function runTimelineReport(request, response) {
   const companyId = String(request.body?.companyId || "").trim();
   const company = COMPANIES.find(item => item.id === companyId);
@@ -164,12 +169,12 @@ async function runTimelineReport(request, response) {
     // 함께 준다. 거래소 표준 손익(연간·당해 누적)과 보고서 원문에서 뽑은 물량(출하·장착·생산능력).
     // 실패해도 리포트는 사건만으로 낸다 — 숫자가 빠진 채 나오는 쪽이 아예 안 나오는 것보다 낫다.
     const includePolicy = request.body?.includePolicy === true;
-    const [metrics, policies] = await Promise.all([loadReportMetrics(companyId), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
+    const [metrics, alternatives, policies] = await Promise.all([loadReportMetrics(companyId), loadAlternatives(companyId), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
     // 리포트 모델은 간헐적으로 첫 응답이 지연될 수 있다. 같은 입력을 즉시 사용자 실패로
     // 돌려주지 말고, 네트워크/상류 시간 초과일 때만 한 번 다시 시도한다. 스키마·입력 오류는
     // 재시도해도 해결되지 않으므로 그대로 반환한다.
     const result = await retryOnceOnTimeout(
-      () => buildTimelineReport({ companyName: company.name_ko, companyTags: company.type_tags, events, metrics, policies }),
+      () => buildTimelineReport({ companyName: company.name_ko, companyTags: company.type_tags, events, metrics, alternatives, policies }),
       { delayMs: 1500 },
     );
     console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, events: events.length, reportChars: result.report.markdown_ko.length }));
@@ -196,13 +201,13 @@ async function runCompareReport(request, response) {
     // 두 회사의 정량 시계열도 같은 기간·단위 기준으로 넣어, 사건 나열만으로 비교하지 않는다.
     // 숫자 조회가 한쪽에서 실패해도 해당 회사의 이벤트 근거로 리포트는 계속 만든다.
     const includePolicy = request.body?.includePolicy === true;
-    const [metricsA, metricsB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
-    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, companyTags: [...a.type_tags, ...b.type_tags], eventsA, eventsB, metricsA, metricsB, policies, pairContext: pairContextValue });
+    const [metricsA, metricsB, alternativesA, alternativesB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), loadAlternatives(a.id), loadAlternatives(b.id), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
+    const result = await buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, companyTags: [...a.type_tags, ...b.type_tags], eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, pairContext: pairContextValue });
     result.report.policy_context = policies;
     // 웹 검증이 확인한 것은 리포트에만 두지 않고 DB에 되돌린다. 실패해도 리포트는 그대로 낸다.
     let dbUpdates = null;
     try {
-      dbUpdates = await applyVerifiedFacts({ companyA: a, companyB: b, report: result.report, knownEventIds: [...eventsA, ...eventsB].map((event) => event.id).filter(Boolean) });
+      dbUpdates = await applyVerifiedFacts({ companyA: a, companyB: b, report: result.report, eventIdsA: eventsA.map((event) => event.id).filter(Boolean), eventIdsB: eventsB.map((event) => event.id).filter(Boolean) });
     } catch (error) {
       console.error("[COMPARE_REPORT_APPLY_FAILED]", JSON.stringify({ idA, idB, message: error.message }));
       dbUpdates = { dates_fixed: 0, events_added: 0, embedded: 0, skipped: [error.message] };
@@ -383,7 +388,7 @@ async function handleRequest(request, response) {
 
   try {
     // 정량 궤적은 정기보고서에서만 온다. 지표가 없는 회사(비상장)는 빈 배열이 오고 화면이 기존 카드만 그린다.
-    const [events, metrics, financials, fx, financialRuns, policies] = await Promise.all([
+    const [events, metrics, financials, fx, financialRuns, policies, alternatives] = await Promise.all([
       supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&timeline_eligibility=neq.exclude&order=occurred_at.asc`),
       supabaseRest(`report_metric?select=${METRIC_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&order=period.asc`).catch((error) => {
         console.error("[COMPANY_METRICS_FAILED]", JSON.stringify({ companyId, message: error.message }));
@@ -397,10 +402,11 @@ async function handleRequest(request, response) {
       // 재무 자동 갱신의 마지막 결과. 실패했거나 오래됐으면 화면이 그 사실을 알린다.
       supabaseRest("pipeline_log?select=status,created_at,payload&stage=eq.financials&order=created_at.desc&limit=1").catch(() => []),
       loadPolicyEvents(),
+      loadAlternatives(companyId),
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
     const lastRun = financialRuns?.[0] || null;
-    return response.status(200).json({ status: "ok", company, events: filterTimelineEvents(events), policies, metrics, financials, fx,
+    return response.status(200).json({ status: "ok", company, events: filterTimelineEvents(events), policies, metrics, financials, fx, alternatives,
       financials_status: lastRun ? { status: lastRun.status, at: lastRun.created_at, failed: lastRun.payload?.failed || [] } : null });
   } catch (error) {
     console.error("[COMPANY_QUERY_FAILED]", JSON.stringify({ companyId, message: error.message }));
