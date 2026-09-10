@@ -89,7 +89,7 @@ h3{font-size:16px;font-weight:700;letter-spacing:-.2px}
 .company-profile .eyebrow{color:var(--blue)!important}
 .company-badge{border:1px solid var(--line);color:var(--ink);border-radius:100px}
 /* 버튼 — 채워진 버튼을 쓰지 않는다 */
-.daily-actions{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.admin-tool-button{padding:2px 1px;border:0;border-radius:0;background:transparent;color:#8b96a3;font-size:10px;font-weight:500;line-height:1.2;text-decoration:underline;text-underline-offset:2px;opacity:.9}.admin-tool-button:hover,.admin-tool-button:focus-visible{background:transparent;color:#596779;opacity:1}.admin-tool-button:disabled{opacity:.45}
+.daily-actions{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.admin-actions-corner{position:absolute;right:0;top:0;justify-content:flex-end;max-width:45%;opacity:.72}.admin-tool-button{padding:2px 1px;border:0;border-radius:0;background:transparent;color:#8b96a3;font-size:10px;font-weight:500;line-height:1.2;text-decoration:underline;text-underline-offset:2px;opacity:.9}.admin-tool-button:hover,.admin-tool-button:focus-visible{background:transparent;color:#596779;opacity:1}.admin-tool-button:disabled{opacity:.45}.page-heading{position:relative}@media(max-width:760px){.admin-actions-corner{position:static;max-width:none;justify-content:flex-start}}
 .secondary-button{border:1px solid var(--ink);border-radius:4px;color:var(--ink);font-weight:600;background:#fff}
 .secondary-button:hover{background:var(--ink);color:#fff}
 .link-button{color:var(--blue);font-weight:600;text-decoration:none}

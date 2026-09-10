@@ -2583,7 +2583,9 @@ async function initialize(){
   const localDate = (offsetDays) => {
     return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(Date.now()+offsetDays*86400000));
   };
-  document.querySelector('#sankey-from').value = localDate(-3);
+  // 헤드라인은 평일에 당일·전일만 본다. 금요일에는 주중 누적분을 놓치지 않도록 기존 3일 범위를 유지한다.
+  const headlineFromOffset = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', weekday: 'short' }).format(new Date()) === 'Fri' ? -3 : -1;
+  document.querySelector('#sankey-from').value = localDate(headlineFromOffset);
   document.querySelector('#sankey-to').value = localDate(0);
   // 회사별 뉴스 기본은 어제~오늘이다. 수집이 밤 23시에 돌아 오늘 것만 보면 이른 시간에 비어 보인다.
   document.querySelector('#news-from').value = localDate(-3);

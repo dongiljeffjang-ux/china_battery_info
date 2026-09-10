@@ -48,7 +48,7 @@
             <h1 id="daily-title">오늘의 중국 배터리 산업</h1>
             <p>전체 수집 뉴스에서 선별한 핵심 사실을 한국어로 정리합니다.</p>
           </div>
-          <div class="daily-actions">
+          <div class="daily-actions admin-actions-corner">
             <button id="run-collection-button" class="secondary-button admin-tool-button" type="button" aria-label="수집·분석 1회 실행" data-tip="지금 뉴스를 수집해 상위 10건만 본문 분석하고 Daily 리포트를 만듭니다. 1분 안팎에 끝나며 바로 확인하려는 용도입니다. 매일 밤 23시 자동 실행은 같은 과정을 훨씬 깊게(최대 60건) 돌립니다.">수집·분석</button>
             <button id="export-raw-news" class="secondary-button" type="button">Raw data Excel</button>
             <button id="refresh-button" class="secondary-button admin-tool-button" type="button" aria-label="새로 고침">새로 고침</button>
@@ -121,7 +121,7 @@
             <h1 id="companies-title">기업 시계열</h1>
             <p>최소 최근 3년부터 현재까지, 출처가 확인된 주요 사실을 시간순으로 추적합니다.</p>
           </div>
-          <div class="company-actions">
+          <div class="company-actions admin-actions-corner">
             <button id="run-backfill-button" class="secondary-button admin-tool-button" type="button" aria-label="정기보고서 재처리" data-tip="정기보고서만 한 건씩 다시 읽어 회사 시계열 이벤트와 벡터 임베딩을 갱신합니다. 다른 유지 작업은 실행하지 않습니다.">재처리</button>
             <button id="run-event-summary-button" class="secondary-button admin-tool-button" type="button" aria-label="화면용 보고서 요약 생성" data-tip="연차·반기·분기보고서 이벤트의 별도 화면용 한국어 요약을 생성합니다. 상세 사실·원문 발췌·출처 링크는 바꾸지 않으며 뉴스 수집용 OpenAI 모델을 사용합니다.">요약 생성</button>
             <button id="run-embed-button" class="secondary-button admin-tool-button" type="button" aria-label="벡터DB 임베딩 채우기" data-tip="시계열 사실(event) 중 벡터DB(지식 검색)에 아직 들어가지 않은 항목을 임베딩합니다. LLM 사실 추출이 아니라 이미 확정된 텍스트를 임베딩 API로 색인만 합니다.">임베딩</button>
