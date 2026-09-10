@@ -41,6 +41,7 @@ assert.match(html, /data-timeline-report-mode="inflection_point"/);
 assert.match(html, /현재 전략의 중심축을 읽습니다/, "전략 방향 버튼의 목적을 툴팁으로 보여야 한다");
 assert.match(html, /반복되거나 함께 나타나는 투자·기술·수요 신호/, "패턴 인사이트 버튼의 목적을 툴팁으로 보여야 한다");
 assert.match(html, /어떤 조건에서 전략 경로가 갈리는지/, "전략 분기점 버튼의 목적을 툴팁으로 보여야 한다");
+assert.match(html, /class="timeline-report-tooltip" tabindex="0" data-tip=/, "비활성화된 버튼에서도 툴팁이 떠야 한다");
 assert.match(html, /id="company-timeline-report-panel"/);
 assert.match(app, /mode:\s*'timeline_report'/);
 assert.match(app, /includeSupporting:\s*options\.includeSupporting/, "선택한 보조 데이터 옵션을 시계열 리포트 요청에 보내야 한다");
