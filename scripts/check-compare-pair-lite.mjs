@@ -37,8 +37,9 @@ assert.match(lib, /selectTimelineEvidence\(events, \{ limit: 18, perBucket: 1 \}
 assert.match(lib, /selectReportPolicies\(policies, \[\.\.\.eventsA, \.\.\.eventsB\], \{ companyTags \}\)/, "비교 리포트는 회사 유형을 반영해 공통 정책을 압축한다");
 assert.match(app, /비교 관계 ·/);
 assert.match(app, /pair_context/);
-assert.match(app, /비교 범위·판정 기준/);
-assert.match(app, /반대 가설/);
+assert.match(app, /핵심 비교 논점/);
+assert.match(app, /판단이 달라지는 지점/);
+assert.match(app, /한국 산업에 주는 의미/);
 assert.match(app, /const bulletText/);
 assert.match(app, /report-bullets/);
 assert.match(app, /split\(\/\\r\?\\n\|•\/\)/, "inline bullet separators must become separate list rows");

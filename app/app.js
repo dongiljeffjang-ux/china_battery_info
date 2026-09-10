@@ -2039,35 +2039,25 @@ footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8
 @media screen{body{max-width:186mm;margin:18px auto;padding:0 14px}}
 `;
   const pairNote = pair ? `<p class="coverage-note">비교 관계 · ${escapeHtml(pair.mode || 'X')} / ${escapeHtml(pair.label_ko || '')}<br>A 근거 ${pair.coverage_a?.total || 0}건(시장 ${pair.coverage_a?.market || 0} · 기술 ${pair.coverage_a?.tech || 0}, ${escapeHtml(pair.coverage_a?.earliest || '미상')}~${escapeHtml(pair.coverage_a?.latest || '미상')}) · B 근거 ${pair.coverage_b?.total || 0}건(시장 ${pair.coverage_b?.market || 0} · 기술 ${pair.coverage_b?.tech || 0}, ${escapeHtml(pair.coverage_b?.earliest || '미상')}~${escapeHtml(pair.coverage_b?.latest || '미상')})<br>${escapeHtml(pair.note_ko || '')}</p>` : '';
-  const pairLiteRows = [
-    ['비교 범위', pairLite.scope_ko],
-    ['비교 가능성', pairLite.comparability_ko],
-    ['반대 가설', pairLite.counter_hypothesis_ko],
-    ['데이터 공백', pairLite.data_gaps_ko],
-    ['한국 소재사 시나리오', pairLite.korea_scenarios_ko],
-  ].filter(([, text]) => text).map(([label, text]) =>
-    `<div class="pair-lite-row"><dt>${escapeHtml(label)}</dt><dd>${bulletText(text)}</dd></div>`).join('');
-  const pairLiteSection = pairLiteRows
-    ? `<section class="pair-lite-report"><h2>0. 비교 범위·판정 기준</h2><dl>${pairLiteRows}</dl></section>`
-    : '';
+  const decisionRows = [pairLite.counter_hypothesis_ko, pairLite.data_gaps_ko]
+    .filter(Boolean).map(text => `<div class="contrast"><span class="tag">관측 신호</span>${bulletText(text)}</div>`).join('');
   const body = `<header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
 <h1>${A} vs ${B}</h1>
 <p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 근거 범위: ${payload.include_supporting ? '공시·핵심 + 보조(참고) 데이터' : '공시·핵심 데이터만'} · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
 ${pairNote}
-${pairLiteSection}
 ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
-<h2>1. 회사별 궤적 분석</h2><div class="pair">${trajCard(A, traj.a)}${trajCard(B, traj.b)}</div>
-<h2>2. 궤적 비교</h2>${cmpRow('시장', 'market_ko')}${cmpRow('기술', 'technology_ko')}${cmpRow('갈린 지점', 'divergence_ko')}
-<h2 class="insight">3. 한국 배터리사·소재사 관점 — 해석</h2>
+<h2>1. 핵심 비교 논점</h2>${cmpRow('논점 1', 'market_ko')}${cmpRow('논점 2', 'technology_ko')}${cmpRow('논점 3', 'divergence_ko')}
+<h2 class="insight">2. 한국 산업에 주는 의미 — 해석</h2>
 ${points || '<p class="none">해석을 생성하지 못했습니다.</p>'}
+${decisionRows ? `<h2>3. 판단이 달라지는 지점</h2>${decisionRows}` : ''}
 ${r.policy_analysis_ko ? `<h2>중국 정책 변수 — 해석</h2><p class="txt">${bulletText(r.policy_analysis_ko)}</p>` : ''}
 ${policyLinksHtml(r, payload)}
 ${r.policy_context?.length ? `<details><summary>정책 연혁 전체 ${r.policy_context.length}건${r.policy_selected_count ? ` · 리포트에는 대표 ${r.policy_selected_count}건 입력` : ''}</summary><ul>${r.policy_context.map(policy => `<li>${escapeHtml(policy.occurred_at)} · ${escapeHtml(policy.title_ko)} — ${escapeHtml(policy.fact_ko)} <small>${escapeHtml(policy.source_name)}</small></li>`).join('')}</ul></details>` : ''}
-<h2 class="check">4. 웹 검증${verifyFailed ? ' — 미실시' : ''}</h2>
+<h2 class="check">근거 검증${verifyFailed ? ' — 미실시' : ''}</h2>
 <p class="txt">${escapeHtml(check.checked_ko || (verifyFailed ? '웹 검증 단계가 실패해 초안 그대로입니다.' : '검증 정보 없음'))}</p>
 ${verifyFailed ? '' : (fixes ? `<p class="who" style="margin-top:4px">수정</p><ul>${fixes}</ul>` : '<p class="none">초안에서 고칠 사실관계를 찾지 못했습니다.</p>')}
 ${verifyFailed || !added ? '' : `<p class="who" style="margin-top:4px">검색으로 새로 확인한 사실</p><ul>${added}</ul>`}
-<footer>1~2장은 수집된 사실 정리, 3장은 해석입니다. 투자 판단 자료가 아닙니다. ${escapeHtml(dbLine)}</footer>`;
+<footer>비교 논점은 수집된 사실과 정량 근거에 기반하며, 한국 산업에 주는 의미는 해석입니다. 투자 판단 자료가 아닙니다. ${escapeHtml(dbLine)}</footer>`;
   return { title: `${A} vs ${B} 비교 리포트`, styles, body };
 }
 // 인쇄용 전체 문서. "PDF로 저장" 버튼이 새 창에 이 문서를 쓰고 인쇄 대화상자를 연다.
