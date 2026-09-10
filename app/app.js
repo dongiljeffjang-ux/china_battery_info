@@ -2418,7 +2418,7 @@ document.querySelector('#run-collection-button').addEventListener('click', async
     window.alert(`수집을 실행하지 못했습니다: ${error.message}`);
   } finally {
     hideBusy();
-    button.disabled = false; button.textContent = '수집·분석 1회 실행';
+    button.disabled = false; button.textContent = '수집·분석';
   }
 });
 // 백필류 버튼은 오조작을 막기 위해 입장 코드를 한 번 더 확인한다. /api/access가 이미 검증 로직을 갖고 있으므로 재사용한다.
