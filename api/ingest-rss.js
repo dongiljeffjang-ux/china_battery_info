@@ -35,6 +35,8 @@ const PROCESS_WINDOW_DAYS = 3;
 // 밀려 한 번도 분석되지 않았다. 공시는 창을 길게 주고, 뉴스 자리를 뺏지 않도록 몫을 따로 둔다.
 const DISCLOSURE_WINDOW_DAYS = 45;
 const DISCLOSURE_PER_RUN = 4;
+// 훅마다 뉴스보다 먼저 처리할 공시 수. 야간 훅 2회면 하룻밤 4건이다.
+const DISCLOSURE_FRONT_PER_HOP = 2;
 const PROCESS_CONCURRENCY = 3;
 // 본문 처리 훅 하나가 새 기사를 집는 시간. 진행 중인 기사는 이 시간이 지나도 마저 끝낸다.
 const STAGE_BUDGET_MS = 60000;
@@ -205,8 +207,12 @@ async function selectHeadlineTop10(pilot = false) {
   const bootstrap = pick(bootstrapRows || [], () => true).slice(0, BOOTSTRAP_PER_RUN);
   const policies = pick(rows || [], article => article.article_company?.some(link => link.company_id === POLICY_COMPANY_ID)).slice(0, 4);
   // 최근에 발견된 bootstrap 기사는 news 창(3일)에도 걸릴 수 있다. 같은 기사를 두 번 처리하지 않는다.
+  // 공시 일부를 맨 앞에 둔다. 처리는 이 순서대로 시간 예산이 닿는 데까지 가고 훅마다 선별을 다시 하는데,
+  // 뉴스는 매번 새로 10칸을 채운다. 공시를 뒤에 두면 11~14번째에서 한 번도 차례가 오지 않았다
+  // (2026-09-08~09-10 pipeline_log: 모든 훅이 공시 4건을 골랐지만 처리 0건, 야간 훅 상한 2회).
   const combined = new Map();
-  for (const article of [...policies, ...news, ...disclosures, ...bootstrap]) combined.set(article.id, article);
+  const front = disclosures.slice(0, DISCLOSURE_FRONT_PER_HOP);
+  for (const article of [...front, ...policies, ...news, ...disclosures.slice(DISCLOSURE_FRONT_PER_HOP), ...bootstrap]) combined.set(article.id, article);
   return [...combined.values()];
 }
 
