@@ -17,8 +17,8 @@
 ### 운영 상태와 순서
 
 1. **배포 완료.** 위 커밋 전부 main 푸시, 운영이 `app.js?v=20260910-supporting-tip`·`admin.js?v=20260910-verified-status`를 내려주는 것을 확인했다. 실제 비교 리포트 생성(유료)은 돌리지 않았다.
-2. **사용자 대기:** SQL Editor에서 `supabase/evidence-alternative.sql` 실행. 실행 전에도 리포트는 정상이고 다른 근거 저장만 건너뛴다(`skipped`에 기록).
-3. **사용자 대기:** `supabase/verification-status-verified.sql` 실행(`pending_review` 246행 → `verified`, `admin_overview()` 재정의). 실행을 DB에서 확인한 뒤 코드에서 `pending_review` 읽기를 뺀다(2단계, 미착수).
+2. **SQL 두 개 적용 완료(사용자 실행, 2026-09-10 저녁 DB 확인).** `evidence_alternative` 존재·RLS·anon 차단·service_role 쓰기 확인. 기사 상태 `verified` 246 / `pending_review` 0, `admin_overview()`는 `verified`만 쓴다.
+3. **`pending_review` 2단계 완료.** 코드의 옛 값 읽기를 모두 뺐다. `scripts/check-verification-status.mjs`가 `api`·`lib`·`app`에 옛 이름이 다시 들어오면 실패한다.
 4. 배포 뒤 첫 후난위넝 비교 리포트(정책 포함)로 확인할 것: 기술 축 채워짐, 교정 라벨 "다른 근거로 DB에 병기", "정책–기업 연결 재검토" 목록, 보조 데이터 칸이 제목만 보이는지.
 
 ### 사용자 결정 (2026-09-10)
