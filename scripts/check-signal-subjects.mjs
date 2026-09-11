@@ -31,6 +31,25 @@ const backfilled = applyBackfill({ linked_ids: ["catl", "hunan-yuneng"], headlin
 assert.equal(backfilled[0].reason_ko, "CATL이 후난위능 주식을 매각", "신호 문장은 바꾸지 않는다");
 assert.deepEqual(backfilled.map(signal => signal.subject_company_ids), [["catl"], ["hunan-yuneng"]]);
 
+// 규칙 v2(2026-09-11): 완성차가 공급처·협력사로 정한 추적 회사는 확대 신호의 주체. 영향받는 예전 판정(other_company)만 재판정한다.
+{
+  const { needsSubjectJudgement, SUBJECT_RULE_VERSION } = await import("../lib/signal-subjects.js");
+  assert.match(SIGNAL_SUBJECT_RULE, /공급사·협력사로 선정·추가된 \[연결 회사\]를 확대 신호의 주체로 적는다/);
+  assert.equal(needsSubjectJudgement({ direction: "expansion", subject_scope: "other_company" }), true, "v1의 추적 외 회사 판정은 다시 본다");
+  assert.equal(needsSubjectJudgement({ direction: "expansion", subject_scope: "company", subject_company_ids: ["catl"] }), false, "v1의 회사 판정은 그대로 둔다");
+  assert.equal(needsSubjectJudgement({ direction: "expansion", subject_scope: "industry" }), false, "v1의 산업 전반 판정은 그대로 둔다");
+  assert.equal(needsSubjectJudgement({ direction: "expansion", subject_scope: "other_company", subject_rule_version: SUBJECT_RULE_VERSION }), false, "새 규칙으로 판정한 것은 다시 보지 않는다");
+  assert.equal(needsSubjectJudgement({ direction: "neutral" }), false);
+  const kept = { direction: "contraction", keyword_ko: "고급 배터리 주문", reason_ko: "…", subject_scope: "company", subject_company_ids: ["catl"] };
+  const mixed = applyBackfill({ linked_ids: ["byd", "calb", "catl"], headline_signals: [
+    kept,
+    { direction: "expansion", keyword_ko: "배터리 공급망 다변화", reason_ko: "샤오미가 중촹신항·신왕다와 룽자 배터리 발표", subject_scope: "other_company", subject_company_ids: [] },
+  ] }, { signals: [{ index: 1, subject_scope: "company", subjects_ko: ["중촹신항(CALB)"] }] });
+  assert.deepEqual(mixed[0], kept, "재판정 대상이 아닌 신호는 저장된 그대로 둔다");
+  assert.deepEqual(mixed[1].subject_company_ids, ["calb"], "공급사로 선정된 중촹신항이 확대 신호의 주체가 된다");
+  assert.equal(mixed[1].subject_rule_version, SUBJECT_RULE_VERSION);
+}
+
 // Sankey: 모델이 고른 주체에만 선을 그리고, 산업 전반·추적 외 회사 신호는 회사 선을 그리지 않는다.
 const article = {
   id: "x", published_at: "2026-09-09T02:00:00Z", title_ko: "에너지저장 기업 상반기 실적 양극화…글로벌 출하 461.3GWh",
