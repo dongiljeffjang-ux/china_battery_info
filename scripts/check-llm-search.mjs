@@ -28,6 +28,7 @@ const capturesBeforeSuccess = logs.filter(row => row.payload.kind === 'search_re
 output = [{ type: 'web_search_call', status: 'completed' }, message];
 const result = await createJsonResponse(options);
 assert.equal(providerRequests.at(-1).tool_choice, 'required', 'DeepSeek discovery must require at least one web search call');
+assert.equal(providerRequests.at(-1).text, undefined, 'DeepSeek web search must not combine required tools with strict JSON schema');
 assert.equal(result.telemetry.search_calls, 1);
 assert.equal(logs.at(-1).status, 'ok');
 assert.equal(logs.filter(row => row.payload.kind === 'search_response_raw').length, capturesBeforeSuccess, 'successful searches are not captured');
