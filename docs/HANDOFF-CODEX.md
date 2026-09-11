@@ -17,6 +17,14 @@
 - `.env.example`에 `CHINA_LOCAL_SEARCH_ENGINE`·`DEEPSEEK_SEARCH_MODEL` 추가. `scripts/check-search-plan.mjs`가 레인·엔진 기본값, 환경변수 전환, 정책 검색 중복 제거를 고정한다.
 - 검증: `npm run check`, 전체 `scripts/check-*.mjs`, `node --check`, `git diff --check` 통과. 운영 실행은 다음 크론에서 확인한다.
 
+### 실호출 검증 (2026-09-12, 검색 6회 · DB 쓰기 없음)
+
+- 운영과 같은 코드 경로로 그룹 3개 × 레인 2개를 돌렸다. 두 레인 모두 OpenAI 엔진으로 `search_calls` 3~8회가 실제 실행됐고 반환 기사 19건 전부 중국어 제목이었다.
+- 중국 현지 레인은 후난성 과학기술청 공고·华盛通·财联社·维科网·每日经济新闻을 가져왔다. 09-06~09-09 DeepSeek 발견 122건의 매체군과 같은 계열이다.
+- 두 레인의 URL 중복은 현지 9건 중 1건뿐이다. 독립된 두 번째 발견 채널이 유지된다.
+- 유보: 이 표본에서 현지 레인이 포털 경유 기사에 기울어 산업 전문지(高工锂电·电池中国·OFweek)에 직접 닿지 않았다. 표본 9건이라 프롬프트 문제인지 표본 문제인지 단정하지 않는다. 밤 수집 분포로 확인하고, 전문지가 계속 안 잡히면 현지 레인 프롬프트를 전문지 쪽으로 더 누른다.
+- 따라서 DeepSeek에 함수 호출용 검색 백엔드를 붙이는 안은 보류한다. 손실이 확인되지 않은 상태에서 외부 의존성을 늘리지 않는다.
+
 ### 다음 작업자가 확인할 것
 
 1. 다음 수집(`pipeline_log.collect`)에서 `raw.web_search_china_local`이 0보다 큰지, `web_search` 목록의 `china_local` 행에 `engine: openai`·`search_calls>0`이 찍히는지. OpenAI 검색 예산(24)이 부족해지면 `SEARCH_LIMITS`가 아니라 계획 수가 먼저 늘어난 것이니 `plannedSearchRequests`부터 본다.
