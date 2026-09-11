@@ -20,7 +20,7 @@ assert.match(timeline, /절마다 항목은 최대 3개/, "항목 상한");
 assert.match(timeline, /근거가 없어 판단할 수 없는 논점은 쓰지 않는다/, "판단 불가 논점은 빼는 것이 규칙(2026-09-11 사용자 지정)");
 assert.doesNotMatch(timeline, /판단할 수 없다고 한 번만 표시한다|판단의 한계: 대안 설명/, "판단 불가를 쓰라는 옛 조항은 남기지 않는다");
 assert.match(timeline, /본문은 800단어 안팎/, "통합 보고서 분량 상한");
-assert.equal((timeline.match(/"## 한국 배터리·소재사에 주는 의미",/g) || []).length, 1, "통합 보고서는 한국 사업 함의를 한 번만 쓴다");
+assert.equal((timeline.match(/"## So What — 한국 배터리·소재사에 무엇이 달라지는가",/g) || []).length, 1, "통합 보고서는 한국 사업 함의로 한 번 귀결한다");
 assert.match(timeline, /영업이익률 = 영업이익 ÷ 매출 × 100/, "비교 가능한 실적의 수익성 계산");
 assert.match(timeline, /기업 자체의 개선과 시장·경쟁사 대비 개선을 구분한다/, "자체 개선과 경쟁우위 구분");
 assert.match(timeline, /같은 사실·결론을 두 번 쓰지 않는다/, "반복 금지");
@@ -201,15 +201,22 @@ assert.match(app, /querySelector\('\[data-timeline-report\]'\)\?\.addEventListen
 
 // 하나의 보고서가 변화·반복·핵심 변수를 서로 다른 역할로 연결하는지 확인한다.
 const { baselineTable, businessLineTable, businessLineOf, stageMapTable, stageOf } = await import("../lib/timeline-report.js");
-assert.match(timeline, /## 전략의 현재 위치와 변화/, "먼저 전략의 변화와 현재 위치를 읽는다");
+assert.match(timeline, /## 1\. 출발점 — 무엇이 전략의 중심이었나/, "서사는 이후 변화와 대비되는 출발점에서 시작한다");
+assert.match(timeline, /## 2\. 변화의 축적 — 무엇이 더해지고 달라졌나/, "사건을 나열하지 않고 변화가 축적되는 과정을 잇는다");
+assert.match(timeline, /## 3\. 현재 위치 — 유지·확장·중심 이동 중 어디인가/, "누적된 변화에서 현재 위치 판정으로 이어진다");
 assert.match(timeline, /신규 사업 진입만 확인되면 확장으로 쓰고/, "전략 방향: 확장과 이동을 가른다");
 assert.match(timeline, /유지·확장·중심 이동을 구분한다/, "기존 주력의 유지도 판정한다");
-assert.match(timeline, /## 반복해서 나타난 실행 방식/, "독립 사례의 반복 행동을 별도 역할로 읽는다");
+assert.match(timeline, /### 이 흐름에서 반복된 실행 방식/, "반복 행동은 변화의 흐름을 설명하는 역할로 읽는다");
 assert.match(timeline, /같은 프로젝트의 개발·착공·인증·출하는 하나의 사례/, "같은 프로젝트의 진척은 한 사례로 센다");
 assert.match(timeline, /제조업의 일반 순서는 패턴이 아니다/, "일반 상업화 단계를 회사 패턴으로 격상하지 않는다");
-assert.match(timeline, /## 판단을 바꿀 핵심 변수/, "분기 시나리오 대신 관측 변수를 쓴다");
+assert.match(timeline, /## 4\. 현재 판단을 바꿀 핵심 변수/, "분기 시나리오 대신 현재 결론을 바꿀 관측 변수를 쓴다");
 assert.match(timeline, /미래를 두 개 시나리오로 나누지 마라/, "근거가 약한 양자택일 시나리오를 금지한다");
 assert.doesNotMatch(timeline, /경로 A:|경로 B:/, "양자택일 경로 표를 남기지 않는다");
+assert.match(timeline, /과거의 중심축 → 누적된 변화 → 현재 위치 → 그래서 한국 셀·소재사에 생기는 사업적 의미/, "보고서 전체를 관통하는 기승전결을 먼저 세운다");
+assert.match(timeline, /앞 절의 마지막 판단이 다음 절의 출발점/, "각 절이 병렬 요약으로 끊기면 안 된다");
+assert.match(timeline, /사실이 무엇인가 → 그 사실들이 함께 보여 주는 변화는 무엇인가 → 그래서 독자의 사업 판단에 무엇이 달라지는가/, "사실은 So What까지 이어져야 한다");
+assert.match(timeline, /## So What — 한국 배터리·소재사에 무엇이 달라지는가/, "마지막 본문 절은 한국 기업의 사업적 의미로 귀결한다");
+assert.match(timeline, /경쟁 조건·고객 기회·공급망 선택/, "So What은 구체적인 사업 판단 축을 답한다");
 const modeEvents = [
   { id: "1", date: "2023-03-01", period: "2023H1", layer: "supply-performance", title: "LFP 셀 출하 20GWh", fact: "연간 출하" },
   { id: "2", date: "2023-09-01", period: "2023H2", layer: "technology-material-chemistry", title: "나트륨 셀 개발 발표", fact: "나트륨 셀 에너지밀도 160Wh/kg" },
