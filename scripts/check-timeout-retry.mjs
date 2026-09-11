@@ -11,12 +11,14 @@ assert.match(daily, /DAILY_LLM_TIMEOUT_MS = 90000/);
 assert.match(daily, /timeoutMs: DAILY_LLM_TIMEOUT_MS/);
 assert.match(daily, /provider: "openai_report"/);
 assert.match(timelineReport, /name: "company_timeline_report",\s*provider: "openai_report"/s);
-// 초안·웹 검증·정책-기업 연결 재검토·함의 종합. 모두 리포트 전용 API를 쓴다.
-assert.equal((compareReport.match(/provider: "openai_report"/g) || []).length, 4);
+// 초안·웹 검증·함의 종합. 모두 리포트 전용 API를 쓴다. 정책–회사 연결 판정은 lib/policy-links.js로 옮겼다.
+assert.equal((compareReport.match(/provider: "openai_report"/g) || []).length, 3);
+const policyLinks = readFileSync(new URL("../lib/policy-links.js", import.meta.url), "utf8");
+assert.match(policyLinks, /name: "company_policy_links",\s*schema: LINK_SHAPE,\s*provider: "openai_report"/s, "정책 연결 판정도 리포트 전용 API를 쓴다");
 assert.match(ingest, /retryOnceOnTimeout\(\s*\(\) => generateDailyReport\(\),\s*\{ delayMs: 1500 \}/s);
 const companyApi = readFileSync(new URL("../api/company.js", import.meta.url), "utf8");
-assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, reportMode, events, metrics, alternatives, policies \}\),\s*\{ delayMs: 1500 \}/s, "시계열 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
-assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildCompareReport\(\{ companyIdA: a\.id, companyIdB: b\.id, nameA: a\.name_ko, nameB: b\.name_ko, companyTags: \[\.\.\.a\.type_tags, \.\.\.b\.type_tags\], eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, pairContext: pairContextValue \}\),\s*\{ delayMs: 1500 \}/s, "비교 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
+assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildTimelineReport\(\{ companyName: company\.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks\.links \}\),\s*\{ delayMs: 1500 \}/s, "시계열 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
+assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildCompareReport\(\{ companyIdA: a\.id, companyIdB: b\.id, nameA: a\.name_ko, nameB: b\.name_ko, eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, policyLinksA: linksA\.links, policyLinksB: linksB\.links, policyStatus, pairContext: pairContextValue \}\),\s*\{ delayMs: 1500 \}/s, "비교 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
 
 // 리포트가 아닌 OpenAI 호출은 항상 일반(Luna) API 키·모델을 사용한다.
 const savedEnv = {

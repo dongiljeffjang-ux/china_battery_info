@@ -39,7 +39,7 @@ const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8
 assert.ok(css.includes(".digest-points{"), "불릿 목록 스타일이 있어야 한다");
 assert.ok(css.includes('.matrix-details li::before{content:"-"'), "시계열 상세에는 요청한 하이픈 말머리가 있어야 한다");
 const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
-assert.match(html, /app\.js\?v=20260911-report-numbering/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
+assert.match(html, /app\.js\?v=20260911-policy-links/, "캐시 버전을 올려야 배포 뒤 옛 app.js가 남지 않는다");
 // 보조 데이터(사용자 지정 2026-09-10): 칸에는 제목만, 요약·수치는 툴팁. 리포트에는 툴팁 내용이 그대로 간다.
 assert.match(src, /const detail = isPrimaryEvidence\(event\) && detailPoints\.length/, "보조 데이터는 시계열 칸에 요약 줄을 그리지 않는다");
 assert.match(src, /const metrics = isPrimaryEvidence\(event\) \? keyMetrics\(event\) : ''/, "보조 데이터는 비교 칸에 수치 줄을 그리지 않는다");

@@ -177,8 +177,10 @@ function renderDailySummary(){
     renderDailyInsight();
     return;
   }
+  // 총평(해석) → 사실 → 한국 소재사 관점(해석)을 한 리포트의 번호 붙은 부분으로 이어 둔다.
+  // 번호는 CSS 카운터가 매겨, 총평이 없는 날에도 01부터 이어진다.
   const industry = industrySection?.points?.length
-    ? `<div class="summary-block industry-overview"><p class="summary-cat insight">해석 · 산업 총평</p><ul>${industrySection.points.map(point => `<li>${highlightMetrics(point)}</li>`).join('')}</ul></div>`
+    ? `<div class="report-part part-overview">${dailyPartHead('산업 총평', 'interp', '해석 · 아래 사실들을 잇는 산업 차원의 읽기')}<div class="overview-lead">${industrySection.points.map(point => `<p>${highlightMetrics(point)}</p>`).join('')}</div></div>`
     : '';
   const facts = factSections.map(section => {
     const category = section.category === '산업 총평' ? '주요 사실' : section.category;
@@ -187,8 +189,13 @@ function renderDailySummary(){
       : '';
     return `<div class="summary-block">${chip}<ul>${section.points.map(point => `<li>${formatSummaryPoint(point)}</li>`).join('')}</ul></div>`;
   }).join('');
-  target.innerHTML = `${industry}${facts}`;
+  const factPart = facts ? `<div class="report-part part-facts">${dailyPartHead('오늘의 사실', 'fact', '사실 · 본문 대조를 통과한 기사에서')}<div class="fact-grid">${facts}</div></div>` : '';
+  target.innerHTML = `${industry}${factPart}`;
   renderDailyInsight();
+}
+// 세 부분이 같은 머리 모양을 쓴다. 표지(사실/해석)는 부분 이름 옆 작은 글자로만 가른다.
+function dailyPartHead(title, kind, label, id = ''){
+  return `<div class="part-head"><span class="part-no" aria-hidden="true"></span><h3${id ? ` id="${id}"` : ''}>${escapeHtml(title)}</h3><span class="part-kind ${kind}">${escapeHtml(label)}</span></div>`;
 }
 
 // 해석은 사실이 아니다. prd.md의 "사실, 해석, 추정을 구분한다"에 따라 영역을 나누고
@@ -210,10 +217,9 @@ function renderDailyInsight(){
       const basis = split ? split[2].trim() : '';
       return `<p class="insight-point">${chip}${highlightMetrics(lead)}${basis ? `<span class="insight-basis">근거 · ${highlightMetrics(basis)}</span>` : ''}</p>`;
     }).join('');
-    const category = section.category === '한국 기업 관점' ? '한국 소재사 insight' : section.category;
-    return `<div class="summary-block">${category ? `<p class="summary-cat insight">${escapeHtml(category)}</p>` : ''}${blocks}</div>`;
+    return `<div class="insight-block">${blocks}</div>`;
   }).join('');
-  target.innerHTML = `<div class="insight-head"><p class="eyebrow">KOREAN MATERIALS INSIGHT</p><h3 id="insight-title">한국 소재사 insight</h3><span class="source-rule">사실이 아니라 해석입니다</span></div>${body}`;
+  target.innerHTML = `<div class="report-part part-insight" data-eyebrow="KOREAN MATERIALS INSIGHT">${dailyPartHead('한국 소재사 관점', 'interp', '해석 · 위 사실에서 읽은 한국 소재사 함의', 'insight-title')}${body}</div>`;
 }
 function feedbackClientKey(){
   const key = 'cbl_feedback_client_key';
@@ -698,6 +704,8 @@ async function loadCompanyTimeline(companyId){
     metrics: payload?.metrics || [],
     financials: payload?.financials || [],
     policies: (payload?.policies || []).map(normalizeEvent).filter(event => /^\d{4}-\d{2}-\d{2}$/.test(event.date)),
+    // 저장된 정책–회사 연결(보고서 생성 때 판정). 정책 줄에 '직접/간접 연결' 표시와 경로 툴팁을 단다.
+    policyLinks: new Map((Array.isArray(payload?.policy_links) ? payload.policy_links : []).map(link => [link.policy_id, link])),
     fx: payload?.fx || [],
     financialsStatus: payload?.financials_status || null,
     // 웹 검증이 찾은 다른 출처. 원래 값은 그대로 두고 그 아래에 함께 보인다.
@@ -814,12 +822,12 @@ async function renderCompany(){
   renderLayerMatrix(timeline);
 }
 
-function policyInlineItems(policies){
+function policyInlineItems(policies, links){
   // 발표일과 시행일이 같은 분기에 들어오면 한 정책이 두 번 보인다. 화면에서는 원정책 ID
   // 하나당 한 줄만 남기고, 시행일 일정 항목을 우선해 해당 분기의 변화 시점을 보존한다.
   const unique = new Map();
   for (const policy of policies || []) {
-    const baseId = String(policy.id || '').replace(/-schedule-\d{4}-\d{2}-\d{2}$/, '');
+    const baseId = policyBaseId(policy.id);
     const previous = unique.get(baseId);
     if (!previous || String(policy.id || '').includes('-schedule-')) unique.set(baseId, policy);
   }
@@ -829,13 +837,18 @@ function policyInlineItems(policies){
     const fact = String(policy.fact || '').replace(/\s*\(시행:[^)]*\)\s*$/, '').replace(/\s+/g, ' ').trim();
     const summary = fact.length > 150 ? `${fact.slice(0, 147)}…` : fact;
     const title = String(policy.title || '').replace(/ · 시행·유예 일정\(첨부\)$/, '');
-    const tip = [fact, `정책 시점: ${displayDate(policy)}`, `출처: ${policy.sourceName || ''}`].filter(Boolean).join('\n\n');
-    return `<div class="policy-inline-item" data-tip="${escapeHtml(tip)}"><span class="policy-inline-tag">정책</span><span class="policy-inline-title">${escapeHtml(title)}</span>${summary ? `<span class="policy-inline-summary">${escapeHtml(summary)}</span>` : ''}</div>`;
+    // 보고서 생성 때 판정해 둔 이 회사와의 연결. 경로는 추론이라 툴팁에서 '추론'으로 밝힌다.
+    const link = links?.get(policyBaseId(policy.id));
+    const linkTip = link ? `이 회사와의 연결(추론·${link.relation === 'direct' ? '직접' : '간접'}): ${link.path_ko}${(link.basis || []).length ? `\n출발점 사건: ${link.basis.map(item => `${item.date} ${item.title}`).join(' / ')}` : ''}` : '';
+    const tip = [linkTip, fact, `정책 시점: ${displayDate(policy)}`, `출처: ${policy.sourceName || ''}`].filter(Boolean).join('\n\n');
+    const tag = link ? `<span class="policy-inline-tag is-linked">정책 · ${link.relation === 'direct' ? '직접 연결' : '간접 연결'}</span>` : '<span class="policy-inline-tag">정책</span>';
+    return `<div class="policy-inline-item${link ? ' is-linked' : ''}" data-tip="${escapeHtml(tip)}">${tag}<span class="policy-inline-title">${escapeHtml(title)}</span>${summary ? `<span class="policy-inline-summary">${escapeHtml(summary)}</span>` : ''}</div>`;
   }).join('');
 }
-function policyCell(policies, period){
-  return policyInlineItems((policies || []).filter(policy => periodOf(policy.date) === period));
+function policyCell(policies, period, links){
+  return policyInlineItems((policies || []).filter(policy => periodOf(policy.date) === period), links);
 }
+function policyBaseId(id){ return String(id || '').replace(/-schedule-\d{4}-\d{2}-\d{2}$/, ''); }
 
 // 리포트 출력은 제한된 Markdown(제목·불릿·표·문단)만 HTML로 바꾼다. 모델 문자열은 항상
 // escapeHtml을 거치므로 링크나 태그를 포함해도 실행 가능한 HTML이 되지 않는다.
@@ -924,20 +937,34 @@ function renderTimelineMarkdown(markdown){
 }
 
 const timelineReportModeLabel = { direction: '전략 방향', pattern: '패턴 인사이트', inflection_point: '전략 분기점' };
+// 세 용도가 같은 모양으로 보이지 않게, 제목 아래에 그 보고서가 답하는 질문을 둔다.
+const timelineReportModeQuestion = {
+  direction: '두 시점을 대비해 — 이 기업의 무게중심은 어디서 어디로 옮겨 갔는가?',
+  pattern: '사건을 이어 — 하나씩 볼 때는 보이지 않던 연결은 무엇인가?',
+  inflection_point: '진행 중인 사건에서 — 앞으로 어느 두 갈래로 갈릴 수 있는가?',
+};
 function timelineReportParts(payload){
   const report = payload.report || {};
+  const modeKey = timelineReportModeLabel[payload.report_mode] ? payload.report_mode : 'direction';
   const modeLabel = timelineReportModeLabel[payload.report_mode] || '전략 방향';
+  // 정책은 이 회사와 연결 경로가 판정된 것만 보고서에 들어간다. 전체 정책 수가 아니라 그 수를 적는다.
+  const linkedPolicies = Array.isArray(payload.policy_links) ? payload.policy_links.length : 0;
+  const policyLine = payload.policy_link_status && payload.policy_link_status !== 'none' ? `과 이 회사에 연결된 중국 정책 ${linkedPolicies}건을` : '을';
   const title = `${payload.company_name_ko || '기업'} ${modeLabel} 리포트`;
   const generated = payload.generated_at ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(payload.generated_at)) : '';
   const markdown = renderTimelineMarkdown(report.markdown_ko || '생성된 리포트가 비어 있습니다.');
   const supportingLabel = payload.include_supporting === true ? '보조 데이터 포함' : '핵심 근거만';
-  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · ${escapeHtml(modeLabel)} · 해석</p><h1>${escapeHtml(title)}</h1><p class="meta">시장·기술 이벤트 ${payload.events?.length || 0}건 (${supportingLabel})과 중국 정책 ${payload.policies?.length || 0}건을 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
+  const body = `<div class="timeline-report-document report-doc mode-${escapeHtml(modeKey)}"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><p class="report-mode-badge">${escapeHtml(modeLabel)}</p><h1>${escapeHtml(title)}</h1><p class="report-mode-question">${escapeHtml(timelineReportModeQuestion[modeKey])}</p><p class="meta">시장·기술 이벤트 ${payload.events?.length || 0}건 (${supportingLabel})${policyLine} 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
   return { title, body };
 }
 
+// 용도별 강조색. 화면 패널과 HTML 저장본이 같은 규칙 한 벌을 쓴다(패널은 <style>로 함께 넣는다).
+// 전략 방향=남색(대비), 패턴=보라(연결), 분기점=주황(갈림).
+const TIMELINE_MODE_CSS = '.report-mode-badge{display:inline-block;margin:4px 0 2px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:800;color:#fff;background:#10365f}.report-mode-question{margin:2px 0 8px;font-size:17px;font-weight:700;color:#10365f}.mode-pattern .report-mode-badge{background:#6b3fa0}.mode-pattern .report-mode-question,.mode-pattern .timeline-report-markdown h2{color:#5a2f8c}.mode-inflection_point .report-mode-badge{background:#b8560f}.mode-inflection_point .report-mode-question,.mode-inflection_point .timeline-report-markdown h2{color:#9a4a0e}.timeline-report-markdown blockquote{margin:14px 0 22px;padding:14px 18px;border-left:5px solid #10365f;background:#f1f5fa;color:#10365f;font-size:1.12em;font-weight:700;line-height:1.6}.mode-pattern .timeline-report-markdown blockquote{border-left-color:#6b3fa0;background:#f5f0fb;color:#4a2775}.mode-inflection_point .timeline-report-markdown blockquote{border-left-color:#b8560f;background:#fdf4ec;color:#7a3a0b}.mode-pattern .timeline-report-markdown code{display:inline-block;margin:1px 0;padding:1px 6px;border-radius:4px;background:#efe7f8;color:#4a2775;font-family:inherit;font-weight:700}';
+
 function downloadTimelineReportHtml(payload){
   const { title, body } = timelineReportParts(payload);
-  const styles = `body{margin:0;background:#fff;color:#172235;font-family:Arial,'Noto Sans KR',sans-serif}.report-doc{max-width:1100px;margin:0 auto;padding:32px;font-size:15px;line-height:1.75}.eyebrow,.meta,footer{color:#617187;font-size:13px}.timeline-report-markdown h2{font-size:21px;margin:32px 0 12px;color:#10365f}.timeline-report-markdown h3{font-size:18px;margin:24px 0 8px;color:#236aa6}.timeline-report-markdown strong{color:#1674c5;font-weight:800;background:#edf5ff;padding:0 2px;border-radius:2px}.timeline-report-list{margin:0 0 18px;padding-left:22px}.timeline-report-list li{margin:7px 0}.timeline-report-table-scroll{overflow-x:auto;margin:10px 0 22px;border:1px solid #d7e0ea;border-radius:8px}.timeline-report-table{width:100%;border-collapse:collapse;min-width:780px;font-size:13px;line-height:1.55}.timeline-report-table th,.timeline-report-table td{padding:9px 11px;border-bottom:1px solid #e4eaf0;border-right:1px solid #e4eaf0;text-align:left;vertical-align:top}.timeline-report-table th{background:#edf4fa;color:#10365f;white-space:nowrap}.timeline-report-table td:last-child,.timeline-report-table th:last-child{border-right:0}h1{font-size:30px;margin:4px 0;color:#10365f}@media(max-width:700px){.report-doc{padding:20px}.timeline-report-table{font-size:12px}h1{font-size:25px}}`;
+  const styles = `body{margin:0;background:#fff;color:#172235;font-family:Arial,'Noto Sans KR',sans-serif}.report-doc{max-width:1100px;margin:0 auto;padding:32px;font-size:15px;line-height:1.75}.eyebrow,.meta,footer{color:#617187;font-size:13px}.timeline-report-markdown h2{font-size:21px;margin:32px 0 12px;color:#10365f}.timeline-report-markdown h3{font-size:18px;margin:24px 0 8px;color:#236aa6}.timeline-report-markdown strong{color:#1674c5;font-weight:800;background:#edf5ff;padding:0 2px;border-radius:2px}.timeline-report-list{margin:0 0 18px;padding-left:22px}.timeline-report-list li{margin:7px 0}.timeline-report-table-scroll{overflow-x:auto;margin:10px 0 22px;border:1px solid #d7e0ea;border-radius:8px}.timeline-report-table{width:100%;border-collapse:collapse;min-width:780px;font-size:13px;line-height:1.55}.timeline-report-table th,.timeline-report-table td{padding:9px 11px;border-bottom:1px solid #e4eaf0;border-right:1px solid #e4eaf0;text-align:left;vertical-align:top}.timeline-report-table th{background:#edf4fa;color:#10365f;white-space:nowrap}.timeline-report-table td:last-child,.timeline-report-table th:last-child{border-right:0}h1{font-size:30px;margin:4px 0;color:#10365f}@media(max-width:700px){.report-doc{padding:20px}.timeline-report-table{font-size:12px}h1{font-size:25px}}${TIMELINE_MODE_CSS}`;
   const blob = new Blob([`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${styles}</style></head><body>${body}</body></html>`], { type: 'text/html;charset=utf-8' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
@@ -953,7 +980,7 @@ function renderTimelineReportPanel(payload){
   panel.dataset.companyId = payload.company_id || '';
   panel.dataset.evidenceKey = (payload.events || []).map(event => event.id).join(',');
   panel.hidden = false;
-  panel.innerHTML = `<details class="report-panel" open><summary><span class="report-title">${escapeHtml(title)}</span><span class="report-actions"><button type="button" class="secondary-button" data-timeline-report-download>HTML로 저장</button><button type="button" class="secondary-button" data-timeline-report-close>닫기</button></span></summary>${body}</details>`;
+  panel.innerHTML = `<details class="report-panel" open><summary><span class="report-title">${escapeHtml(title)}</span><span class="report-actions"><button type="button" class="secondary-button" data-timeline-report-download>HTML로 저장</button><button type="button" class="secondary-button" data-timeline-report-close>닫기</button></span></summary><style>${TIMELINE_MODE_CSS}</style>${body}</details>`;
   panel.querySelector('[data-timeline-report-close]').addEventListener('click', event => { event.preventDefault(); panel.hidden = true; });
   panel.querySelector('[data-timeline-report-download]').addEventListener('click', event => { event.preventDefault(); downloadTimelineReportHtml(payload); });
   panel.querySelector('.report-actions').addEventListener('click', event => event.stopPropagation());
@@ -994,7 +1021,7 @@ async function generateTimelineReport(reportMode = 'direction'){
   const snapshot = lastCompanyTimeline;
   const reportButtons = document.querySelectorAll('[data-timeline-report-mode]');
   reportButtons.forEach(button => { button.disabled = true; });
-  showBusy(`${modeLabel} 리포트 생성 중`, `선택한 기업의 현재 화면 이벤트 ${snapshot.events.length}건을 ${modeLabel} 관점으로 읽습니다. 웹 검색과 DB 저장은 하지 않습니다. 1분 안팎 걸립니다.`);
+  showBusy(`${modeLabel} 리포트 생성 중`, `선택한 기업의 현재 화면 이벤트 ${snapshot.events.length}건을 ${modeLabel} 관점으로 읽습니다. 웹 검색은 하지 않습니다.${includePolicyInReport ? ' 정책 연결 판정이 없거나 오래됐으면 먼저 판정해 저장합니다(최대 1분 추가).' : ''} 1분 안팎 걸립니다.`);
   try {
     const response = await fetch('/api/company', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1002,7 +1029,13 @@ async function generateTimelineReport(reportMode = 'direction'){
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
+    // 보고서가 방금 판정·저장한 정책 연결을 시간축의 정책 줄에도 바로 반영한다.
+    if (Array.isArray(payload.policy_links) && payload.policy_link_status !== 'none') {
+      const cached = companyTimelineCache.get(snapshot.companyId);
+      if (cached) cached.policyLinks = new Map(payload.policy_links.map(link => [link.policy_id, link]));
+    }
     if (currentCompany !== snapshot.companyId) return;
+    if (includePolicy && lastCompanyTimeline) renderLayerMatrix(lastCompanyTimeline);
     renderTimelineReportPanel(payload);
   } catch (error) {
     window.alert(`시계열 리포트를 만들지 못했습니다: ${error.message}`);
@@ -1798,7 +1831,7 @@ function renderLayerMatrix(timeline){
   const body = periods.map(period => {
     // 셀에도 축 클래스를 달아 시장·기술 절반이 배경색으로 갈리게 한다.
     const cells = MATRIX_GROUPS.map(group => `<td class="matrix-cell ${group.track}">${cell(group, period)}</td>`);
-    const policy = policyCell(policies, period);
+    const policy = policyCell(policies, period, timeline.policyLinks);
     return `<tr>${cells[0]}${cells[1]}<th class="matrix-period">${period}</th>${cells[2]}${cells[3]}</tr>${policy ? `<tr class="policy-inline-row"><td colspan="5">${policy}</td></tr>` : ''}`;
   }).join('');
   target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><colgroup><col class="matrix-layer-col"><col class="matrix-layer-col"><col class="matrix-time-col"><col class="matrix-layer-col"><col class="matrix-layer-col"></colgroup><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 정책은 해당 시점 아래 한 줄로 간추려 표시하며, 마우스를 올리면 전체 내용을 볼 수 있습니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
@@ -1973,9 +2006,9 @@ async function exportRawNews(){
 // 정책-기업 연결 웹 재검토 결과. 직접·간접은 근거(회사 사실 또는 연 문서)가 있어야 서버가 남긴다.
 const POLICY_RELATION_LABEL = { direct: '직접', indirect: '간접', none: '무관', undetermined: '판정불가' };
 function policyLinksHtml(r, payload){
-  if (r.policy_check_status === 'failed') return '<p class="none">정책-기업 연결 웹 재검토에 실패해 위 해석은 초안 기준입니다.</p>';
+  if (r.policy_check_status === 'failed') return '<p class="none">정책–기업 연결 판정에 실패해 이 리포트에는 정책을 넣지 않았습니다.</p>';
   const links = Array.isArray(r.policy_links) ? r.policy_links : [];
-  if (!links.length) return r.policy_check_status === 'ok' ? '<p class="none">정책-기업 연결 재검토에서 관련 가능성이 있는 조합을 찾지 못했습니다.</p>' : '';
+  if (!links.length) return r.policy_check_status === 'ok' ? '<p class="none">두 회사 사건과 연결 경로가 판정된 정책이 없어 정책을 넣지 않았습니다.</p>' : '';
   const order = { direct: 0, indirect: 1, undetermined: 2, none: 3 };
   const rows = [...links].sort((x, y) => (order[x.relation] ?? 9) - (order[y.relation] ?? 9)).map(link => {
     const who = link.company === 'B' ? payload.company_b : payload.company_a;
@@ -1985,7 +2018,9 @@ function policyLinksHtml(r, payload){
     ].filter(Boolean);
     return `<li><span class="tag">${escapeHtml(POLICY_RELATION_LABEL[link.relation] || '판정불가')}</span> <strong>${escapeHtml(link.policy_title)}</strong> <small>${escapeHtml(link.policy_date || '')}</small> · ${escapeHtml(who || '')}<br><span>${escapeHtml(link.path_ko)}</span>${basis.length ? `<br><span class="basis">${basis.map(part => part.startsWith('<a ') ? part : escapeHtml(part)).join(' · ')}</span>` : ''}</li>`;
   }).join('');
-  return `<p class="who" style="margin-top:4px">정책–기업 연결 재검토 (웹 검색)</p><ul>${rows}</ul>`;
+  // 2026-09-11 이전 리포트는 웹 재검토 결과(출처 문서 포함)를 저장했고, 이후는 회사 사건 기반 추론이다.
+  const inferred = links.every(link => !link.source_url);
+  return `<p class="who" style="margin-top:4px">정책–기업 연결 ${inferred ? '(회사 사건을 출발점으로 한 추론)' : '재검토 (웹 검색)'}</p><ul>${rows}</ul>`;
 }
 function compareReportParts(payload){
   const r = payload.report || {};

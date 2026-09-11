@@ -129,7 +129,7 @@ assert.match(input, /이벤트 식별자는 제공하지 않았으므로/, "식�
 assert.ok(!input.includes("<br>"), "입력에 <br>이 있으면 모델이 따라 뱉는다");
 // 방향은 숫자에서 먼저 읽는다. 정량 표가 사건 표보다 앞에 온다.
 assert.ok(input.indexOf("정량 시계열") < input.indexOf("화면 이벤트 3건"), "정량 표가 사건 표보다 앞이어야 한다");
-assert.match(input, /읽는 순서: 먼저 정량 시계열에서/);
+assert.match(input, /읽는 순서: \[기준 시점 대비표\]와 정량 시계열에서/, "기본(전략 방향)은 정량 시계열에서 무게중심을 먼저 고정한다");
 // 사건은 과거 → 최근. 최신순이면 흐름을 거꾸로 읽는다.
 assert.ok(input.indexOf("2023 하반기") < input.indexOf("2025 하반기") && input.indexOf("2025 하반기") < input.indexOf("2026 Q2"), "사건 표는 과거 → 최근 순이어야 한다");
 // 열: 연간 + 아직 연간이 안 나온 당해의 최신 누적 하나. 지난 해 반기는 연간이 있으니 뺀다.
@@ -193,7 +193,7 @@ assert.match(api, /function cleanEvents[\s\S]{0,300}\.slice\(0, 200\)[\s\S]{0,70
 assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
 assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
 assert.match(api, /report_metric\?select=period,metric,value,unit,yoy_pct_stated/, "보고서 물량을 읽어야 한다");
-assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, companyTags: company\.type_tags, reportMode, events, metrics, alternatives, policies \}\)/, "정량 행·기업 유형·리포트 모드를 넘겨야 한다");
+assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks\.links \}\)/, "정량 행·리포트 모드·정책 연결을 넘겨야 한다");
 assert.match(api, /\["direction", "pattern", "inflection_point"\]/, "허용된 리포트 모드만 API가 받는다");
 assert.match(timeline, /TIMELINE_REPORT_MODES/, "시계열 리포트 모드 목록을 유지해야 한다");
 assert.match(timeline, /선택한 보고서 용도: 전략 방향/);
@@ -202,5 +202,33 @@ assert.match(timeline, /선택한 보고서 용도: 전략 분기점/);
 assert.match(app, /chooseReportOptions/);
 assert.match(html, /id="report-options-dialog"/);
 assert.match(app, /generateTimelineReport\(button\.dataset\.timelineReportMode\)/);
+
+// 세 용도가 같은 모양으로 수렴하지 않게: 용도 절이 공통 목차를 끄고, 서로 다른 골격·입력 보조표를 가진다.
+const { baselineTable, linkCandidates, stageMapTable, stageOf } = await import("../lib/timeline-report.js");
+assert.equal((timeline.match(/MODE_OVERRIDE,/g) || []).length, 3, "세 용도 모두 공통 목차를 끄는 절을 가진다");
+assert.match(timeline, /\[3\. 보고서 구성\]의 A~E 목차/, "공통 A~E 목차를 용도 절에서 끈다");
+assert.match(timeline, /## 과거 대 현재/, "전략 방향은 두 시점 대비표");
+assert.match(timeline, /\*\*유형:\*\* 수렴 \| 선행-후행 \| 괴리 \| 전환/, "패턴은 유형 배지");
+assert.match(timeline, /경로 A: \(한 줄 이름\) \| 경로 B/, "분기점은 두 경로 표");
+const modeEvents = [
+  { id: "1", date: "2023-03-01", period: "2023H1", layer: "supply-performance", title: "LFP 셀 출하 20GWh", fact: "연간 출하" },
+  { id: "2", date: "2023-09-01", period: "2023H2", layer: "technology-material-chemistry", title: "나트륨 셀 개발 발표", fact: "나트륨 셀 에너지밀도 160Wh/kg" },
+  { id: "3", date: "2024-05-01", period: "2024H1", layer: "customer-commercialization", title: "나트륨 셀 고객 지정", fact: "승용차 고객 지정" },
+  { id: "4", date: "2025-06-01", period: "2025H1", layer: "supply-performance", title: "LFP 셀 출하 45GWh", fact: "연간 출하" },
+  { id: "5", date: "2026-02-01", period: "2026Q1", layer: "investment-production", title: "모로코 공장 착공", fact: "2027년 가동 예정" },
+];
+assert.match(baselineTable(modeEvents), /2023: LFP 셀 출하 20GWh.*\| 2026: 모로코 공장 착공/, "전략 방향 대비표는 축별 가장 오래된 연도와 최근 연도를 나란히 둔다");
+assert.match(linkCandidates(modeEvents), /2023-09 \[기술-소재\/공정\] 나트륨 셀 개발 발표 → \(8개월\) → 2024-05 \[시장-고객\/해외\] 나트륨 셀 고객 지정/, "패턴 후보는 다른 축·18개월 안·단어 겹침");
+assert.doesNotMatch(linkCandidates(modeEvents), /LFP 셀 출하 20GWh → .*LFP 셀 출하 45GWh/, "같은 축 사건끼리는 후보가 아니다");
+assert.equal(stageOf(modeEvents[4]), "건설·생산 준비");
+assert.match(stageMapTable(modeEvents), /모로코 공장 착공/, "분기점 지도는 다음 단계가 남은 사건을 모은다");
+const inputs = Object.fromEntries(["direction", "pattern", "inflection_point"].map(mode => [mode, buildTimelineInput({ companyName: "테스트", reportMode: mode, events: modeEvents })]));
+assert.match(inputs.direction, /\[기준 시점 대비표\]/);
+assert.match(inputs.pattern, /\[레이어 간 연결 후보\]/);
+assert.match(inputs.inflection_point, /\[진행 단계 지도\]/);
+assert.doesNotMatch(inputs.pattern, /\[기준 시점 대비표\]|\[진행 단계 지도\]/, "용도마다 자기 보조표만 받는다");
+assert.notEqual(inputs.direction.match(/읽는 순서: .*/)[0], inputs.pattern.match(/읽는 순서: .*/)[0], "읽는 순서도 용도마다 다르다");
+assert.match(app, /timelineReportModeQuestion/, "보고서 제목 아래 용도 질문을 둔다");
+assert.match(app, /mode-\$\{escapeHtml\(modeKey\)\}/, "용도별 강조색 클래스를 단다");
 
 console.log("timeline report checks passed");

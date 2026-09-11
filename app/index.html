@@ -7,7 +7,7 @@
     <title>China Battery Lens</title>
     <link rel="icon" type="image/svg+xml" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
     <link rel="apple-touch-icon" href="/app/assets/china-battery-lens-icon.svg?v=20260904c" />
-    <link rel="stylesheet" href="./styles.css?v=20260911-report-readable" />
+    <link rel="stylesheet" href="./styles.css?v=20260911-daily-unified" />
     <link rel="stylesheet" href="./access.css?v=20260901b" />
   </head>
   <body>
@@ -55,11 +55,14 @@
           </div>
         </div>
 
-        <section class="daily-summary" aria-labelledby="summary-title" data-outline-label="오늘의 리포트">
+        <!-- 산업 총평·오늘의 사실·한국 소재사 관점은 한 리포트의 세 부분이다. 한 지면 안에 번호를 붙여 이어 둔다.
+             사실과 해석은 부분마다 표지(사실/해석)로 가른다. -->
+        <section class="daily-summary daily-report" aria-labelledby="summary-title" data-outline-label="오늘의 리포트">
           <div class="section-heading">
             <div>
               <p class="eyebrow">DAILY REPORT</p>
               <h2 id="summary-title">오늘의 중국 배터리 산업 리포트</h2>
+              <p class="report-toc" aria-hidden="true"><span>산업 총평</span><span>오늘의 사실</span><span>한국 소재사 관점</span></p>
             </div>
             <div class="report-archive">
               <label for="report-date-picker">지난 리포트</label>
@@ -68,9 +71,8 @@
             </div>
           </div>
           <div id="daily-summary-list" class="summary-list"></div>
+          <div id="daily-insight" class="daily-insight" aria-labelledby="insight-title"></div>
         </section>
-
-        <section id="daily-insight" class="daily-insight" aria-labelledby="insight-title"></section>
 
         <section class="news-section" aria-labelledby="sankey-title" data-outline-label="헤드라인 키워드">
           <div class="section-heading">
@@ -237,7 +239,7 @@
     </template>
 
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./app.js?v=20260911-report-numbering"></script>
+    <script src="./app.js?v=20260911-policy-links"></script>
     <script async src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </body>
 </html>

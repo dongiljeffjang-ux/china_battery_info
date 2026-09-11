@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { POLICY_HISTORY } from '../lib/policy-history.js';
-import { historicalPolicies, policyEvidenceText, POLICY_ANALYSIS_RULE, selectReportPolicies } from '../lib/policy-context.js';
+import { historicalPolicies, POLICY_ANALYSIS_RULE } from '../lib/policy-context.js';
 import { buildTimelineInput } from '../lib/timeline-report.js';
 import { companiesFor, POLICY_COMPANY_ID, TRACKED_COMPANIES } from '../lib/china-sources.js';
 
@@ -16,14 +16,11 @@ assert.doesNotMatch(JSON.stringify(policies), /계약 체결|파이프라인을 
 assert.deepEqual(companiesFor({ companyId: POLICY_COMPANY_ID }).map(c => c.id), [POLICY_COMPANY_ID]);
 assert.ok(!TRACKED_COMPANIES.some(c => c.id === POLICY_COMPANY_ID));
 const input = buildTimelineInput({ companyName: '테스트 기업', events: [], policies });
-const selectedPolicies = selectReportPolicies(policies, [{ date: '2026-09-10' }]);
-assert.equal(selectedPolicies.length, 8, "보고서 정책 입력은 대표 8건으로 제한해야 한다");
-assert.ok(input.includes('대표 정책 8건'));
-assert.ok(!input.includes(policyEvidenceText(policies)));
-assert.match(input, /원문 독립 검증 완료 사실이 아니다/);
-assert.match(POLICY_ANALYSIS_RULE, /보고서의 필수 섹션이 아니다/);
-assert.match(POLICY_ANALYSIS_RULE, /그렇지 않은 정책은 부록의 참고자료로 이동하라/);
-assert.match(POLICY_ANALYSIS_RULE, /원문 미검증 정책은 본문에서 상세 해석하지 말고/);
+assert.doesNotMatch(input, /중국 정책/, '연결 판정 없이 정책을 보고서 입력에 넣지 않는다');
+assert.match(POLICY_ANALYSIS_RULE, /연결 경로가 미리 판정된/);
+assert.match(POLICY_ANALYSIS_RULE, /별도 목록이나 부록 표를 만들지 마라/);
+assert.match(POLICY_ANALYSIS_RULE, /시간적 선후만으로 인과를 단정하지 마라/);
+assert.match(POLICY_ANALYSIS_RULE, /원문 독립 미검증/);
 
 // Execute the visible policy column renderer: period alignment and HTML escaping.
 const app = readFileSync(new URL('../app/app.js', import.meta.url), 'utf8');
@@ -39,6 +36,9 @@ const inline = policyCell(fake, '2026');
 assert.match(inline, /&lt;script&gt;/);
 assert.equal((inline.match(/&lt;script&gt;/g) || []).length, 1, '발표·시행 일정이 같은 분기에 겹쳐도 정책은 한 번만 보인다');
 assert.doesNotMatch(inline, /시행·유예 일정/, '정책 행 제목에는 중복 일정 꼬리표를 표시하지 않는다');
+const linked = policyCell(fake, '2026', new Map([['policy-1', { relation: 'indirect', path_ko: '<b>경로</b>', basis: [{ date: '2025-01-01', title: '사건' }] }]]));
+assert.match(linked, /정책 · 간접 연결/, '판정된 연결은 정책 줄에 표시한다');
+assert.match(linked, /&lt;b&gt;경로/, '연결 경로도 이스케이프한다');
 assert.doesNotMatch(app, /function renderPolicyAxis\(/, '중복되는 전체 정책 목록 렌더러를 두지 않는다');
 const index = readFileSync(new URL('../app/index.html', import.meta.url), 'utf8');
 assert.doesNotMatch(index, /company-policy-axis|compare-policy-axis|배터리·NEV·ESS 정책 시간축/, '별도 정책 목록 섹션을 렌더하지 않는다');

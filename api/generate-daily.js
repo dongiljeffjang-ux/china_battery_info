@@ -104,36 +104,48 @@ async function selectTop10(candidates, preferenceExamples = []) {
 }
 
 const CANDIDATE_SELECT = "id,title_ko,summary_ko,source_name,published_at,article_company(company(name_ko))";
-// Daily Top 10을 채우는 데 필요한 후보 수. 그날 수집분이 이보다 적으면 전날까지 넓힌다.
+// Daily Top 10을 채우는 데 필요한 후보 수. 기본 창(어제·오늘)이 이보다 적으면 그제까지 넓힌다.
 const TOP10_TARGET = 10;
 
-// 리포트 날짜(한국시간) 하루의 시작·끝. Daily는 그날 뉴스만 싣는다.
-function koreaDayBounds(reportDate) {
-  const start = new Date(`${reportDate}T00:00:00+09:00`);
-  const end = new Date(start.getTime() + 86400000);
-  return { start: start.toISOString(), end: end.toISOString() };
+// 리포트 날짜(한국시간) 기준 days일 전 0시부터 다음 날 0시까지.
+function koreaWindowBounds(reportDate, days) {
+  const dayStart = new Date(`${reportDate}T00:00:00+09:00`);
+  return { start: new Date(dayStart.getTime() - (days - 1) * 86400000).toISOString(), end: new Date(dayStart.getTime() + 86400000).toISOString() };
+}
+
+// 후보는 세 갈래를 합친다. 2026-09-11 12:24 수동 실행이 전날 23:05 Daily(Top 10 5건)를 Top 10 1건·요약
+// 167자로 덮은 일이 있었다(pipeline_log·daily_report로 확인). 원인은 세 가지였다.
+//   ① 후보가 리포트 날짜 하루치(오전이면 거의 0건)였고, 전날로 넓혀도 발행일 기준이라 수가 적었다.
+//   ② 방금 본문 검증을 통과한 기사도 발행일이 이틀 전이면 창 밖이라 빠졌다(09-09 발행 CALB 공급사 기사).
+//   ③ 선정 직전에 모든 is_top10을 지워, 직전 Daily가 고른 기사가 후보에서도 화면에서도 사라졌다.
+// 그래서 (a) 어제·오늘 발행분, (b) 직전 Daily 이후 검증을 통과한 기사, (c) 직전 Daily의 Top 10을 함께 후보로 둔다.
+// 모델이 새 기사와 이어받은 기사를 다시 견줘 고르므로, 새로 들어온 것이 없으면 직전 선정이 그대로 남는다.
+export function mergeDailyCandidates(...groups) {
+  return [...new Map(groups.flat().filter(Boolean).map((article) => [article.id, article])).values()];
 }
 
 export async function generateDailyReport(articleIds = []) {
-  // Top 10 후보는 리포트 날짜 하루치로 끊는다. 예전에는 최근 3일을 후보로 둬서 어제·그제
-  // 기사가 오늘 리포트 상위를 차지했다. Daily는 그날 무슨 일이 있었는지를 담는 자리다.
-  // 다만 이번 회차에 막 처리한 기사는 발행일과 무관하게 합쳐, 방금 읽은 것이 빠지지 않게 한다.
   const reportDate = koreaDate();
-  const { start, end } = koreaDayBounds(reportDate);
-  const fetchWindow = (from) => supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&published_at=gte.${from}&published_at=lt.${end}&order=published_at.desc&limit=80`);
-  const justProcessed = articleIds.length
-    ? await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&id=in.(${articleIds.join(",")})`)
-    : [];
-  const merge = (rows) => [...new Map([...justProcessed, ...rows].map((article) => [article.id, article])).values()];
-  let candidates = merge(await fetchWindow(start));
-  // 그날 수집분만으로 Top 10을 채울 수 없다고 판단되면 전날까지 넓혀 후보를 다시 모은다.
-  let windowDays = 1;
+  const fetchWindow = (days) => {
+    const { start, end } = koreaWindowBounds(reportDate, days);
+    return supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&published_at=gte.${start}&published_at=lt.${end}&order=published_at.desc&limit=80`);
+  };
+  const [justProcessed, previousReports, carriedTop10] = await Promise.all([
+    articleIds.length ? supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&id=in.(${articleIds.join(",")})`) : [],
+    supabaseRest("daily_report?select=report_date,generated_at&status=eq.published&order=generated_at.desc&limit=1").catch(() => []),
+    supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&is_top10=eq.true&limit=10`).catch(() => []),
+  ]);
+  // 직전 Daily 이후 검증된 기사. 직전 Daily가 없으면 하루 전부터 본다.
+  const lastGenerated = previousReports?.[0]?.generated_at || new Date(Date.now() - 86400000).toISOString();
+  const newlyVerified = await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&processed_at=gte.${encodeURIComponent(lastGenerated)}&order=processed_at.desc&limit=40`).catch(() => []);
+  let windowDays = 2;
+  let candidates = mergeDailyCandidates(justProcessed, newlyVerified, await fetchWindow(windowDays), carriedTop10);
   if (candidates.length < TOP10_TARGET) {
-    candidates = merge(await fetchWindow(new Date(new Date(start).getTime() - 86400000).toISOString()));
-    windowDays = 2;
+    windowDays = 3;
+    candidates = mergeDailyCandidates(justProcessed, newlyVerified, await fetchWindow(windowDays), carriedTop10);
   }
   if (!candidates.length) return { status: "no_reviewed_articles" };
-  if (windowDays > 1) console.info("[DAILY_WINDOW_WIDENED]", JSON.stringify({ reportDate, candidates: candidates.length }));
+  console.info("[DAILY_CANDIDATES]", JSON.stringify({ reportDate, windowDays, candidates: candidates.length, newlyVerified: newlyVerified.length, carried: carriedTop10.length }));
   let preferenceExamples = [];
   try {
     const feedbackRows = await supabaseRest("article_feedback?select=vote,article(title_ko,summary_ko,keywords_ko)&order=updated_at.desc&limit=100");
@@ -160,6 +172,8 @@ export async function generateDailyReport(articleIds = []) {
     .slice(0, 10)
     .map((item, index) => ({ ...item, rank: index + 1 }));
 
+  // 모델이 하나도 고르지 못했으면 직전 Daily와 Top 10을 지우지 않고 그대로 둔다.
+  if (!selected.length) return { status: "no_selection", report_date: reportDate, window_days: windowDays, candidates: candidates.length };
   await supabaseRest("article?is_top10=eq.true", { method: "PATCH", body: { is_top10: false, top10_rank: null, updated_at: new Date().toISOString() } });
   for (const item of selected) {
     await supabaseRest(`article?id=eq.${encodeURIComponent(item.article_id)}`, { method: "PATCH", body: { is_top10: true, top10_rank: item.rank, updated_at: new Date().toISOString() } });
@@ -176,7 +190,7 @@ export async function generateDailyReport(articleIds = []) {
   } catch (error) {
     console.error("[DAILY_EMBEDDING_FAILED]", JSON.stringify({ reportDate, message: error.message }));
   }
-  return { status: "published", report_date: reportDate, window_days: windowDays, top10_count: selected.length, insight: Boolean(insightKo), embedded, selection: selected };
+  return { status: "published", report_date: reportDate, window_days: windowDays, candidates: candidates.length, carried: carriedTop10.length, top10_count: selected.length, insight: Boolean(insightKo), embedded, selection: selected };
 }
 
 export default async function handler(request, response) {

@@ -9,6 +9,7 @@ import { buildTimelineReport } from "../lib/timeline-report.js";
 import { filterTimelineEvents } from "../lib/timeline-visibility.js";
 import { retryOnceOnTimeout } from "../lib/timeout-retry.js";
 import { historicalPolicies } from "../lib/policy-context.js";
+import { ensurePolicyLinks, loadPolicyLinkRow } from "../lib/policy-links.js";
 import { summarizeEventDisplayBatch } from "../lib/event-display-summary.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증), 함의 종합은 긴 입력 한 번을 부른다. `api/*.js` Node 함수는
@@ -60,6 +61,20 @@ const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,
 async function loadPolicyEvents() {
   const live = await supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${POLICY_COMPANY_ID}&timeline_eligibility=neq.exclude&order=occurred_at.asc`);
   return [...historicalPolicies(), ...(live || [])].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
+}
+
+// 정책–회사 연결. 화면 요청의 이벤트가 아니라 DB의 회사 사건 전체로 판정해 저장하므로,
+// 보조 데이터 토글이나 화면 기간과 무관하게 같은 회사는 같은 판정을 다시 쓴다.
+// 실패하면 정책 없이 보고서를 만든다 — 연결 없는 정책을 참고로 던지던 예전 방식으로 돌아가지 않는다.
+async function loadCompanyPolicyLinks(company, policies) {
+  try {
+    const events = await supabaseRest(`event?select=id,occurred_at,title_ko,fact_ko,layer_key&company_id=eq.${encodeURIComponent(company.id)}&timeline_eligibility=neq.exclude&order=occurred_at.asc`);
+    const result = await ensurePolicyLinks({ company, events: events || [], policies });
+    return { ...result, ok: true };
+  } catch (error) {
+    console.error("[POLICY_LINKS_FAILED]", JSON.stringify({ companyId: company.id, message: error.message }));
+    return { links: [], status: "failed", ok: false };
+  }
 }
 
 // 정량 궤적용 지표. line_item_zh와 원문 표기를 함께 보내 화면이 계정을 밝히고 검산할 수 있게 한다.
@@ -178,15 +193,17 @@ async function runTimelineReport(request, response) {
     // 실패해도 리포트는 사건만으로 낸다 — 숫자가 빠진 채 나오는 쪽이 아예 안 나오는 것보다 낫다.
     const includePolicy = request.body?.includePolicy === true;
     const [metrics, alternatives, policies] = await Promise.all([loadReportMetrics(companyId), loadAlternatives(companyId), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
+    // 연결 판정은 재시도 바깥에서 한 번만 한다. 보고서 호출이 재시도돼도 판정을 다시 부르지 않는다.
+    const policyLinks = includePolicy ? await loadCompanyPolicyLinks(company, policies) : { links: [], status: "none" };
     // 리포트 모델은 간헐적으로 첫 응답이 지연될 수 있다. 같은 입력을 즉시 사용자 실패로
     // 돌려주지 말고, 네트워크/상류 시간 초과일 때만 한 번 다시 시도한다. 스키마·입력 오류는
     // 재시도해도 해결되지 않으므로 그대로 반환한다.
     const result = await retryOnceOnTimeout(
-      () => buildTimelineReport({ companyName: company.name_ko, companyTags: company.type_tags, reportMode, events, metrics, alternatives, policies }),
+      () => buildTimelineReport({ companyName: company.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks.links }),
       { delayMs: 1500 },
     );
-    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, reportMode, includeSupporting, events: events.length, reportChars: result.report.markdown_ko.length }));
-    return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, report_mode: reportMode, include_supporting: includeSupporting, events, policies, generated_at: new Date().toISOString(), ...result });
+    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, reportMode, includeSupporting, events: events.length, policyLinks: policyLinks.links.length, policyLinkStatus: policyLinks.status, reportChars: result.report.markdown_ko.length }));
+    return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, report_mode: reportMode, include_supporting: includeSupporting, events, policies, policy_links: policyLinks.links, policy_link_status: policyLinks.status, generated_at: new Date().toISOString(), ...result });
   } catch (error) {
     console.error("[TIMELINE_REPORT_FAILED]", JSON.stringify({ companyId, message: error.message }));
     return response.status(502).json({ status: "timeline_report_failed", message: error.message });
@@ -210,10 +227,14 @@ async function runCompareReport(request, response) {
     // 숫자 조회가 한쪽에서 실패해도 해당 회사의 이벤트 근거로 리포트는 계속 만든다.
     const includePolicy = request.body?.includePolicy === true;
     const [metricsA, metricsB, alternativesA, alternativesB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), loadAlternatives(a.id), loadAlternatives(b.id), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
+    const [linksA, linksB] = includePolicy
+      ? await Promise.all([loadCompanyPolicyLinks(a, policies), loadCompanyPolicyLinks(b, policies)])
+      : [{ links: [], ok: true }, { links: [], ok: true }];
+    const policyStatus = !includePolicy ? "none" : linksA.ok && linksB.ok ? "ok" : "failed";
     // 비교 리포트 초안 호출은 일시적인 상류 TimeoutError가 나면 시계열 리포트와 같은 입력으로 한 번만
     // 재시도한다. 웹 검증 단계의 실패는 buildCompareReport 안에서 초안 결과로 이미 되돌린다.
     const result = await retryOnceOnTimeout(
-      () => buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, companyTags: [...a.type_tags, ...b.type_tags], eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, pairContext: pairContextValue }),
+      () => buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, policyLinksA: linksA.links, policyLinksB: linksB.links, policyStatus, pairContext: pairContextValue }),
       { delayMs: 1500 },
     );
     result.report.policy_context = policies;
@@ -401,7 +422,7 @@ async function handleRequest(request, response) {
 
   try {
     // 정량 궤적은 정기보고서에서만 온다. 지표가 없는 회사(비상장)는 빈 배열이 오고 화면이 기존 카드만 그린다.
-    const [events, metrics, financials, fx, financialRuns, policies, alternatives] = await Promise.all([
+    const [events, metrics, financials, fx, financialRuns, policies, alternatives, policyLinkRow] = await Promise.all([
       supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&timeline_eligibility=neq.exclude&order=occurred_at.asc`),
       supabaseRest(`report_metric?select=${METRIC_SELECT}&company_id=eq.${encodeURIComponent(companyId)}&order=period.asc`).catch((error) => {
         console.error("[COMPANY_METRICS_FAILED]", JSON.stringify({ companyId, message: error.message }));
@@ -416,10 +437,12 @@ async function handleRequest(request, response) {
       supabaseRest("pipeline_log?select=status,created_at,payload&stage=eq.financials&order=created_at.desc&limit=1").catch(() => []),
       loadPolicyEvents(),
       loadAlternatives(companyId),
+      // 저장된 정책–회사 연결만 읽는다. 판정(LLM)은 보고서 생성 때만 한다. 표가 없으면 빈 연결.
+      loadPolicyLinkRow(companyId).catch(() => null),
     ]);
     response.setHeader("Cache-Control", "no-store, max-age=0");
     const lastRun = financialRuns?.[0] || null;
-    return response.status(200).json({ status: "ok", company, events: filterTimelineEvents(events), policies, metrics, financials, fx, alternatives,
+    return response.status(200).json({ status: "ok", company, events: filterTimelineEvents(events), policies, policy_links: policyLinkRow?.links || [], metrics, financials, fx, alternatives,
       financials_status: lastRun ? { status: lastRun.status, at: lastRun.created_at, failed: lastRun.payload?.failed || [] } : null });
   } catch (error) {
     console.error("[COMPANY_QUERY_FAILED]", JSON.stringify({ companyId, message: error.message }));
