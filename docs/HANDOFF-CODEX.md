@@ -25,6 +25,13 @@
 
 우리 코드가 쓴 도구 이름 `web_search_2025_08_26`과 09-06~09-09 로그의 검색 호출 7~17회는 옛 문서의 "10회 상한" 서버 측 자동 연속 호출과 일치한다. 그 시기 검색은 문서가 보증한 정식 기능이었고 지금은 문서에서 삭제됐다. **왜 없앴는지는 릴리스 노트·가이드 어디에도 없다.** 변경 시점은 문서상 08-31 이후이며, 운영 로그(09-09 23:01 정상 → 09-10 14:16 전부 실패)와 V4.1 Flash 공개일(09-10)이 겹친다.
 
+### 삭제 범위와 남은 미검증 경로 (2026-09-12 추가 확인)
+
+- Responses API 문서에서 지워진 곳이 세 군데다. Tools 표(Supported → Ignored), `tool_choice`의 특정 도구 예시(`web_search` 두 이름 삭제), 스트리밍 이벤트 `response.web_search_call.*` 3종(항목 자체 소멸). 표 한 줄이 아니라 요청·강제지정·응답 이벤트가 함께 빠졌으므로 표기 누락이 아니다.
+- 남은 주석 "`web_search_call` items passed back in `input` … are still restored and concatenated into the context"는 바로 위 "그 외 타입은 무시"의 예외 설명이다. 옛 모델이 만든 검색 결과를 이력으로 복원해 읽어 준다는 뜻이고 새 검색 실행이 아니다.
+- 외부 기록: 09-10 검색 삭제를 공개 보고한 이슈·글은 아직 없다. 다만 8월 6일자 `NousResearch/hermes-agent#79820`이 "서버 측 `web_search`, 현재 `deepseek-v4-flash`에서 지원"을 인용하고, 6월 14일자 `anomalyco/opencode#32273`은 OpenAI 호환 엔드포인트에 제공자 실행 도구가 없고 Anthropic 호환 엔드포인트에 네이티브 검색이 있다고 구분한다. 기능이 존재했다는 제3자 확인이다.
+- **미검증 경로:** Anthropic 호환 문서(`/guides/anthropic_api/`)의 `server_tool_use`·`web_search_tool_result` 행은 지금도 "Supported"이며 08-21·09-09·09-12 스냅샷이 모두 동일하다(변경 흔적 없음). 그 표는 요청 도구가 아니라 메시지 내용 블록 지원표이고 `tools` 항목에는 사용자 정의 도구 필드만 있어 Responses API 주석과 같은 이력 복원용일 가능성이 크다. 다만 이는 해석이며, 우리 성공 호출(09-06~09-09)은 전부 Responses 엔드포인트였으므로 Anthropic 경로는 한 번도 시험하지 않았다. 문서로는 가릴 수 없고 실호출 1회가 필요하다. 로컬 `.env`의 DeepSeek 키는 가림 처리돼 로컬에서 부를 수 없으므로, 확인하려면 운영에 진단 호출을 하나 붙여 1회 돌린다. 이 경로가 살아 있으면 중국 현지 레인을 DeepSeek으로 되돌릴 근거가 된다.
+
 ### 고친 것 (커밋 참조)
 
 - `lib/china-sources.js`: 검색을 **레인**(`openai` 글로벌 / `china_local` 중국 현지)과 **엔진**(OpenAI / DeepSeek)으로 나눴다. `SEARCH_LANES`·`searchLaneEngine()`·`policySearchEngines()`. 중국 현지 레인의 기본 엔진은 OpenAI이고 `CHINA_LOCAL_SEARCH_ENGINE=deepseek`로 코드 배포 없이 되돌린다. 그룹 크기·기사 상한·"회사마다 검색 1회" 프롬프트 가드는 엔진이 DeepSeek일 때만 붙는다. 중국 현지 프롬프트는 중국어 검색어와 중국 산업 전문매체·지방정부·기업 발표 우선을 명시한다.
