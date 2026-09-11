@@ -323,13 +323,15 @@ function renderHeadlineSankey(){
     .map(([key, count]) => ({ direction, keyword: key.split('\u0000')[1], count })));
   const matchedFlows = flows.filter(flow => selectedNodes.some(node => node.direction === flow.direction && node.keyword === flow.keyword));
   // 기간을 넓히면 신호가 잡힌 회사가 계속 늘어 그래프가 읽기 힘들 만큼 길어진다.
-  // 그럴 때는 출하 순위(SNE) 상위 기업만 남기고, 몇 개사를 감췄는지 그래프 위에 알린다.
+  // 그럴 때는 신호 건수 상위 기업만 남긴다. 표시 순서는 밸류체인별로 묶고, 각 묶음 안에서는 신호가 많은 회사부터 둔다.
   const allCompanies = [...new Set(matchedFlows.map(flow => flow.company))];
-  const rank = id => companyById(id)?.priority ?? 99;
   const flowCount = id => matchedFlows.filter(flow => flow.company === id).reduce((sum, flow) => sum + flow.count, 0);
-  const sourceNames = allCompanies.length > SANKEY_COMPANY_LIMIT
-    ? [...allCompanies].sort((x, y) => rank(x) - rank(y) || flowCount(y) - flowCount(x)).slice(0, SANKEY_COMPANY_LIMIT)
-    : allCompanies;
+  const compareByFlowCount = (x, y) => flowCount(y) - flowCount(x) || displayName(x).localeCompare(displayName(y), 'ko');
+  const chainOrder = { cell: 0, cathode: 1, anode: 2 };
+  const sourceNames = (allCompanies.length > SANKEY_COMPANY_LIMIT
+    ? [...allCompanies].sort(compareByFlowCount).slice(0, SANKEY_COMPANY_LIMIT)
+    : allCompanies)
+    .sort((x, y) => (chainOrder[companyById(x)?.value_chain] ?? 99) - (chainOrder[companyById(y)?.value_chain] ?? 99) || compareByFlowCount(x, y));
   const hiddenCount = allCompanies.length - sourceNames.length;
   const visible = matchedFlows.filter(flow => sourceNames.includes(flow.company));
   const positiveNodes = selectedNodes.filter(node => node.direction === 'positive');
@@ -373,7 +375,7 @@ function renderHeadlineSankey(){
   };
   const signalNodes = selectedNodes.map(node => `<g data-tip="${escapeHtml(nodeReasons(node))}"><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${escapeHtml(node.keyword)} · ${node.count}건</text></g>`).join('');
   const noticeParts = [];
-  if (hiddenCount) noticeParts.push(`신호가 잡힌 ${allCompanies.length}개사 중 <strong>출하 순위 상위 ${sourceNames.length}개사</strong>만 표시합니다. 나머지 ${hiddenCount}개사는 기간을 좁히면 보입니다.`);
+  if (hiddenCount) noticeParts.push(`신호가 잡힌 ${allCompanies.length}개사 중 <strong>신호 건수 상위 ${sourceNames.length}개사</strong>만 표시합니다. 나머지 ${hiddenCount}개사는 기간을 좁히면 보입니다.`);
   if (headlineArticles) noticeParts.push(`미검증 헤드라인 신호 <strong>${headlineArticles}건</strong>이 포함돼 있습니다. 제목만으로 분류한 것이라 툴팁에서 검증 건수와 나눠 표시합니다.`);
   const notice = noticeParts.length ? `<p class="sankey-notice">${noticeParts.join('<br>')}</p>` : '';
   target.innerHTML = `${notice}<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${companyNodes}${signalNodes}</svg>`;
