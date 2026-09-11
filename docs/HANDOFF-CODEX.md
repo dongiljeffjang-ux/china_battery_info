@@ -9,6 +9,22 @@
 - DeepSeek Responses API 호환표는 `tools`를 "function만 지원, 다른 타입 무시", 내장 도구 `web_search`/`file_search`/… 를 "Ignored"로 명시한다. 즉 **모델을 어떻게 지정하든 지금 DeepSeek은 서버 측 웹 검색을 실행하지 않는다.** 앞선 세션이 시험한 프롬프트·strict schema·`tool_choice`·추론·도구 버전 순열이 모두 실패한 이유다.
 - 비검색 DeepSeek 호출(`battery_article_fact_check`)은 09-11 수집에서도 정상이다. 교차검증은 영향이 없다.
 
+### 문서 변경의 전후 원문 (웨이백 대조, 2026-09-12 확인)
+
+라이브 페이지만 보면 "원래 지원 안 했다"로 읽힐 수 있어 과거 스냅샷과 대조했다. DeepSeek이 실제로 지원을 걷어낸 것이 맞다.
+
+- 2026-08-21·08-31 스냅샷(`web.archive.org/web/20260831143339id_/…/guides/responses_api/`):
+  - `tools`: "Partially supported. `function` / `web_search` supported; other types ignored"
+  - `tool_choice`: 특정 도구 예시에 `{"type": "web_search"}` / `{"type": "web_search_2025_08_26"}` 포함
+  - Tools 표: "`web_search` / `web_search_2025_08_26` — **Supported, executed on the server side.** `search_context_size`와 `user_location`은 무시, 서버 측 자동 연속 호출은 10회 상한"
+- 현재 라이브(영문·중문 동일):
+  - `tools`: "Partially supported. `function` supported; other types ignored"
+  - `tool_choice`: 특정 도구 예시에서 `web_search` 두 이름 삭제, `function`만 남음
+  - Tools 표: "`web_search` / `file_search` / `code_interpreter` / `computer_use` / `mcp` / other built-in tools — **Ignored**"
+  - 주석: "`web_search_call` items passed back in `input` — for example, search results produced by an earlier request with an **older model** — are still restored and concatenated into the context."
+
+우리 코드가 쓴 도구 이름 `web_search_2025_08_26`과 09-06~09-09 로그의 검색 호출 7~17회는 옛 문서의 "10회 상한" 서버 측 자동 연속 호출과 일치한다. 그 시기 검색은 문서가 보증한 정식 기능이었고 지금은 문서에서 삭제됐다. **왜 없앴는지는 릴리스 노트·가이드 어디에도 없다.** 변경 시점은 문서상 08-31 이후이며, 운영 로그(09-09 23:01 정상 → 09-10 14:16 전부 실패)와 V4.1 Flash 공개일(09-10)이 겹친다.
+
 ### 고친 것 (커밋 참조)
 
 - `lib/china-sources.js`: 검색을 **레인**(`openai` 글로벌 / `china_local` 중국 현지)과 **엔진**(OpenAI / DeepSeek)으로 나눴다. `SEARCH_LANES`·`searchLaneEngine()`·`policySearchEngines()`. 중국 현지 레인의 기본 엔진은 OpenAI이고 `CHINA_LOCAL_SEARCH_ENGINE=deepseek`로 코드 배포 없이 되돌린다. 그룹 크기·기사 상한·"회사마다 검색 1회" 프롬프트 가드는 엔진이 DeepSeek일 때만 붙는다. 중국 현지 프롬프트는 중국어 검색어와 중국 산업 전문매체·지방정부·기업 발표 우선을 명시한다.
