@@ -48,4 +48,15 @@ assert.match(app, /\[Top 10\] /, "툴팁에서 Top 10 근거를 구분한다");
 assert.match(app, /같은 소식 헤드라인 \$\{flow\.grades\.merged\}건은 합침/);
 assert.doesNotMatch(app, /비-Top 10/, "Top 10 제외 안내 문구를 남기지 않는다");
 
+// 회사 선택(2026-09-11 사용자 요청): 고른 회사만 그리고, 고른 회사는 상위 N개사 자르기에서 빼지 않는다.
+const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
+assert.match(html, /<details class="sankey-company-filter"><summary id="sankey-company-summary">/, "Sankey 옆에 회사 선택 목록을 둔다");
+assert.match(app, /if \(filtering && !sankeyCompanyFilter\.has\(company_id\)\) return;/, "고른 회사의 신호만 센다");
+assert.match(app, /const sourceNames = \(!filtering && allCompanies\.length > SANKEY_COMPANY_LIMIT/, "고른 회사는 전부 보인다");
+assert.match(app, /localStorage\.setItem\(SANKEY_FILTER_KEY/, "고른 목록은 브라우저에 남긴다");
+// 정량 궤적 그래프 값 레이블 크기(2026-09-11 사용자 요청: 너무 작음).
+const css = fs.readFileSync(new URL("../app/styles.css", import.meta.url), "utf8");
+assert.match(css, /\.traj-point-label\{font-size:15px;font-weight:700/, "그래프 값 레이블을 키운다");
+assert.match(css, /\.traj-tick text\{font-size:13px/);
+
 console.log("sankey top10 and headline dedupe checks passed");

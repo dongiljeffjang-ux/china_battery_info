@@ -390,19 +390,19 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .traj-line.interim{stroke-dasharray:5 4;opacity:.75}
 .traj-dot{fill:var(--market)}
 .traj-dot.interim{fill:#fff;stroke:var(--market);stroke-width:1.6}
-.traj-point-label{font-size:10.5px;fill:var(--ink);text-anchor:middle}
+.traj-point-label{font-size:15px;font-weight:700;fill:var(--ink);text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}
 .traj-point{cursor:default}
 .traj-point:hover .traj-dot{fill:var(--blue)}
 .traj-axis-line{stroke:var(--ink);stroke-width:1}
 .traj-zero{stroke:var(--alert);stroke-width:1;stroke-dasharray:3 3;opacity:.5}
 .traj-tick line{stroke:var(--line);stroke-width:1}
-.traj-tick text{font-size:10.5px;fill:var(--muted);text-anchor:middle}
+.traj-tick text{font-size:13px;fill:var(--muted);text-anchor:middle}
 /* 플래그: 축에서 내려오는 짧은 선 끝의 점. 색이 트랙(시장·기술)을 가른다. */
 .traj-flag{cursor:pointer}
 .traj-flag line{stroke:var(--line);stroke-width:1}
 .traj-flag circle{fill:var(--market)}
 .traj-flag.tech circle{fill:var(--tech)}
-.traj-lane-labels text{font-size:10px;font-weight:700;fill:var(--market)}
+.traj-lane-labels text{font-size:12.5px;font-weight:700;fill:var(--market)}
 .traj-lane-labels text:last-child{fill:var(--tech)}
 .traj-flag:hover circle,.traj-flag:focus circle{r:6}
 .traj-flag:hover line,.traj-flag:focus line{stroke:var(--muted)}
@@ -485,3 +485,17 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .report-panel .report-doc strong,.company-timeline-report-panel .timeline-report-markdown strong{color:var(--blue);font-weight:800;background:#edf5ff;padding:0 2px;border-radius:2px}
 .report-panel .report-doc .basis{font-size:13px;line-height:1.65}
 @media(max-width:760px){.report-panel .report-doc,.company-timeline-report-panel .report-doc{font-size:15px}.report-panel .report-doc h1,.company-timeline-report-panel .report-doc h1{font-size:26px}.report-panel .report-doc h2,.company-timeline-report-panel .timeline-report-markdown h2{font-size:20px}.report-panel .report-doc .txt,.company-timeline-report-panel .timeline-report-markdown p{font-size:15px}}
+/* Sankey 회사 선택(2026-09-11). 기간·헤드라인 토글 옆의 접이식 목록. */
+.sankey-company-filter{position:relative}
+.sankey-company-filter summary{cursor:pointer;list-style:none;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12px;color:var(--ink);white-space:nowrap}
+.sankey-company-filter summary::-webkit-details-marker{display:none}
+.sankey-company-filter[open] summary{border-color:var(--blue);color:var(--blue)}
+.sankey-company-options{position:absolute;right:0;top:calc(100% + 6px);z-index:30;width:min(560px,86vw);max-height:420px;overflow:auto;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:0 10px 28px rgba(16,38,61,.16);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 14px}
+.sankey-company-actions{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;font-size:11px;color:var(--muted)}
+.sankey-company-group{margin:0;padding:0;border:0;min-width:0}
+.sankey-company-group legend{padding:0 0 4px;font-size:11.5px;font-weight:800;color:var(--navy)}
+.sankey-company-group legend .link-button{margin-left:6px;font-size:10.5px;background:none;border:0;padding:0;cursor:pointer}
+.sankey-company-option{display:flex;align-items:center;gap:5px;padding:2px 0;font-size:12px;color:var(--ink);cursor:pointer}
+.sankey-company-option.is-empty{color:var(--faint)}
+.sankey-company-count{margin-left:auto;font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+@media(max-width:760px){.sankey-company-options{grid-template-columns:1fr;left:0;right:auto}}

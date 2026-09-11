@@ -282,7 +282,53 @@ function renderTopNews(){
   });
 }
 
+// Sankey에 볼 회사를 고른다(사용자 지정 2026-09-11). 비어 있으면 전체. 고른 목록은 이 브라우저에만 남긴다.
+const SANKEY_FILTER_KEY = 'cbl_sankey_companies';
+let sankeyCompanyFilter = new Set((() => {
+  try { const saved = JSON.parse(localStorage.getItem(SANKEY_FILTER_KEY) || '[]'); return Array.isArray(saved) ? saved : []; }
+  catch { return []; }
+})());
+function saveSankeyFilter(){
+  try { localStorage.setItem(SANKEY_FILTER_KEY, JSON.stringify([...sankeyCompanyFilter])); } catch { /* 저장이 막혀도 화면은 동작한다 */ }
+}
+// 회사 목록은 밸류체인별로 묶고, 현재 기간에 신호가 잡힌 건수를 옆에 적어 고르기 쉽게 한다.
+function renderSankeyCompanyFilter(){
+  const target = document.querySelector('#sankey-company-options');
+  const summary = document.querySelector('#sankey-company-summary');
+  if (!target || !summary) return;
+  const includeHeadlines = document.querySelector('#sankey-include-headlines')?.checked === true;
+  const signalCount = new Map();
+  rangeFlows.forEach(flow => {
+    if (!['positive', 'negative'].includes(flow.direction) || (flow.grade === 'headline' && !includeHeadlines)) return;
+    signalCount.set(flow.company_id, (signalCount.get(flow.company_id) || 0) + 1);
+  });
+  // 목록에 없는 회사가 저장돼 있으면(회사 마스터 변경) 조용히 뺀다.
+  const known = new Set(companyCatalog.map(company => company.id));
+  if (known.size) sankeyCompanyFilter = new Set([...sankeyCompanyFilter].filter(id => known.has(id)));
+  const groups = Object.entries(valueChainLabels).map(([chain, label]) => {
+    const companies = companiesInValueChain(chain);
+    if (!companies.length) return '';
+    const items = companies.map(company => {
+      const count = signalCount.get(company.id) || 0;
+      return `<label class="sankey-company-option${count ? '' : ' is-empty'}"><input type="checkbox" value="${escapeHtml(company.id)}"${sankeyCompanyFilter.has(company.id) ? ' checked' : ''}> ${escapeHtml(company.name_ko)} <span class="sankey-company-count">${count}</span></label>`;
+    }).join('');
+    return `<fieldset class="sankey-company-group"><legend>${escapeHtml(label)} <button type="button" class="link-button" data-sankey-chain="${chain}">모두</button></legend>${items}</fieldset>`;
+  }).join('');
+  target.innerHTML = `<div class="sankey-company-actions"><button type="button" class="link-button" data-sankey-reset>전체 보기(선택 해제)</button><span>숫자는 현재 기간 신호 건수</span></div>${groups}`;
+  summary.textContent = sankeyCompanyFilter.size ? `회사: ${sankeyCompanyFilter.size}개 선택` : '회사: 전체';
+  target.querySelectorAll('input[type="checkbox"]').forEach(box => box.addEventListener('change', () => {
+    if (box.checked) sankeyCompanyFilter.add(box.value); else sankeyCompanyFilter.delete(box.value);
+    saveSankeyFilter(); renderHeadlineSankey();
+  }));
+  target.querySelector('[data-sankey-reset]')?.addEventListener('click', () => { sankeyCompanyFilter.clear(); saveSankeyFilter(); renderHeadlineSankey(); });
+  target.querySelectorAll('[data-sankey-chain]').forEach(button => button.addEventListener('click', () => {
+    companiesInValueChain(button.dataset.sankeyChain).forEach(company => sankeyCompanyFilter.add(company.id));
+    saveSankeyFilter(); renderHeadlineSankey();
+  }));
+}
 function renderHeadlineSankey(){
+  renderSankeyCompanyFilter();
+  const filtering = sankeyCompanyFilter.size > 0;
   const counts = new Map();
   // 검증 기사와 미검증 헤드라인을 따로 센다. 툴팁이 둘을 나눠 보여야 얼마나 믿을지 읽는 사람이 정할 수 있다.
   const grades = new Map();
@@ -293,6 +339,7 @@ function renderHeadlineSankey(){
   // 오른쪽 노드 라벨(keyword)은 서버가 테마 10개로 접어 내려준다. 화면에서 다시 다듬지 않는다.
   rangeFlows.forEach(({company_id, keyword, direction, reason, title, grade, matched, top10, merged}) => {
     if (!keyword || !['positive', 'negative'].includes(direction)) return;
+    if (filtering && !sankeyCompanyFilter.has(company_id)) return;
     const isHeadline = grade === 'headline';
     if (isHeadline && !includeHeadlines) return;
     if (isHeadline) headlineArticles += 1;
@@ -321,7 +368,9 @@ function renderHeadlineSankey(){
   });
   const target = document.querySelector('#headline-sankey');
   if (!flows.length) {
-    target.innerHTML = includeHeadlines
+    target.innerHTML = filtering
+      ? `<p>선택한 ${sankeyCompanyFilter.size}개사에는 선택 기간의 확대·축소 신호가 없습니다. 회사를 더 고르거나 기간을 넓혀 보세요.</p>`
+      : includeHeadlines
       ? '<p>선택 기간에 확대·축소 신호로 분류된 기사가 없습니다.</p>'
       : '<p>선택 기간에 본문 검증을 통과한 기사 중 확대·축소 신호가 없습니다. "미검증 헤드라인 포함"을 켜면 표본이 넓어집니다.</p>';
     return;
@@ -339,7 +388,8 @@ function renderHeadlineSankey(){
   const flowCount = id => matchedFlows.filter(flow => flow.company === id).reduce((sum, flow) => sum + flow.count, 0);
   const compareByFlowCount = (x, y) => flowCount(y) - flowCount(x) || displayName(x).localeCompare(displayName(y), 'ko');
   const chainOrder = { cell: 0, cathode: 1, anode: 2 };
-  const sourceNames = (allCompanies.length > SANKEY_COMPANY_LIMIT
+  // 회사를 직접 골랐으면 고른 회사를 모두 보인다(상위 N개사 자르기는 전체 보기에만 적용).
+  const sourceNames = (!filtering && allCompanies.length > SANKEY_COMPANY_LIMIT
     ? [...allCompanies].sort(compareByFlowCount).slice(0, SANKEY_COMPANY_LIMIT)
     : allCompanies)
     .sort((x, y) => (chainOrder[companyById(x)?.value_chain] ?? 99) - (chainOrder[companyById(y)?.value_chain] ?? 99) || compareByFlowCount(x, y));
@@ -386,6 +436,7 @@ function renderHeadlineSankey(){
   };
   const signalNodes = selectedNodes.map(node => `<g data-tip="${escapeHtml(nodeReasons(node))}"><rect x="600" y="${nodeY(node)}" width="190" height="24" rx="4" fill="${node.direction === 'positive' ? '#e3f5ed' : '#fbe9e9'}"/><text x="608" y="${nodeY(node) + 16}" fill="#14263d" font-size="11" font-weight="700">${escapeHtml(node.keyword)} · ${node.count}건</text></g>`).join('');
   const noticeParts = [];
+  if (filtering) noticeParts.push(`선택한 <strong>${sankeyCompanyFilter.size}개사</strong>만 표시합니다. 오른쪽 신호 노드도 이 회사들의 신호로 다시 셉니다.`);
   if (hiddenCount) noticeParts.push(`신호가 잡힌 ${allCompanies.length}개사 중 <strong>신호 건수 상위 ${sourceNames.length}개사</strong>만 표시합니다. 나머지 ${hiddenCount}개사는 기간을 좁히면 보입니다.`);
   if (headlineArticles) noticeParts.push(`미검증 헤드라인 신호 <strong>${headlineArticles}건</strong>이 포함돼 있습니다. 제목만으로 분류한 것이라 툴팁에서 검증 건수와 나눠 표시합니다.`);
   if (includeHeadlines && rangeHeadlineDuplicates) noticeParts.push(`검증 기사나 다른 헤드라인과 같은 소식인 미검증 헤드라인 신호 ${rangeHeadlineDuplicates}건은 한 번만 셌습니다.`);
@@ -1601,7 +1652,7 @@ function renderTrajectory(timeline){
       ? `<rect x="${(cx - 3).toFixed(1)}" y="${(cy - 3).toFixed(1)}" width="6" height="6" transform="rotate(45 ${cx.toFixed(1)} ${cy.toFixed(1)})" class="traj-dot interim"/>`
       : `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4" class="traj-dot${row.verified ? ' verified' : ''}"/>`;
     const anchor = cx > G.width - G.padX - 30 ? 'end' : cx < G.padX + 30 ? 'start' : 'middle';
-    return `<g class="traj-point" data-tip="${escapeHtml(metricTip(row, trajectoryCurrency, rates.get(row.period)))}"><rect x="${(cx - 13).toFixed(1)}" y="${(cy - 13).toFixed(1)}" width="26" height="26" fill="transparent"/>${shape}${showLabel ? `<text x="${cx.toFixed(1)}" y="${(cy - 9).toFixed(1)}" class="traj-point-label" text-anchor="${anchor}">${escapeHtml(metricValueText(row, trajectoryCurrency, rates.get(row.period)))}${row.alternatives?.length ? ' *' : ''}</text>` : ''}</g>`;
+    return `<g class="traj-point" data-tip="${escapeHtml(metricTip(row, trajectoryCurrency, rates.get(row.period)))}"><rect x="${(cx - 13).toFixed(1)}" y="${(cy - 13).toFixed(1)}" width="26" height="26" fill="transparent"/>${shape}${showLabel ? `<text x="${cx.toFixed(1)}" y="${(cy - 11).toFixed(1)}" class="traj-point-label" text-anchor="${anchor}">${escapeHtml(metricValueText(row, trajectoryCurrency, rates.get(row.period)))}${row.alternatives?.length ? ' *' : ''}</text>` : ''}</g>`;
   };
 
   // 정기보고서 사건은 결산일에 몰린다. 같은 날·같은 트랙이면 점 하나로 묶고 건수를 적는다.
