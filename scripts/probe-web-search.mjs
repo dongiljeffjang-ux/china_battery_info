@@ -31,7 +31,8 @@ if (!config) {
   console.error(`${provider.toUpperCase()} 키가 없다. ${provider === "deepseek" ? "DEEPSEEK_API_KEY" : "OPENAI_API_KEY와 OPENAI_MODEL"}을 환경변수로 준다.`);
   process.exit(1);
 }
-console.log(`[config] provider=${config.provider} model=${config.model} url=${config.url} thinking=${config.thinking ?? "n/a"}`);
+const model = config.provider === "deepseek" ? config.searchModel : config.model;
+console.log(`[config] provider=${config.provider} model=${model} url=${config.url} thinking=${config.thinking ?? "n/a"}`);
 
 // lib/china-sources.js discoverWebSearchNews와 같은 모양. 회사 목록만 줄여 빠르게 본다.
 const schema = {
@@ -43,7 +44,7 @@ const schema = {
   } } }
 };
 const body = {
-  model: config.model,
+  model,
   instructions: "중국 이차전지 산업 뉴스 리서처다. 웹 검색을 이용한다. 검색 결과에 실제로 제시된 원문 기사 URL만 반환한다. URL·제목·매체·날짜를 추정하거나 만들어내지 않는다.",
   input: "최근 3일 사이 宁德时代(CATL)·容百科技(Ronbay)·贝特瑞(BTR)의 증설·수주·기술·재무 관련 중국어 기사 후보를 최대 6건 찾아 제목, 원문 URL, 매체명, 발행일, 1~2문장 요약을 반환하세요.",
   text: { format: { type: "json_schema", name: "probe_candidates", strict: true, schema } },
