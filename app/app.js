@@ -32,6 +32,8 @@ let dailyReportInsight = null;
 let approvedTop10 = [];
 let approvedCompanyNews = [];
 let rangeFlows = [];
+// 같은 소식이라 한 번만 센 미검증 헤드라인 수(서버가 셈). Sankey 안내 문구에 쓴다.
+let rangeHeadlineDuplicates = 0;
 let lastComparison = null;
 // 기업 시계열 리포트는 비교 리포트와 달리 저장하지 않는다. 현재 화면에 표시된 근거만 이 메모리에 둔다.
 let lastCompanyTimeline = null;
@@ -289,15 +291,18 @@ function renderHeadlineSankey(){
   const includeHeadlines = document.querySelector('#sankey-include-headlines')?.checked === true;
   let headlineArticles = 0;
   // 오른쪽 노드 라벨(keyword)은 서버가 테마 10개로 접어 내려준다. 화면에서 다시 다듬지 않는다.
-  rangeFlows.forEach(({company_id, keyword, direction, reason, title, grade, matched}) => {
+  rangeFlows.forEach(({company_id, keyword, direction, reason, title, grade, matched, top10, merged}) => {
     if (!keyword || !['positive', 'negative'].includes(direction)) return;
     const isHeadline = grade === 'headline';
     if (isHeadline && !includeHeadlines) return;
     if (isHeadline) headlineArticles += 1;
     const key = `${company_id}\u0000${direction}\u0000${keyword}`;
     counts.set(key, (counts.get(key) || 0) + 1);
-    const gradeCount = grades.get(key) || { verified: 0, headline: 0 };
+    const gradeCount = grades.get(key) || { verified: 0, headline: 0, top10: 0, merged: 0 };
     gradeCount[isHeadline ? 'headline' : 'verified'] += 1;
+    if (top10) gradeCount.top10 += 1;
+    // 같은 소식의 미검증 헤드라인은 서버가 이 흐름에 합쳐 두었다. 헤드라인을 켰을 때만 알린다.
+    if (includeHeadlines && merged) gradeCount.merged += Number(merged) || 0;
     grades.set(key, gradeCount);
     if (reason || title) {
       // 제목과 근거 문장을 줄을 나눠 담는다. 도착지 라벨만 되풀이하면 툴팁이 쓸모없다.
@@ -305,20 +310,20 @@ function renderHeadlineSankey(){
       const bucket = reasons.get(key) || [];
       const line = isHeadline
         ? [`· [헤드라인] ${title}`, matched ? `  잡힌 표현: ${matched}` : ''].filter(Boolean).join('\n')
-        : [title ? `· ${title}` : '', reason ? `  ${reason}` : ''].filter(Boolean).join('\n');
+        : [title ? `· ${top10 ? '[Top 10] ' : ''}${title}` : '', reason ? `  ${reason}` : ''].filter(Boolean).join('\n');
       if (bucket.length < 3 && !bucket.includes(line)) bucket.push(line);
       reasons.set(key, bucket);
     }
   });
   const flows = [...counts.entries()].map(([key, count]) => {
     const [company, direction, keyword] = key.split('\u0000');
-    return { company, direction, keyword, count, grades: grades.get(key) || { verified: count, headline: 0 }, reasons: reasons.get(key) || [] };
+    return { company, direction, keyword, count, grades: grades.get(key) || { verified: count, headline: 0, top10: 0, merged: 0 }, reasons: reasons.get(key) || [] };
   });
   const target = document.querySelector('#headline-sankey');
   if (!flows.length) {
     target.innerHTML = includeHeadlines
-      ? '<p>선택 기간에 확대·축소 신호로 분류된 비-Top 10 기사가 없습니다.</p>'
-      : '<p>선택 기간에 본문 검증을 통과한 비-Top 10 기사 중 확대·축소 신호가 없습니다. "미검증 헤드라인 포함"을 켜면 표본이 넓어집니다.</p>';
+      ? '<p>선택 기간에 확대·축소 신호로 분류된 기사가 없습니다.</p>'
+      : '<p>선택 기간에 본문 검증을 통과한 기사 중 확대·축소 신호가 없습니다. "미검증 헤드라인 포함"을 켜면 표본이 넓어집니다.</p>';
     return;
   }
   const totals = new Map();
@@ -352,9 +357,9 @@ function renderHeadlineSankey(){
     const node = selectedNodes.find(item => item.direction === flow.direction && item.keyword === flow.keyword);
     const ky = nodeY(node) + 12;
     const color = flow.direction === 'positive' ? '#398261' : '#bc5b5b';
-    const breakdown = flow.grades.headline ? ` (검증 ${flow.grades.verified} · 헤드라인 ${flow.grades.headline})` : '';
-    const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${breakdown}${flow.reasons.length ? `\n\n${flow.reasons.join('\n\n')}` : ''}`;
-    return `<path d="${curve(268, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity=".58" data-tip="${escapeHtml(tip)}"/>`;
+    const breakdown = [flow.grades.headline ? `검증 ${flow.grades.verified} · 헤드라인 ${flow.grades.headline}` : '', flow.grades.top10 ? `Top 10 기사 ${flow.grades.top10}건` : '', flow.grades.merged ? `같은 소식 헤드라인 ${flow.grades.merged}건은 합침` : ''].filter(Boolean).join(' · ');
+    const tip = `${displayName(flow.company)} → ${flow.keyword} · ${flow.direction === 'positive' ? '확대' : '축소'} ${flow.count}건${breakdown ? ` (${breakdown})` : ''}${flow.reasons.length ? `\n\n${flow.reasons.join('\n\n')}` : ''}`;
+    return `<path d="${curve(268, sy, 600, ky)}" fill="none" stroke="${color}" stroke-width="${Math.min(18, 3 + flow.count * 3)}" stroke-opacity="${flow.grades.top10 ? '.82' : '.5'}" data-tip="${escapeHtml(tip)}"/>`;
   }).join('');
   // 밸류체인 구분과 회사명을 아예 다른 상자로 나눈다. 구분은 좁은 색 상자, 회사명은 그 옆 상자다.
   const CHAIN_BOX = 52, GAP = 6, NAME_BOX = 186;
@@ -383,6 +388,7 @@ function renderHeadlineSankey(){
   const noticeParts = [];
   if (hiddenCount) noticeParts.push(`신호가 잡힌 ${allCompanies.length}개사 중 <strong>신호 건수 상위 ${sourceNames.length}개사</strong>만 표시합니다. 나머지 ${hiddenCount}개사는 기간을 좁히면 보입니다.`);
   if (headlineArticles) noticeParts.push(`미검증 헤드라인 신호 <strong>${headlineArticles}건</strong>이 포함돼 있습니다. 제목만으로 분류한 것이라 툴팁에서 검증 건수와 나눠 표시합니다.`);
+  if (includeHeadlines && rangeHeadlineDuplicates) noticeParts.push(`검증 기사나 다른 헤드라인과 같은 소식인 미검증 헤드라인 신호 ${rangeHeadlineDuplicates}건은 한 번만 셌습니다.`);
   const notice = noticeParts.length ? `<p class="sankey-notice">${noticeParts.join('<br>')}</p>` : '';
   target.innerHTML = `${notice}<svg viewBox="0 0 820 ${height}" role="img" aria-label="기업별 확대 및 축소 헤드라인 신호 흐름도" style="display:block;width:100%;height:auto;min-height:300px"><text x="14" y="20" fill="#617187" font-size="11" font-weight="700">기업</text><text x="600" y="20" fill="#398261" font-size="11" font-weight="700">확대 신호 · 상위 4</text><text x="600" y="${80 + positiveNodes.length * 34}" fill="#bc5b5b" font-size="11" font-weight="700">축소 신호 · 상위 4</text>${links}${companyNodes}${signalNodes}</svg>`;
 }
@@ -547,6 +553,7 @@ async function loadDashboardFromApi(){
     // 하루 분석량이 적을 때 대부분이 Top 10으로 빠져 회사별 뉴스가 한두 건만 남았다.
     approvedCompanyNews = (payload.companyNews || []).map(mapDashboardArticle);
     rangeFlows = payload.flows || [];
+    rangeHeadlineDuplicates = Number(payload.counts?.sankey_headline_duplicates) || 0;
     if (payload.report?.summary_ko) {
       dailyReportFacts = payload.report.summary_ko.split(/\n+/).filter(Boolean);
     }

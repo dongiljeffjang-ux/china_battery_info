@@ -53,7 +53,9 @@ export default async function handler(request, response) {
       dashboardQuery("top10", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,top10_rank,article_company(company_id,company(name_ko,type_tags))&is_top10=eq.true&verification_status=in.(verified,approved)&order=top10_rank.asc&limit=10", errors),
       dashboardQuery("company_news", `article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,is_top10,top10_rank,article_company(company_id,company(name_ko,type_tags))&verification_status=in.(verified,approved)&published_at=gte.${newsFrom}&published_at=lt.${newsTo}&order=published_at.desc&limit=300`, errors),
       dashboardQuery("raw_pending", "article?select=id,title_ko,title_original,canonical_url,source_name,published_at,summary_ko,source_tier,verification_status,article_company(company_id,company(name_ko,type_tags))&verification_status=eq.pending&order=published_at.desc&limit=100", errors),
-      dashboardQuery("sankey", `article?select=id,title_ko,title_original,summary_ko,published_at,keywords_ko,headline_signals,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lt.${to}&verification_status=in.(verified,approved)&is_top10=eq.false&order=published_at.desc&limit=500`, errors),
+      // Top 10 기사도 넣는다. 예전에는 Top 10 목록과 겹치지 않게 뺐는데, 그러면 그날 가장 중요한 기사의
+      // 신호가 Sankey에서 사라졌다(2026-09-11 샨샨: 검증 기사 2건이 모두 Top 10이라 회사가 통째로 빠짐).
+      dashboardQuery("sankey", `article?select=id,title_ko,title_original,summary_ko,published_at,keywords_ko,headline_signals,is_top10,verification_status,article_company(company_id)&published_at=gte.${from}&published_at=lt.${to}&verification_status=in.(verified,approved)&order=published_at.desc&limit=500`, errors),
       // 본문을 읽지 않은 수집 기사. 야간 큐레이션이 제목을 한국어로 옮긴 것만 title_ko가 있다.
       // 검증 기사만으로는 하루 50건 남짓이라 산업 전반의 확대/축소를 보기엔 얇았다.
       dashboardQuery("sankey_headlines", `article?select=id,title_ko,title_original,published_at,article_company(company_id)&published_at=gte.${from}&published_at=lt.${to}&verification_status=eq.pending&title_ko=not.is.null&order=published_at.desc&limit=800`, errors),
@@ -66,7 +68,7 @@ export default async function handler(request, response) {
       report_dates: (reportDates || []).map((row) => row.report_date),
       requested_report: reportDate,
       top10, companyNews, pendingNews, flows,
-      counts: { top10: top10.length, company_verified: companyNews.length, raw_pending: pendingNews.length, sankey_verified: flowEvents.length, sankey_headlines: flowHeadlines.length },
+      counts: { top10: top10.length, company_verified: companyNews.length, raw_pending: pendingNews.length, sankey_verified: flowEvents.length, sankey_headlines: flowHeadlines.length, sankey_headline_duplicates: flows.duplicates || 0 },
     });
   } catch (error) {
     return response.status(502).json({ status: error.code || "db_error", message: "Dashboard data could not be loaded." });
