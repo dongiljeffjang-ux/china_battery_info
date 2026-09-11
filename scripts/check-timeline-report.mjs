@@ -132,7 +132,7 @@ assert.match(input, /이벤트 식별자는 제공하지 않았으므로/, "식�
 assert.ok(!input.includes("<br>"), "입력에 <br>이 있으면 모델이 따라 뱉는다");
 // 방향은 숫자에서 먼저 읽는다. 정량 표가 사건 표보다 앞에 온다.
 assert.ok(input.indexOf("정량 시계열") < input.indexOf("화면 이벤트 3건"), "정량 표가 사건 표보다 앞이어야 한다");
-assert.match(input, /읽는 순서: \[기준 시점 대비표\]와 정량 시계열에서/, "기본(전략 방향)은 정량 시계열에서 무게중심을 먼저 고정한다");
+assert.match(input, /읽는 순서: \[기준 시점 대비 후보\]와 정량 시계열의 비교 가능성을 먼저 확인하고/, "기본(전략 방향)은 비교 가능성을 확인한 뒤 변화 유형을 판단한다");
 // 사건은 과거 → 최근. 최신순이면 흐름을 거꾸로 읽는다.
 assert.ok(input.indexOf("2023 하반기") < input.indexOf("2025 하반기") && input.indexOf("2025 하반기") < input.indexOf("2026 Q2"), "사건 표는 과거 → 최근 순이어야 한다");
 // 열: 연간 + 아직 연간이 안 나온 당해의 최신 누적 하나. 지난 해 반기는 연간이 있으니 뺀다.
@@ -213,13 +213,16 @@ assert.match(timeline, /골격에 없는 절을 만들지 마라/, "용도 절�
 assert.match(timeline, /## 과거 대 현재/, "전략 방향은 두 시점 대비표");
 // 2026-09-11 사용자 평가("3개 리포트 차별성 평가") 반영: 세 보고서는 같은 사실을 다른 연산으로 읽는다.
 assert.match(timeline, /Compare \/ Shift \/ Reallocation/);
-assert.match(timeline, /'새 사업이 추가됐다'와 '전략의 중심이 옮겨 갔다'를 구분한다/, "전략 방향: 확장과 이동을 가른다");
+assert.match(timeline, /신규 사업 진입만 확인되면 확장으로 쓴다/, "전략 방향: 확장과 이동을 가른다");
+assert.match(timeline, /유지·확장·중심 이동 중 근거에 맞게 설명한다/, "전략 방향: 기존 주력의 유지도 판정한다");
 assert.match(timeline, /Cluster \/ Generalize \/ Mechanism/);
-assert.match(timeline, /한 사업의 단계 진척\(톤급 → 10톤급, 건설 → 인증\)은 시퀀스이지 패턴이 아니다/, "패턴: 한 사업선의 진척은 패턴이 아니다");
-assert.match(timeline, /\*\*반복 구조:\*\*/, "패턴은 일반화한 반복 구조를 쓴다");
+assert.match(timeline, /한 사업의 단계 진척\(톤급 → 10톤급, 건설 → 인증\).*패턴이 아니다/, "패턴: 한 사업선의 진척은 패턴이 아니다");
+assert.match(timeline, /\*\*반복 행동:\*\*/, "패턴은 일반화한 반복 행동을 쓴다");
+assert.match(timeline, /같은 프로젝트의 착공·인증·출하는 하나의 사례다/, "패턴: 같은 프로젝트의 진척은 한 사례로 센다");
+assert.match(timeline, /제조업의 일반적인 순서만으로 패턴을 만들지 않는다/, "패턴: 일반 상업화 단계를 회사 패턴으로 격상하지 않는다");
 assert.match(timeline, /Branch \/ Trigger \/ Consequence/);
 assert.match(timeline, /진행 여부만 나눈 것은 실행 현황 점검이지 분기점이 아니다/, "분기점: 진척 여부가 아니라 지위·역할이 갈리는 지점");
-assert.match(timeline, /자원 배분·시장 지위가 어떻게 달라지는가/);
+assert.match(timeline, /기업의 역할·자원 배분이 어떻게 달라지는가/);
 assert.match(timeline, /경로 A: \(회사의 지위·역할이 들어간 이름\) \| 경로 B/, "분기점은 두 경로 표");
 const modeEvents = [
   { id: "1", date: "2023-03-01", period: "2023H1", layer: "supply-performance", title: "LFP 셀 출하 20GWh", fact: "연간 출하" },
@@ -236,10 +239,10 @@ assert.equal(businessLineTable(modeEvents.slice(0, 2)), "", "사업선이 하나
 assert.equal(stageOf(modeEvents[4]), "건설·생산 준비");
 assert.match(stageMapTable(modeEvents), /모로코 공장 착공/, "분기점 지도는 다음 단계가 남은 사건을 모은다");
 const inputs = Object.fromEntries(["direction", "pattern", "inflection_point"].map(mode => [mode, buildTimelineInput({ companyName: "테스트", reportMode: mode, events: modeEvents })]));
-assert.match(inputs.direction, /\[기준 시점 대비표\]/);
+assert.match(inputs.direction, /\[기준 시점 대비 후보\]/);
 assert.match(inputs.pattern, /\[사업선별 사건 순서\]/);
-assert.match(inputs.inflection_point, /\[진행 단계 지도\]/);
-assert.doesNotMatch(inputs.pattern, /\[기준 시점 대비표\]|\[진행 단계 지도\]/, "용도마다 자기 보조표만 받는다");
+assert.match(inputs.inflection_point, /\[진행 상태 후보\]/);
+assert.doesNotMatch(inputs.pattern, /\[기준 시점 대비 후보\]|\[진행 상태 후보\]/, "용도마다 자기 보조표만 받는다");
 assert.notEqual(inputs.direction.match(/읽는 순서: .*/)[0], inputs.pattern.match(/읽는 순서: .*/)[0], "읽는 순서도 용도마다 다르다");
 assert.match(app, /timelineReportModeQuestion/, "보고서 제목 아래 용도 질문을 둔다");
 assert.match(app, /mode-\$\{escapeHtml\(modeKey\)\}/, "용도별 강조색 클래스를 단다");
