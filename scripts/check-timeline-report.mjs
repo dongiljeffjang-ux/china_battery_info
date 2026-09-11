@@ -207,12 +207,20 @@ assert.match(html, /id="report-options-dialog"/);
 assert.match(app, /generateTimelineReport\(button\.dataset\.timelineReportMode\)/);
 
 // 세 용도가 같은 모양으로 수렴하지 않게: 용도 절이 공통 목차를 끄고, 서로 다른 골격·입력 보조표를 가진다.
-const { baselineTable, linkCandidates, stageMapTable, stageOf } = await import("../lib/timeline-report.js");
+const { baselineTable, businessLineTable, businessLineOf, stageMapTable, stageOf } = await import("../lib/timeline-report.js");
 assert.equal((timeline.match(/MODE_OVERRIDE,/g) || []).length, 3, "세 용도 모두 공통 목차를 끄는 절을 가진다");
 assert.match(timeline, /골격에 없는 절을 만들지 마라/, "용도 절이 출력 골격을 정한다");
 assert.match(timeline, /## 과거 대 현재/, "전략 방향은 두 시점 대비표");
-assert.match(timeline, /\*\*유형:\*\* 수렴 \| 선행-후행 \| 괴리 \| 전환/, "패턴은 유형 배지");
-assert.match(timeline, /경로 A: \(한 줄 이름\) \| 경로 B/, "분기점은 두 경로 표");
+// 2026-09-11 사용자 평가("3개 리포트 차별성 평가") 반영: 세 보고서는 같은 사실을 다른 연산으로 읽는다.
+assert.match(timeline, /Compare \/ Shift \/ Reallocation/);
+assert.match(timeline, /'새 사업이 추가됐다'와 '전략의 중심이 옮겨 갔다'를 구분한다/, "전략 방향: 확장과 이동을 가른다");
+assert.match(timeline, /Cluster \/ Generalize \/ Mechanism/);
+assert.match(timeline, /한 사업의 단계 진척\(톤급 → 10톤급, 건설 → 인증\)은 시퀀스이지 패턴이 아니다/, "패턴: 한 사업선의 진척은 패턴이 아니다");
+assert.match(timeline, /\*\*반복 구조:\*\*/, "패턴은 일반화한 반복 구조를 쓴다");
+assert.match(timeline, /Branch \/ Trigger \/ Consequence/);
+assert.match(timeline, /진행 여부만 나눈 것은 실행 현황 점검이지 분기점이 아니다/, "분기점: 진척 여부가 아니라 지위·역할이 갈리는 지점");
+assert.match(timeline, /자원 배분·시장 지위가 어떻게 달라지는가/);
+assert.match(timeline, /경로 A: \(회사의 지위·역할이 들어간 이름\) \| 경로 B/, "분기점은 두 경로 표");
 const modeEvents = [
   { id: "1", date: "2023-03-01", period: "2023H1", layer: "supply-performance", title: "LFP 셀 출하 20GWh", fact: "연간 출하" },
   { id: "2", date: "2023-09-01", period: "2023H2", layer: "technology-material-chemistry", title: "나트륨 셀 개발 발표", fact: "나트륨 셀 에너지밀도 160Wh/kg" },
@@ -221,13 +229,15 @@ const modeEvents = [
   { id: "5", date: "2026-02-01", period: "2026Q1", layer: "investment-production", title: "모로코 공장 착공", fact: "2027년 가동 예정" },
 ];
 assert.match(baselineTable(modeEvents), /2023: LFP 셀 출하 20GWh.*\| 2026: 모로코 공장 착공/, "전략 방향 대비표는 축별 가장 오래된 연도와 최근 연도를 나란히 둔다");
-assert.match(linkCandidates(modeEvents), /2023-09 \[기술-소재\/공정\] 나트륨 셀 개발 발표 → \(8개월\) → 2024-05 \[시장-고객\/해외\] 나트륨 셀 고객 지정/, "패턴 후보는 다른 축·18개월 안·단어 겹침");
-assert.doesNotMatch(linkCandidates(modeEvents), /LFP 셀 출하 20GWh → .*LFP 셀 출하 45GWh/, "같은 축 사건끼리는 후보가 아니다");
+assert.equal(businessLineOf(modeEvents[1]), "나트륨이온");
+assert.match(businessLineTable(modeEvents), /- 나트륨이온 — 2023-09 나트륨 셀 개발 발표 → 2024-05 \[고객 지정·채택\] 나트륨 셀 고객 지정/, "패턴 보조표는 사업선마다 사건을 시간순으로 늘어놓는다");
+assert.match(businessLineTable(modeEvents), /- LFP — 2023-03 \[출하·양산\] LFP 셀 출하 20GWh → 2025-06 \[출하·양산\] LFP 셀 출하 45GWh/, "두 사업선 이상이 나란히 보여야 반복 구조를 비교할 수 있다");
+assert.equal(businessLineTable(modeEvents.slice(0, 2)), "", "사업선이 하나뿐이면 표를 내지 않는다");
 assert.equal(stageOf(modeEvents[4]), "건설·생산 준비");
 assert.match(stageMapTable(modeEvents), /모로코 공장 착공/, "분기점 지도는 다음 단계가 남은 사건을 모은다");
 const inputs = Object.fromEntries(["direction", "pattern", "inflection_point"].map(mode => [mode, buildTimelineInput({ companyName: "테스트", reportMode: mode, events: modeEvents })]));
 assert.match(inputs.direction, /\[기준 시점 대비표\]/);
-assert.match(inputs.pattern, /\[레이어 간 연결 후보\]/);
+assert.match(inputs.pattern, /\[사업선별 사건 순서\]/);
 assert.match(inputs.inflection_point, /\[진행 단계 지도\]/);
 assert.doesNotMatch(inputs.pattern, /\[기준 시점 대비표\]|\[진행 단계 지도\]/, "용도마다 자기 보조표만 받는다");
 assert.notEqual(inputs.direction.match(/읽는 순서: .*/)[0], inputs.pattern.match(/읽는 순서: .*/)[0], "읽는 순서도 용도마다 다르다");
