@@ -1896,12 +1896,42 @@ async function exportCompanyTimeline(){
   [...events].sort((a, b) => a.date.localeCompare(b.date)).forEach(event => {
     rows.push([company.name_ko, entityLabel(event), evidenceLabels[event.kind] || event.kind, event.group, event.label, periodOf(event.date) || event.date.slice(0, 4), displayDate(event), event.precision, event.title, event.fact, event.region, event.eligibility, event.sourceName, event.sourceUrl, event.excerpt, event.excerptKo]);
   });
+  // 그래프는 거래소 표준 재무 데이터와 보고서 발췌를 같은 기간·지표 기준으로 합쳐 쓴다.
+  // Excel은 병합 전 API 원본 행을 모두 담는다. 같은 값이 두 번 있어도 출처가 다르면 보존해야
+  // 화면에서 선택하지 않은 지표·기간·원문 발췌가 빠지지 않는다.
+  const financialRows = [['회사', '회계연도', '회계기간', '지표', '값', '단위', '통화', '원문 계정', '전년 대비', '데이터 출처', '보고서 종류', '보고서일', '회계 기준·제공자', '출처 링크', '원문 표기·금액']];
+  const quantitativeRecords = [
+    ...(timeline.financials || []).map(row => ({
+      ...row, lineItem: row.item_zh, yoy: row.yoy_pct, sourceLabel: '거래소 표준 재무', reportKind: row.report_type,
+      reportDate: row.report_date, sourceDetail: [row.account_standard, row.source].filter(Boolean).join(' · '), sourceUrl: '', rawText: row.raw_amount,
+    })),
+    ...(timeline.metrics || []).map(row => ({
+      ...row, lineItem: row.line_item_zh, yoy: row.yoy_pct_stated, sourceLabel: '보고서 원문 발췌', reportKind: row.report_kind,
+      reportDate: row.occurred_at, sourceDetail: '', sourceUrl: row.source_url, rawText: row.quantity_text || row.excerpt || '',
+    })),
+  ];
+  quantitativeRecords
+    .sort((a, b) => String(a.period).localeCompare(String(b.period)) || metricLabel(a.metric).localeCompare(metricLabel(b.metric), 'ko') || a.sourceLabel.localeCompare(b.sourceLabel, 'ko'))
+    .forEach(row => financialRows.push([
+      company.name_ko, Number(String(row.period).slice(0, 4)), row.period, metricLabel(row.metric), Number(row.value),
+      row.unit === 'CNY_100M' ? '억 위안' : row.unit || '', row.currency || '', row.lineItem || '',
+      row.yoy === null || row.yoy === undefined ? '' : Number(row.yoy) / 100, row.sourceLabel, row.reportKind || '',
+      row.reportDate || '', row.sourceDetail, row.sourceUrl || '', row.rawText || '',
+    ]));
   if (window.XLSX) {
     const sheet = XLSX.utils.aoa_to_sheet(rows);
     sheet['!cols'] = [{wch:20}, {wch:30}, {wch:14}, {wch:8}, {wch:18}, {wch:10}, {wch:12}, {wch:30}, {wch:70}, {wch:14}, {wch:12}, {wch:20}, {wch:55}, {wch:55}, {wch:55}];
     rows.slice(1).forEach((row, index) => { const cell = sheet[`M${index + 2}`]; if (cell && row[12]) cell.l = { Target: row[12] }; });
+    const financialSheet = XLSX.utils.aoa_to_sheet(financialRows);
+    financialSheet['!cols'] = [{wch:20}, {wch:10}, {wch:12}, {wch:24}, {wch:18}, {wch:12}, {wch:12}, {wch:28}, {wch:14}, {wch:20}, {wch:18}, {wch:14}, {wch:28}, {wch:60}, {wch:38}];
+    financialRows.slice(1).forEach((row, index) => {
+      const value = financialSheet[`E${index + 2}`]; if (value) value.z = '#,##0.00';
+      const yoy = financialSheet[`I${index + 2}`]; if (yoy && row[8] !== '') yoy.z = '0.0%';
+      const source = financialSheet[`N${index + 2}`]; if (source && row[13]) source.l = { Target: row[13] };
+    });
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, sheet, '기업 시계열');
+    XLSX.utils.book_append_sheet(workbook, financialSheet, '정량 정보');
     XLSX.writeFile(workbook, `${currentCompany}_timeline.xlsx`);
     return;
   }
