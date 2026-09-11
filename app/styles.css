@@ -110,7 +110,7 @@ h3{font-size:16px;font-weight:700;letter-spacing:-.2px}
 .segment-count{color:var(--faint)}
 /* 표 — 가로선만 남긴다 */
 .matrix-table th,.matrix-table td{border-bottom:1px solid var(--line)}
-.matrix-head{border-bottom:1px solid var(--ink)!important;color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.matrix-head{border-bottom:1px solid var(--ink)!important;color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase;text-align:center}
 /* 시장·기술 축은 양쪽 모두 색을 갖는다. 한쪽만 칠하면 좌우가 비대칭으로 읽힌다. */
 .matrix-track{border-radius:6px 6px 0 0;font-size:11px;letter-spacing:.05em;font-weight:700}
 .matrix-track.market{background:#E7F0FE;color:var(--blue)}
