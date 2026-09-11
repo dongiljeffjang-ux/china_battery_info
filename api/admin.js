@@ -108,7 +108,7 @@ async function runs(query) {
 async function articles(query) {
   const filters = [];
   const via = safeToken(query.via);
-  if (via) filters.push(via === "web_search_deepseek" ? `discovered_via=like.*deepseek*` : via === "web_search_openai" ? `discovered_via=like.*openai*` : `discovered_via=eq.${enc(via)}`);
+  if (via) filters.push(via === "web_search_deepseek" ? `discovered_via=like.*deepseek*` : via === "web_search_china_local" ? `discovered_via=like.*china_local*` : via === "web_search_openai" ? `discovered_via=like.*openai*` : `discovered_via=eq.${enc(via)}`);
   const verification = safeToken(query.verification);
   if (verification) filters.push(`verification_status=eq.${enc(verification)}`);
   const processing = safeToken(query.processing);

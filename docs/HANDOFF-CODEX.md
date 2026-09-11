@@ -1,5 +1,28 @@
 # Codex → Claude Code 인수인계
 
+## 2026-09-12 Claude Code — DeepSeek 검색 중단의 원인 확정과 중국 현지 검색의 OpenAI 이관
+
+### 확인한 것 (운영 DB `pipeline_log` + DeepSeek 공식 문서)
+
+- DeepSeek 웹 검색은 **2026-09-09 23:01 KST 실행까지 정상**이었다(`search_calls` 5~17회, 요청당 기사 1~3건, 발견 기사 누적 122건). **2026-09-10 14:16 KST 실행부터 전 요청이 `search_calls=0`** 으로 실패했다. 그 사이 우리 쪽 배포는 없었다(첫 실패 14:16, 다음 커밋 `b949548`은 14:21).
+- 같은 날 DeepSeek이 V4.1 Flash를 공개했고, 공식 문서는 `deepseek-v4-flash`·`deepseek-v4-flash-vision-exp` 요청을 V4.1 Flash로 라우팅한다고 적었다(정식 ID는 `deepseek-flash`, 응답 `model` 필드도 이 값). `deepseek-v4.1-flash`는 유효한 API 이름이 아니라 400이었다.
+- DeepSeek Responses API 호환표는 `tools`를 "function만 지원, 다른 타입 무시", 내장 도구 `web_search`/`file_search`/… 를 "Ignored"로 명시한다. 즉 **모델을 어떻게 지정하든 지금 DeepSeek은 서버 측 웹 검색을 실행하지 않는다.** 앞선 세션이 시험한 프롬프트·strict schema·`tool_choice`·추론·도구 버전 순열이 모두 실패한 이유다.
+- 비검색 DeepSeek 호출(`battery_article_fact_check`)은 09-11 수집에서도 정상이다. 교차검증은 영향이 없다.
+
+### 고친 것 (커밋 참조)
+
+- `lib/china-sources.js`: 검색을 **레인**(`openai` 글로벌 / `china_local` 중국 현지)과 **엔진**(OpenAI / DeepSeek)으로 나눴다. `SEARCH_LANES`·`searchLaneEngine()`·`policySearchEngines()`. 중국 현지 레인의 기본 엔진은 OpenAI이고 `CHINA_LOCAL_SEARCH_ENGINE=deepseek`로 코드 배포 없이 되돌린다. 그룹 크기·기사 상한·"회사마다 검색 1회" 프롬프트 가드는 엔진이 DeepSeek일 때만 붙는다. 중국 현지 프롬프트는 중국어 검색어와 중국 산업 전문매체·지방정부·기업 발표 우선을 명시한다.
+- 정책 검색은 프롬프트가 레인과 무관하므로 **엔진마다 1회**만 부른다(기본 1회, 전에는 OpenAI·DeepSeek 각 1회). 계획 요청 수는 17건(부트스트랩 2곳 포함 19건), 예산 24.
+- 새 기사의 `discovered_via`·`source_tier`는 `web_search_china_local`(두 레인 모두 찾으면 `web_search_china_local+openai`). 09-09 이전 `web_search_deepseek` 기록은 그대로 둔다. 관리자 화면 필터·태그·개요 카드·검색 호출표(레인 옆에 엔진 표시)와 파이프라인 명세를 맞췄다. `admin.js?v=20260912-search-lanes`.
+- `.env.example`에 `CHINA_LOCAL_SEARCH_ENGINE`·`DEEPSEEK_SEARCH_MODEL` 추가. `scripts/check-search-plan.mjs`가 레인·엔진 기본값, 환경변수 전환, 정책 검색 중복 제거를 고정한다.
+- 검증: `npm run check`, 전체 `scripts/check-*.mjs`, `node --check`, `git diff --check` 통과. 운영 실행은 다음 크론에서 확인한다.
+
+### 다음 작업자가 확인할 것
+
+1. 다음 수집(`pipeline_log.collect`)에서 `raw.web_search_china_local`이 0보다 큰지, `web_search` 목록의 `china_local` 행에 `engine: openai`·`search_calls>0`이 찍히는지. OpenAI 검색 예산(24)이 부족해지면 `SEARCH_LIMITS`가 아니라 계획 수가 먼저 늘어난 것이니 `plannedSearchRequests`부터 본다.
+2. 중국 현지 레인이 OpenAI로도 실제로 중국어 현지 매체를 가져오는지 `article.source_name` 분포로 본다. 09-06~09-09 DeepSeek 발견 122건의 매체 분포가 비교 기준이다.
+3. DeepSeek이 검색을 되살리면(문서 호환표에서 `web_search`가 Supported로 바뀌면) Vercel에 `CHINA_LOCAL_SEARCH_ENGINE=deepseek`만 넣고 `?deepseek_sample=1`로 1회 확인한다. `DEEPSEEK_MODEL`은 공식 권고대로 `deepseek-flash`로 바꿔도 되지만 레거시 이름도 아직 같은 모델로 간다.
+
 ## 2026-09-12 Codex — DeepSeek 중국 본토 검색 필수화
 
 - 2026-09-11 23시 수집에서 DeepSeek 기업 검색 전 그룹이 응답은 반환했지만 `web_search_call`을 한 번도 만들지 않아 `DEEPSEEK_SEARCH_NOT_EXECUTED`로 폐기됐다.
@@ -12,6 +35,15 @@
 - 버전 고정형 배포 후 다섯 번째 CATL 운영 샘플도 `reasoning_tokens=567`, `output_types=[reasoning,message]`, `search_calls=0`으로 실패했다. 즉 이 운영 계정의 `deepseek-v4-flash` Responses API에서는 공식 문서의 일반형·버전형 모두 서버 검색 도구가 모델에 전달되지 않는다. 현재 코드는 DeepSeek을 계속 검색 제공자로 호출하되 검색 호출이 없는 응답과 생성 URL을 폐기하고, 병렬 OpenAI 검색·CATL 뉴스룸·CNINFO 수집은 그대로 수행한다. 공급자 측 지원이 확인되기 전까지 DeepSeek 응답을 검색 결과로 간주해 안전장치를 완화하지 않는다.
 - 사용자 요청에 따라 DeepSeek 웹 검색 호출만 기본 `deepseek-v4.1-flash`로 분리했다. 일반 DeepSeek 구조화 작업은 기존 `DEEPSEEK_MODEL`(기본 V4 Flash)을 유지하며, 검색 모델은 `DEEPSEEK_SEARCH_MODEL`로 별도 재정의할 수 있다. 2026-09-12 현재 검색 가능한 공식 문서 색인에는 아직 이 새 모델 ID가 보이지 않으므로 운영 CATL 단일 샘플의 HTTP 상태와 반환 모델명으로 실제 가용성을 확인한다.
 - 배포 후 운영 CATL 샘플에서 `deepseek-v4.1-flash`는 즉시 HTTP 400으로 거부됐다. DeepSeek 공식 문서는 Flash 업데이트 뒤에도 API 호출명 `deepseek-v4-flash`를 그대로 쓰라고 안내하므로 기본 검색 모델을 이 공개 별칭으로 복구했다. `DEEPSEEK_SEARCH_MODEL` 분리는 남겨 향후 새 ID가 실제 모델 목록에 나타나면 코드 배포 없이 바꿀 수 있다.
+
+### 종료 시 상태와 다음 작업
+
+- 운영 기준 커밋은 `2c2196a`이며 배포 `china-battery-lens-oywztp8xb-dongiljeffjang-uxs-projects.vercel.app`이 Ready이고 `china-battery-lens.vercel.app` 별칭이 연결됐다.
+- 최종 DeepSeek 검색 요청 계약은 모델 `DEEPSEEK_SEARCH_MODEL || deepseek-v4-flash`, 도구·강제 선택 `web_search_2025_08_26`, `reasoning.effort=low`, 요청 측 strict schema 없음이다. 검색 호출 0회 차단, 응답 후 JSON 구조·실제 URL·날짜 검증은 유지된다.
+- `deepseek-v4.1-flash`라는 API ID는 이 계정에서 HTTP 400이므로 다시 배포하지 않는다. 새 모델을 재시험하려면 먼저 `GET /models` 또는 DeepSeek 콘솔의 실제 사용 가능 ID를 확인하고, 코드 수정 대신 Vercel의 `DEEPSEEK_SEARCH_MODEL` 값만 바꾼 뒤 CATL 샘플 1회로 확인한다.
+- 같은 Flash 조합의 프롬프트·strict schema·`tool_choice`·추론·도구 버전 순열은 이미 모두 반증됐다. 공급자 측 검색 기능 활성화 여부나 실제 모델 ID라는 새 증거 없이 이 순열을 반복하지 않는다.
+- DeepSeek 검색 실패가 전체 수집을 직렬로 막지는 않는다. OpenAI 기업·정책 검색, CATL 뉴스룸, CNINFO 수집은 `Promise.allSettled`로 병렬 실행된다. 다만 DeepSeek 중국 본토 기사 기여분은 공급자 문제가 풀릴 때까지 0건일 수 있다.
+- 이번 수정은 `npm run check`, 전체 `scripts/check-*.mjs`, `node --check`, `git diff --check`를 통과했다. 사용자 문서와 `.claude/settings.local.json` 등 기존 미추적 파일은 건드리지 않았다.
 
 ## 2026-09-11 Codex — 기업 시계열 보고서 3종 통합
 

@@ -190,7 +190,7 @@
 
         <section id="panel-articles" class="panel">
           <div class="filters">
-            <label>발견 경로<select id="art-via"><option value="">전체</option><option value="web_search_openai">OpenAI 검색</option><option value="web_search_deepseek">DeepSeek 검색</option><option value="cninfo">CNINFO 공시</option><option value="catl_newsroom">CATL 뉴스룸</option><option value="google_news_rss">Google News RSS(구)</option></select></label>
+            <label>발견 경로<select id="art-via"><option value="">전체</option><option value="web_search_openai">OpenAI 검색</option><option value="web_search_china_local">중국 현지 검색</option><option value="web_search_deepseek">DeepSeek 검색(09-09 이전)</option><option value="cninfo">CNINFO 공시</option><option value="catl_newsroom">CATL 뉴스룸</option><option value="google_news_rss">Google News RSS(구)</option></select></label>
             <label>검증 상태<select id="art-verification"><option value="">전체</option><option value="pending">pending · 미처리</option><option value="verified">verified · 검증 통과</option><option value="rejected">rejected</option></select></label>
             <label>처리 결과<select id="art-processing"><option value="">전체</option><option value="none">시도 안 함</option><option value="ok">ok</option><option value="body_unavailable">body_unavailable</option><option value="body_too_short">body_too_short</option><option value="fact_check_rejected">fact_check_rejected</option><option value="processing_failed">processing_failed</option></select></label>
             <label>임베딩<select id="art-embedding"><option value="">전체</option><option value="embedded">embedded</option><option value="pending">pending</option><option value="failed">failed</option></select></label>
@@ -319,6 +319,6 @@
       <aside id="drawer" class="drawer" hidden aria-label="기사 상세"></aside>
     </div>
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./admin.js?v=20260911-signal-subjects"></script>
+    <script src="./admin.js?v=20260912-search-lanes"></script>
   </body>
 </html>

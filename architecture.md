@@ -17,7 +17,7 @@
 ```mermaid
 flowchart LR
   OAI[OpenAI 웹 검색<br>셀·양극재·음극재 3회] --> INGEST
-  DS[DeepSeek 웹 검색<br>중국 현지 출처 3회] --> INGEST
+  DS[중국 현지 웹 검색<br>엔진 OpenAI, 중국어 출처 우선] --> INGEST
   CATLNEWS[CATL 뉴스룸] --> INGEST
   CNINFO[CNINFO 공시<br>종목코드 화이트리스트 22개사] --> INGEST
 

@@ -11,8 +11,10 @@
 
   function viaTag(via) {
     if (!via) return '<span class="tag none">미기록</span>';
-    const cls = via.includes('openai') && via.includes('deepseek') ? 'both' : via.includes('deepseek') ? 'deepseek' : via.includes('openai') ? 'openai' : via;
-    const label = { web_search_openai: 'OpenAI', web_search_deepseek: 'DeepSeek', 'web_search_deepseek+openai': 'OpenAI+DeepSeek', cninfo: 'CNINFO', catl_newsroom: 'CATL', google_news_rss: 'RSS(구)', web_search_discovered: '검색(제공자 미상)' }[via] || via;
+    // china_local은 중국 현지 검색 레인이다(2026-09-12부터, 엔진은 기본 OpenAI). deepseek은 그 이전 기록.
+    const local = via.includes('deepseek') || via.includes('china_local');
+    const cls = via.includes('openai') && local ? 'both' : local ? 'deepseek' : via.includes('openai') ? 'openai' : via;
+    const label = { web_search_openai: 'OpenAI', web_search_deepseek: 'DeepSeek(구)', 'web_search_deepseek+openai': 'OpenAI+DeepSeek(구)', web_search_china_local: '중국 현지', 'web_search_china_local+openai': 'OpenAI+중국 현지', cninfo: 'CNINFO', catl_newsroom: 'CATL', google_news_rss: 'RSS(구)', web_search_discovered: '검색(제공자 미상)' }[via] || via;
     return `<span class="tag ${esc(cls)}">${esc(label)}</span>`;
   }
 
@@ -104,7 +106,7 @@
     const failed = byStatus.filter((r) => ['body_unavailable', 'body_too_short', 'processing_failed'].includes(r.processing_status)).reduce((s, r) => s + r.count, 0);
     const rejected = byStatus.filter((r) => r.processing_status === 'fact_check_rejected').reduce((s, r) => s + r.count, 0);
     const openai = byStatus.filter((r) => (r.discovered_via || '').includes('openai')).reduce((s, r) => s + r.count, 0);
-    const deepseek = byStatus.filter((r) => (r.discovered_via || '').includes('deepseek')).reduce((s, r) => s + r.count, 0);
+    const deepseek = byStatus.filter((r) => /deepseek|china_local/.test(r.discovered_via || '')).reduce((s, r) => s + r.count, 0);
     const cninfo = byStatus.filter((r) => r.discovered_via === 'cninfo').reduce((s, r) => s + r.count, 0);
     const chunkTotal = (overview.chunks_by_type || []).reduce((s, r) => s + r.count, 0);
     const chunkNoVec = (overview.chunks_by_type || []).reduce((s, r) => s + (r.count - r.with_vector), 0);
@@ -114,7 +116,7 @@
     $('#overview-cards').innerHTML = [
       card('수집 기사', total, `검증 통과 ${num(verified)}`),
       card('OpenAI 검색 발견', openai, '누적 · 두 곳 모두 찾은 건 포함'),
-      card('DeepSeek 검색 발견', deepseek, deepseek ? '' : '한 건도 없음 → 검색 실패 확인 필요', !deepseek),
+      card('중국 현지 검색 발견', deepseek, deepseek ? '누적 · 09-09까지 DeepSeek, 이후 china_local 레인' : '한 건도 없음 → 검색 실패 확인 필요', !deepseek),
       card('CNINFO 공시', cninfo),
       card('본문 처리 미시도', untried, '최근 3일 창 밖은 흘려보냄'),
       card('본문 처리 실패', failed, 'URL·PDF·길이 문제', failed > 0),
@@ -143,7 +145,7 @@
     const kv = (label, value) => value == null ? '' : `<div class="kv">${esc(label)}<b>${esc(typeof value === 'object' ? JSON.stringify(value) : value)}</b></div>`;
     if (run.stage === 'collect') {
       return `<div class="run-grid">${kv('원시 발견', Object.entries(p.raw || {}).map(([k, v]) => `${k.replace('web_search_', '')} ${v}`).join(' · ') || '—')}${kv('중복 제거 후', p.unique)}${kv('회사 매칭', p.matched)}${kv('매칭 안 됨', p.unmatched)}${kv('신규 저장', p.new_articles)}${kv('이미 있음', p.existing)}${kv('검색 실패', (p.failed || []).length)}</div>`
-        + (p.web_search?.length ? `<h3 class="sub">검색 호출별 결과</h3><div class="tbl-wrap"><table class="admin"><thead><tr><th>제공자</th><th>그룹</th><th>기사</th><th>실패 사유</th></tr></thead><tbody>${p.web_search.map((w) => `<tr><td>${viaTag(`web_search_${w.provider}`)}</td><td>${esc(w.group)}</td><td class="num">${w.articles}</td><td class="small" style="${w.error ? 'color:#9b1c1c' : ''}">${esc(w.error || '')}</td></tr>`).join('')}</tbody></table></div>` : '')
+        + (p.web_search?.length ? `<h3 class="sub">검색 호출별 결과</h3><div class="tbl-wrap"><table class="admin"><thead><tr><th>레인 · 엔진</th><th>그룹</th><th>기사</th><th>실패 사유</th></tr></thead><tbody>${p.web_search.map((w) => `<tr><td>${viaTag(`web_search_${w.provider}`)}${w.engine && w.engine !== w.provider ? ` <span class="small muted">${esc(w.engine)}</span>` : ''}</td><td>${esc(w.group)}</td><td class="num">${w.articles}</td><td class="small" style="${w.error ? 'color:#9b1c1c' : ''}">${esc(w.error || '')}</td></tr>`).join('')}</tbody></table></div>` : '')
         + (p.failed?.length ? `<div class="error">${p.failed.map((f) => `${esc(f.source)}: ${esc(f.message)}`).join('<br>')}</div>` : '')
         + (p.new_titles?.length ? `<div class="tbl-wrap"><table class="admin"><thead><tr><th>경로</th><th>매체</th><th>신규 기사 제목</th></tr></thead><tbody>${p.new_titles.map((t) => `<tr><td>${viaTag(t.via)}</td><td>${esc(t.source)}</td><td><a class="link" data-article="${esc(t.id)}">${esc(t.title)}</a></td></tr>`).join('')}</tbody></table></div>` : '')
         + (p.unmatched_sample?.length ? `<h3 class="sub">회사 매칭 안 된 후보(표본)</h3><div class="tbl-wrap"><table class="admin"><tbody>${p.unmatched_sample.map((t) => `<tr><td>${viaTag(t.via)}</td><td>${esc(t.source)}</td><td>${esc(t.title)}</td></tr>`).join('')}</tbody></table></div>` : '');

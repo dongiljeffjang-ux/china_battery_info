@@ -38,7 +38,7 @@ Daily 정책 검색·본문 처리, 첨부 과거 정책 35건(발표·시행 �
 
 - 셀사·양극재·음극재 주요 중국 기업과 공식적으로 확인된 그룹 계열사를 추적한다.
 - 추적 대상 선정 기준은 SNE Research다. 셀은 EV·ESS 배터리 사용량, 양극재는 LFP·NCM 화학계별 출하량, 음극재는 총 출하량 기준으로 밸류체인별 상위 5~10개사를 본다.
-- OpenAI와 DeepSeek가 각각 웹 검색한다. OpenAI는 폭넓은 주요 출처, DeepSeek는 중국어 현지 산업·지역·기업 출처를 우선한다.
+- 웹 검색은 두 레인이다. 글로벌 레인은 폭넓은 주요 출처, 중국 현지 레인은 중국어 현지 산업·지역·기업 출처를 우선한다. 원래 현지 레인은 DeepSeek이 맡았으나 2026-09-10 DeepSeek Responses API가 웹 검색 도구를 무시하게 되어 기본 엔진을 OpenAI로 옮겼다(`CHINA_LOCAL_SEARCH_ENGINE`). DeepSeek은 교차검증을 계속 맡는다.
 - 전체 후보에서 헤드라인으로 Top 10을 고른 뒤 원문을 읽고 OpenAI 1차 추출·DeepSeek 교차검증을 수행한다.
 - 첫 화면은 Daily 한국어 리포트, 근거 Top 10, 날짜 범위 확대/축소 Sankey, 밸류체인·회사별 뉴스 순서다.
 - 사람 최종 승인 단계는 없다. 자동 검증 통과 기사를 표시하고 좋아요/싫어요를 다음 Daily 선별 보조 신호로 쓴다.
@@ -49,7 +49,7 @@ Daily 정책 검색·본문 처리, 첨부 과거 정책 35건(발표·시행 �
 ## 3. 실제 파이프라인
 
 1. `api/ingest-rss.js`가 회사 마스터를 Supabase에 upsert한다. DB 컬럼(`id`, `name_ko`, `name_zh`, `name_en`, `type_tags`)만 보낸다.
-2. `lib/china-sources.js`가 네 경로를 병렬 수집한다. OpenAI 검색 3회, DeepSeek 검색 3회, CATL 뉴스룸, CNINFO 공시(22개사).
+2. `lib/china-sources.js`가 네 경로를 병렬 수집한다. 글로벌 레인 검색(OpenAI), 중국 현지 레인 검색(기본 OpenAI 엔진, `web_search_china_local`), CATL 뉴스룸, CNINFO 공시(22개사). 정책 검색은 엔진마다 1회.
 3. URL 중복을 제거하고 회사 별칭과 **그룹 계열사 별칭**으로 `article_company`를 연결한다.
 4. 헤드라인 신호로 최대 10건을 선택한다. **선별 대상은 `source_tier`가 `web_search_*`이거나 `CATL Newsroom`인 기사뿐이다.**
 5. `api/process-article.js`가 원문 HTML을 가져온다.
