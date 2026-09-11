@@ -507,7 +507,7 @@ function mapDashboardArticle(article){
     sector: 'all',
     company: relation?.company_id || '기타',
     valueChain: relation?.company?.type_tags?.[0] || companyById(relation?.company_id)?.value_chain || 'other',
-    date: article.published_at ? article.published_at.slice(0, 10).replaceAll('-', '.') : '날짜 미상',
+    date: article.published_at ? article.published_at.slice(0, 10).replace(/-/g, '.') : '날짜 미상',
     title: article.title_ko || article.title_original,
     fact: article.summary_ko || '한국어 팩트 요약 검수 대기',
     why: `출처: ${article.source_name || '출처 미상'}`,
@@ -571,7 +571,8 @@ function updateAsOf(payload){
   const reportDay = payload?.report?.report_date || String(payload?.report?.generated_at || '').slice(0, 10);
   if (/^\d{4}-\d{2}-\d{2}$/.test(reportDay)) dates.push(reportDay);
   if (!dates.length) return;
-  const latest = dates.sort().at(-1);
+  const sortedDates = dates.sort();
+  const latest = sortedDates[sortedDates.length - 1];
   el.textContent = `데이터 기준 ${latest.replace(/-/g, '.')} · 내부 검토용`;
 }
 async function loadDashboardFromApi(){
@@ -615,8 +616,9 @@ async function loadDashboardFromApi(){
     // 수집된 최신 데이터 날짜로 "데이터 기준"을 갱신한다.
     updateAsOf(payload);
     renderDailySummary(); renderTopNews(); renderHeadlineSankey(); renderCompanyNews();
-  } catch {
-    // 환경변수 미설정·DB 초기화 전에는 시드 화면을 유지한다.
+  } catch (error) {
+    console.error('dashboard load failed', error);
+    showLoadFailure('첫 화면 데이터를 표시하지 못했습니다. 새로 고침해 주세요.');
   }
 }
 let currentChain = 'cathode';
@@ -1750,8 +1752,8 @@ function renderTrajectory(timeline){
       ${bottom < 0 ? `<line class="traj-zero" x1="${G.padX}" y1="${zeroY.toFixed(1)}" x2="${G.width - G.padX}" y2="${zeroY.toFixed(1)}"/>` : ''}
       <line class="traj-axis-line" x1="${G.padX - 12}" y1="${G.axisY}" x2="${G.width - G.padX + 12}" y2="${G.axisY}"/>
       ${trajectoryQuarterly
-        ? `${segments.slice(1).map((segment, index) => `<path class="traj-line link" d="${path([segments[index].rows.at(-1), segment.rows[0]])}"/>`).join('')}${segments.filter(segment => segment.rows.length > 1).map(segment => `<path class="traj-line" d="${path(segment.rows)}"/>`).join('')}`
-        : `${tailPoints.length && annualPoints.length ? `<path class="traj-line link" d="${path([annualPoints.at(-1), ...tailPoints])}"/>` : ''}${annualPoints.length > 1 ? `<path class="traj-line" d="${path(annualPoints)}"/>` : ''}`}
+        ? `${segments.slice(1).map((segment, index) => `<path class="traj-line link" d="${path([segments[index].rows[segments[index].rows.length - 1], segment.rows[0]])}"/>`).join('')}${segments.filter(segment => segment.rows.length > 1).map(segment => `<path class="traj-line" d="${path(segment.rows)}"/>`).join('')}`
+        : `${tailPoints.length && annualPoints.length ? `<path class="traj-line link" d="${path([annualPoints[annualPoints.length - 1], ...tailPoints])}"/>` : ''}${annualPoints.length > 1 ? `<path class="traj-line" d="${path(annualPoints)}"/>` : ''}`}
       ${rows.map((row, index) => point(row, !trajectoryQuarterly || !row.at.interim || index === rows.length - 1)).join('')}
       ${laneLabels}
       ${marketFlags.map(item => flagMark(item, 'market', marketBase)).join('')}
