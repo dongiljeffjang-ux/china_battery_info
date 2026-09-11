@@ -14,6 +14,7 @@ import { pipelineManifest } from "../lib/pipeline-manifest.js";
 import { buildDataAudit } from "../lib/data-audit.js";
 import { COMPANIES, TRACKED_COMPANY_IDS } from "../lib/china-sources.js";
 import { digestReport } from "../lib/event-backfill.js";
+import { backfillSignalSubjects } from "../lib/signal-subjects.js";
 import {
   ISSUE_TAGS, VERDICTS, buildEvaluationRow, buildRetrievalSessions, questionKey, summarizeEvaluations,
 } from "../lib/rag-evaluation.js";
@@ -513,6 +514,14 @@ async function benchmarkRun() {
   return { run_id: run.id, metrics };
 }
 
+// 기존 검증 기사의 확대·축소 신호마다 주체 회사를 모델이 다시 판정한다(2026-09-11). 저장된 제목·요약·신호만
+// 쓰고 본문은 다시 받지 않는다. 신호 문장은 그대로 두고 주체 필드만 채운다. 브라우저가 남은 건수가 0이 될 때까지
+// 이 요청을 반복해 부른다(한 번에 40건, 함수 한도 안에서).
+async function signalSubjectsBackfill(body) {
+  const limit = Math.min(80, Math.max(1, Number(body?.limit) || 40));
+  return backfillSignalSubjects({ limit, deadline: Date.now() + 240000 });
+}
+
 export default async function handler(request, response) {
   if (!requireAccess(request, response)) return;
   if (!hasDatabaseConfig()) return response.status(503).json({ status: "not_configured" });
@@ -520,7 +529,7 @@ export default async function handler(request, response) {
 
   // 쓰기는 평가 저장·취소 두 가지뿐이다. 나머지 화면은 GET 전용으로 남긴다.
   if (request.method === "POST") {
-    const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave, "benchmark-case-save": benchmarkCaseSave, "benchmark-run": benchmarkRun };
+    const writers = { "eval-save": evalSave, "eval-delete": evalDelete, "company-tracking-save": companyTrackingSave, "benchmark-case-save": benchmarkCaseSave, "benchmark-run": benchmarkRun, "signal-subjects-backfill": signalSubjectsBackfill };
     const write = writers[view];
     if (!write) return response.status(400).json({ status: "unknown_view", view });
     const body = typeof request.body === "string" ? JSON.parse(request.body || "{}") : (request.body || {});

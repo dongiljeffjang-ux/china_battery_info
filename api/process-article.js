@@ -10,6 +10,7 @@ import { sameFact } from "../lib/curation.js";
 import { extractPdfText } from "../lib/report-reader.js";
 import { checkRobots, waitForHostSlot, CRAWLER_UA } from "../lib/robots.js";
 import { sourcePublishedDay, sourceDayWithinTolerance } from "../lib/source-published-at.js";
+import { SIGNAL_SUBJECT_PROPERTIES, SIGNAL_SUBJECT_RULE, attachSubjects, linkedCompanyLines } from "../lib/signal-subjects.js";
 
 const MAX_BODY_CHARS = 30000;
 export const ARTICLE_FACT_CHECK_PROMPT = "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 분석의 각 사실이 본문에 직접 있는지 대조한다. 본문에 발행 연도나 날짜가 적혀 있으면 입력에 제시된 기사 발행일과 반드시 대조한다. 월·일만 같다고 현재 연도의 기사로 판단하지 않으며, 본문이 과거 연도를 명시하면 그 과거 시점을 사건 시점에 반영한다. verdict는 세 단계다. 핵심 사실이 모두 본문과 일치하면 pass, 일부 추정·평가·인과관계·본문에 없는 수치·주체가 있지만 그것을 제거하고도 의미 있는 사실이 하나 이상 남으면 corrected_pass, 기사와 회사가 무관하거나 본문으로 확인 가능한 의미 있는 사실이 하나도 없으면 reject다. 일부 오류만 있다는 이유로 기사 전체를 reject하지 않는다. pass와 corrected_pass 모두 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·이벤트 제목·이벤트 사실·300자 이내 원문 발췌 및 번역을 다시 작성한다. 이벤트 사실에 쓴 모든 수치와 주체는 한 개의 original_excerpt로 직접 뒷받침되어야 한다. 확인 가능한 기사 사실은 있지만 회사 시계열에 넣을 단일 이벤트가 없으면 timeline_eligibility를 exclude로 둔다. summary_ko는 서술형 문단이 아니라 개조식으로 쓴다: 본문에서 확인되는 사실 하나당 '- '로 시작하는 한 줄을 만들고, 각 줄은 명사형으로 끝내며 회사명과 핵심 수치를 앞에 둔다. 접속사·수식어 없이 사실만 나열하고 2~4줄로 쓴다. title_ko는 기사 자체의 주제를 따른다. 여러 회사를 함께 다루거나 정책·산업 전반을 다루는 기사를 특정 회사 관점으로 좁히지 않으며, 초안이 그렇게 좁혀 놓았으면 기사 주제에 맞게 고친다. 기사에 회사가 여럿 나오면 summary_ko에 회사마다 한 줄씩 남긴다. 제공된 서비스 표준 회사명과 본문 주체가 일치하면 한국어 제목·요약에서 반드시 그 표준명을 유지한다. 키워드에는 회사명을 넣지 않는다. headline_signals도 본문에서 확인되는 사실만 남기고 다시 작성한다. 회사명·기관명·부처명·일반 산업명은 신호가 아니므로 넣지 않으며, 본문 근거가 약한 항목은 direction을 neutral로 낮춘다. reason_ko에는 pass면 통과 근거를, corrected_pass면 제거하거나 고친 내용을, reject면 남길 수 있는 사실이 없는 이유를 간결하게 쓴다.";
@@ -65,11 +66,12 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
         type: "array", minItems: 1, maxItems: 3,
         items: {
           type: "object", additionalProperties: false,
-          required: ["keyword_ko", "direction", "reason_ko"],
+          required: ["keyword_ko", "direction", "reason_ko", ...Object.keys(SIGNAL_SUBJECT_PROPERTIES)],
           properties: {
             keyword_ko: { type: "string" },
             direction: { type: "string", enum: ["expansion", "contraction", "neutral"] },
-            reason_ko: { type: "string" }
+            reason_ko: { type: "string" },
+            ...SIGNAL_SUBJECT_PROPERTIES
           }
         }
       },
@@ -95,7 +97,7 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
   const input = `${companyContext}\n원문 제목: ${article.title_original}\n발행일: ${article.published_at || "미상"}\n매체: ${article.source_name}${disclosureNote}\n본문:\n${bodyText}`;
   const { data } = await createJsonResponse({
     name: "battery_article_event", schema,
-    instructions: ARTICLE_DATE_GUIDE + ARTICLE_ANALYSIS_PROMPT_BODY + LAYER_PROMPT_GUIDE,
+    instructions: ARTICLE_DATE_GUIDE + ARTICLE_ANALYSIS_PROMPT_BODY + LAYER_PROMPT_GUIDE + " " + SIGNAL_SUBJECT_RULE,
     input, provider
   });
   return data;
@@ -111,11 +113,12 @@ async function factCheckArticle(article, bodyText, analysis, provider, companyCo
         type: "array", minItems: 1, maxItems: 3,
         items: {
           type: "object", additionalProperties: false,
-          required: ["keyword_ko", "direction", "reason_ko"],
+          required: ["keyword_ko", "direction", "reason_ko", ...Object.keys(SIGNAL_SUBJECT_PROPERTIES)],
           properties: {
             keyword_ko: { type: "string" },
             direction: { type: "string", enum: ["expansion", "contraction", "neutral"] },
-            reason_ko: { type: "string" }
+            reason_ko: { type: "string" },
+            ...SIGNAL_SUBJECT_PROPERTIES
           }
         }
       },
@@ -126,7 +129,7 @@ async function factCheckArticle(article, bodyText, analysis, provider, companyCo
   };
   const { data } = await createJsonResponse({
     name: "battery_article_fact_check", schema,
-    instructions: ARTICLE_FACT_CHECK_PROMPT,
+    instructions: ARTICLE_FACT_CHECK_PROMPT + " " + SIGNAL_SUBJECT_RULE,
     input: `${companyContext}\n기사 제목: ${article.title_original}\n본문:\n${bodyText}\n\n1차 분석 결과:\n${JSON.stringify(analysis)}`,
     provider
   });
@@ -244,8 +247,14 @@ export async function processPendingArticle(articleId, companyId) {
     : company ? `서비스 표준 회사명: ${company.name_ko}${group ? `
 그룹: ${group.name_ko}
 그룹 포함 검색 법인: ${group.members_ko.join(", ")}` : ""}` : "";
-  const result = await analyzeArticle(article, bodyText, primaryProvider, companyContext);
-  const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider, companyContext);
+  // 신호의 주체를 고르게 하려고 이 기사에 연결된 회사 전체를 함께 준다(2026-09-11).
+  const linkRows = await supabaseRest(`article_company?select=company_id&article_id=eq.${encodeURIComponent(articleId)}`).catch(() => []);
+  const linkedIds = [...new Set([companyId, ...(linkRows || []).map((row) => row.company_id)].filter((id) => id && id !== POLICY_COMPANY_ID))];
+  const fullContext = linkedIds.length ? `${companyContext}
+[연결 회사]
+${linkedCompanyLines(linkedIds)}` : companyContext;
+  const result = await analyzeArticle(article, bodyText, primaryProvider, fullContext);
+  const factCheck = await factCheckArticle(article, bodyText, result, verifierProvider, fullContext);
   console.info("[ARTICLE_CROSS_CHECK]", JSON.stringify({ articleId, primaryProvider, verifierProvider, verdict: factCheck.verdict }));
   const verifiedResult = acceptedFactCheck(result, factCheck);
   if (!verifiedResult) {
@@ -257,7 +266,7 @@ export async function processPendingArticle(articleId, companyId) {
   }
   await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
     method: "PATCH",
-    body: { title_ko: verifiedResult.title_ko, summary_ko: verifiedResult.summary_ko, keywords_ko: verifiedResult.keywords_ko, headline_signals: verifiedResult.headline_signals || [], verification_status: "verified", source_tier: `${primaryProvider}_${verifierProvider}_${factCheck.verdict === "corrected_pass" ? "corrected" : "fact_checked"}`, processing_status: "ok", processing_note: factCheck.verdict === "corrected_pass" ? String(factCheck.reason_ko || "").slice(0, 500) || null : null, processed_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    body: { title_ko: verifiedResult.title_ko, summary_ko: verifiedResult.summary_ko, keywords_ko: verifiedResult.keywords_ko, headline_signals: attachSubjects(verifiedResult.headline_signals || [], linkedIds), verification_status: "verified", source_tier: `${primaryProvider}_${verifierProvider}_${factCheck.verdict === "corrected_pass" ? "corrected" : "fact_checked"}`, processing_status: "ok", processing_note: factCheck.verdict === "corrected_pass" ? String(factCheck.reason_ko || "").slice(0, 500) || null : null, processed_at: new Date().toISOString(), updated_at: new Date().toISOString() }
   });
   let embedding = { status: "skipped", chunks: 0 };
   try {

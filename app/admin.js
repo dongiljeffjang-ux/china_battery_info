@@ -571,6 +571,28 @@
   document.querySelectorAll('.admin-nav button').forEach((b) => b.addEventListener('click', () => show(b.dataset.panel)));
   $('#admin-refresh').addEventListener('click', () => show(current, true));
   const reload = (id, panel) => $(id).addEventListener('click', async () => { showError(null); try { await loaders[panel](); } catch (error) { showError(error); } });
+  // 신호 주체 재판정(2026-09-11). 서버가 한 번에 40건씩 판정하므로 남은 건수가 0이 될 때까지 반복해 부른다.
+  $('#subject-backfill')?.addEventListener('click', async () => {
+    if (!window.confirm('검증 기사의 확대·축소 신호마다 주체 회사를 모델이 다시 판정합니다. 유료 LLM 호출이 발생합니다(기사 8건당 1회). 진행할까요?')) return;
+    const button = $('#subject-backfill'); const status = $('#subject-backfill-status');
+    button.disabled = true;
+    let total = 0, failed = 0, stalled = 0, remaining = null;
+    try {
+      for (let hop = 1; hop <= 15; hop += 1) {
+        status.textContent = `판정 중… (${hop}회차, 누적 ${total}건)`;
+        const result = await postApi('signal-subjects-backfill', { limit: 40 });
+        total += result.updated || 0; failed += result.failed || 0; remaining = result.remaining ?? null;
+        if (!remaining) break;
+        stalled = result.updated ? 0 : stalled + 1;
+        if (stalled >= 2) break;
+      }
+      status.textContent = `완료 · 이번에 판정 ${total}건${failed ? ` · 실패 ${failed}건(다시 누르면 재시도)` : ''}${remaining ? ` · 남음 ${remaining}건` : ''}`;
+    } catch (error) {
+      status.textContent = `중단: ${error.message}`;
+    } finally {
+      button.disabled = false;
+    }
+  });
   reload('#audit-load', 'audit'); reload('#runs-load', 'runs'); reload('#art-load', 'articles'); reload('#ev-load', 'events'); reload('#ch-load', 'chunks'); reload('#se-load', 'search');
   $('#probe-load').addEventListener('click', () => runEval(loadProbeDigest));
 

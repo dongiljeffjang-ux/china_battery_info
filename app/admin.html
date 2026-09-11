@@ -172,7 +172,9 @@
             <label>검색<input id="audit-q" type="search" placeholder="제목·매체·사유" /></label>
             <button id="audit-load" class="secondary-button" type="button">다시 검사</button>
             <button id="audit-export" class="secondary-button" type="button">현재 목록 CSV</button>
+            <button id="subject-backfill" class="secondary-button" type="button" title="검증 기사의 확대·축소 신호마다 주체 회사를 모델이 다시 판정합니다. Sankey가 기사에 연결된 모든 회사에 같은 신호를 붙이던 문제를 고칩니다. 유료 LLM 호출이 발생합니다.">신호 주체 재판정</button>
             <span id="audit-count" class="muted small"></span>
+            <span id="subject-backfill-status" class="muted small"></span>
           </div>
           <div class="tbl-wrap"><table class="admin" id="audit-table"></table></div>
         </section>
@@ -317,6 +319,6 @@
       <aside id="drawer" class="drawer" hidden aria-label="기사 상세"></aside>
     </div>
     <script src="./access-gate.js?v=20260901a"></script>
-    <script src="./admin.js?v=20260910-verified-only"></script>
+    <script src="./admin.js?v=20260911-signal-subjects"></script>
   </body>
 </html>
