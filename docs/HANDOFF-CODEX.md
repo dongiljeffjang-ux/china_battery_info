@@ -11,6 +11,7 @@
 - `reasoning.effort=low` 배포 후 네 번째 운영 샘플은 추론 토큰 404개를 사용했지만 검색 호출은 0회였다. 원문 추론에 모델이 웹 검색 도구 자체가 없다고 적고 빈 배열을 반환했다. 일반 `web_search`가 서버에서 모델에 전달되지 않는 경로를 배제하려고 공식 문서가 함께 지원하는 버전 고정형 `web_search_2025_08_26`으로 도구와 `tool_choice`를 맞췄다.
 - 버전 고정형 배포 후 다섯 번째 CATL 운영 샘플도 `reasoning_tokens=567`, `output_types=[reasoning,message]`, `search_calls=0`으로 실패했다. 즉 이 운영 계정의 `deepseek-v4-flash` Responses API에서는 공식 문서의 일반형·버전형 모두 서버 검색 도구가 모델에 전달되지 않는다. 현재 코드는 DeepSeek을 계속 검색 제공자로 호출하되 검색 호출이 없는 응답과 생성 URL을 폐기하고, 병렬 OpenAI 검색·CATL 뉴스룸·CNINFO 수집은 그대로 수행한다. 공급자 측 지원이 확인되기 전까지 DeepSeek 응답을 검색 결과로 간주해 안전장치를 완화하지 않는다.
 - 사용자 요청에 따라 DeepSeek 웹 검색 호출만 기본 `deepseek-v4.1-flash`로 분리했다. 일반 DeepSeek 구조화 작업은 기존 `DEEPSEEK_MODEL`(기본 V4 Flash)을 유지하며, 검색 모델은 `DEEPSEEK_SEARCH_MODEL`로 별도 재정의할 수 있다. 2026-09-12 현재 검색 가능한 공식 문서 색인에는 아직 이 새 모델 ID가 보이지 않으므로 운영 CATL 단일 샘플의 HTTP 상태와 반환 모델명으로 실제 가용성을 확인한다.
+- 배포 후 운영 CATL 샘플에서 `deepseek-v4.1-flash`는 즉시 HTTP 400으로 거부됐다. DeepSeek 공식 문서는 Flash 업데이트 뒤에도 API 호출명 `deepseek-v4-flash`를 그대로 쓰라고 안내하므로 기본 검색 모델을 이 공개 별칭으로 복구했다. `DEEPSEEK_SEARCH_MODEL` 분리는 남겨 향후 새 ID가 실제 모델 목록에 나타나면 코드 배포 없이 바꿀 수 있다.
 
 ## 2026-09-11 Codex — 기업 시계열 보고서 3종 통합
 

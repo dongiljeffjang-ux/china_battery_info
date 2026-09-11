@@ -27,7 +27,7 @@ await assert.rejects(createJsonResponse(options), /SEARCH_NOT_EXECUTED/);
 const capturesBeforeSuccess = logs.filter(row => row.payload.kind === 'search_response_raw').length;
 output = [{ type: 'web_search_call', status: 'completed' }, message];
 const result = await createJsonResponse(options);
-assert.equal(providerRequests.at(-1).model, 'deepseek-v4.1-flash', 'DeepSeek web search must use the dedicated V4.1 Flash model');
+assert.equal(providerRequests.at(-1).model, 'deepseek-v4-flash', 'DeepSeek web search must use the current public Flash API alias');
 assert.deepEqual(providerRequests.at(-1).tools, [{ type: 'web_search_2025_08_26' }], 'DeepSeek discovery must send the versioned web search tool');
 assert.deepEqual(providerRequests.at(-1).tool_choice, { type: 'web_search_2025_08_26' }, 'DeepSeek discovery must force the versioned web search tool');
 assert.equal(providerRequests.at(-1).reasoning?.effort, 'low', 'DeepSeek web search must keep reasoning enabled so the model can execute tools');
