@@ -83,3 +83,19 @@ assert.match(app, /function policyLinksHtml\(r, payload\)/, "비교 리포트 �
 assert.match(app, /policyCell\(policies, period, timeline\.policyLinks\)/, "기업 시간축 정책 줄에 연결 표시를 단다");
 
 console.log("policy links checks passed");
+
+// 보고서 정책 창: 생성 시점 ±3년(2026-09-11 사용자 지정). 발표나 일정 중 하나라도 창 안이면 남긴다.
+{
+  const { policiesInWindow } = await import("../lib/policy-links.js");
+  const now = new Date("2026-09-11T00:00:00Z");
+  const rows = [
+    { id: "old", occurred_at: "2020-04-23" },
+    { id: "edge", occurred_at: "2023-09-11" },
+    { id: "late", occurred_at: "2022-01-01" }, { id: "late-schedule-2027-01-01", occurred_at: "2027-01-01" },
+    { id: "future", occurred_at: "2030-01-01" },
+  ];
+  const kept = policiesInWindow(rows, { now }).map(row => row.id);
+  assert.deepEqual(kept, ["edge", "late", "late-schedule-2027-01-01"], "창 밖 정책은 빼고, 일정이 창 안이면 발표 행도 남긴다");
+  assert.ok(policiesInWindow(historicalPolicies(), { now }).length < historicalPolicies().length, "첨부 연혁의 오래된 정책은 빠진다");
+}
+console.log("policy window checks passed");

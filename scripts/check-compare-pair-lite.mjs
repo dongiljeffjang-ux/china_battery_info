@@ -36,7 +36,8 @@ assert.match(lib, /import \{ metricTable, metricTableCells, metricLabel, selectT
 assert.match(lib, /function serializeMetrics/);
 assert.match(lib, /metricsA = \[\], metricsB = \[\]/);
 assert.match(lib, /정량 시계열 표에 적힌 사실만 근거/);
-assert.match(api, /includePolicy \? loadPolicyEvents\(\) : Promise\.resolve\(\[\]\)/, "사용자가 선택한 경우에만 비교 리포트가 정책 근거를 읽어야 한다");
+assert.match(api, /includePolicy \? loadReportPolicies\(\) : Promise\.resolve\(\[\]\)/, "사용자가 선택한 경우에만 비교 리포트가 정책 근거를 읽어야 한다");
+assert.match(api, /return policiesInWindow\(await loadPolicyEvents\(\)\);/, "보고서 정책은 생성 시점 ±3년 안의 것만 쓴다(2026-09-11 사용자 지정)");
 assert.match(api, /eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, policyLinksA: linksA\.links, policyLinksB: linksB\.links, policyStatus, pairContext: pairContextValue/, "비교 리포트에 정량 시계열을 넘겨야 한다");
 assert.match(lib, /selectTimelineEvidence\(events, \{ limit: 18, perBucket: 1 \}\)/, "비교 리포트는 회사별 대표 이벤트 18건만 모델에 보낸다");
 assert.match(lib, /compareLinkedPolicyTable\(policyLinksA, policyLinksB, policies, nameA, nameB\)/, "비교 리포트는 회사별로 연결 판정된 정책만 넣는다");

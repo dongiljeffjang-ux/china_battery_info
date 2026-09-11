@@ -475,16 +475,20 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 /* 리포트는 본문보다 제목의 위계를 확실히 크게 두고, 모델이 Markdown으로 표시한 핵심어는
    파란색으로만 절제해 강조한다. 화면·PDF 모두 같은 정보 순서로 훑히게 하는 규칙이다. */
 .report-panel .report-doc,.company-timeline-report-panel .report-doc{font-size:16px;line-height:1.8;color:var(--ink)}
-.report-panel .report-doc h1,.company-timeline-report-panel .report-doc h1{margin:5px 0 8px;font-size:32px;line-height:1.28;color:var(--navy);letter-spacing:-.7px}
-.report-panel .report-doc h2,.company-timeline-report-panel .timeline-report-markdown h2{margin:32px 0 12px;padding-top:14px;border-top:2px solid var(--navy);font-size:23px;line-height:1.35;color:var(--navy)}
-.company-timeline-report-panel .timeline-report-markdown h3,.report-panel .report-doc h3{margin:24px 0 8px;font-size:19px;line-height:1.4;color:var(--market)}
+.report-panel .report-doc h1,.company-timeline-report-panel .report-doc h1{margin:5px 0 8px;font-size:26px;line-height:1.28;color:var(--navy);letter-spacing:-.7px}
+.report-panel .report-doc h2,.company-timeline-report-panel .timeline-report-markdown h2{margin:28px 0 12px;padding-top:12px;border-top:2px solid var(--navy);font-size:20px;line-height:1.35;color:var(--navy)}
+.company-timeline-report-panel .timeline-report-markdown h3,.report-panel .report-doc h3{margin:22px 0 8px;font-size:17px;line-height:1.4;color:var(--market)}
 .company-timeline-report-panel .timeline-report-markdown h4,.report-panel .report-doc h4{font-size:16px;color:var(--ink)}
-.report-panel .report-doc .headline{font-size:18px;line-height:1.65;border-left-width:4px}
+.report-panel .report-doc .headline{font-size:16px;line-height:1.65;border-left-width:4px}
 .report-panel .report-doc .lead{font-size:16px;line-height:1.7}
 .report-panel .report-doc .txt,.company-timeline-report-panel .timeline-report-markdown p{font-size:16px}
 .report-panel .report-doc strong,.company-timeline-report-panel .timeline-report-markdown strong{color:var(--blue);font-weight:800;background:#edf5ff;padding:0 2px;border-radius:2px}
 .report-panel .report-doc .basis{font-size:13px;line-height:1.65}
-@media(max-width:760px){.report-panel .report-doc,.company-timeline-report-panel .report-doc{font-size:15px}.report-panel .report-doc h1,.company-timeline-report-panel .report-doc h1{font-size:26px}.report-panel .report-doc h2,.company-timeline-report-panel .timeline-report-markdown h2{font-size:20px}.report-panel .report-doc .txt,.company-timeline-report-panel .timeline-report-markdown p{font-size:15px}}
+/* 핵심 요약 상자: 인쇄용 크기(9·11px)가 화면에 그대로 와서 본문(16px)·제목과 차이가 컸다(2026-09-11). 본문과 같은 크기로 맞춘다. */
+.report-panel .report-doc .summary-box{padding:14px 18px;margin:0 0 18px}
+.report-panel .report-doc .summary-title{font-size:13px;margin-bottom:6px}
+.report-panel .report-doc .summary-box li{font-size:16px;font-weight:600;line-height:1.7;margin-bottom:6px}
+@media(max-width:760px){.report-panel .report-doc,.company-timeline-report-panel .report-doc{font-size:15px}.report-panel .report-doc h1,.company-timeline-report-panel .report-doc h1{font-size:22px}.report-panel .report-doc h2,.company-timeline-report-panel .timeline-report-markdown h2{font-size:18px}.report-panel .report-doc .txt,.company-timeline-report-panel .timeline-report-markdown p{font-size:15px}}
 /* Sankey 회사 선택(2026-09-11). 기간·헤드라인 토글 옆의 접이식 목록. */
 .sankey-company-filter{position:relative}
 .sankey-company-filter summary{cursor:pointer;list-style:none;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:12px;color:var(--ink);white-space:nowrap}

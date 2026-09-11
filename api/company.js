@@ -9,7 +9,7 @@ import { buildTimelineReport } from "../lib/timeline-report.js";
 import { filterTimelineEvents } from "../lib/timeline-visibility.js";
 import { retryOnceOnTimeout } from "../lib/timeout-retry.js";
 import { historicalPolicies } from "../lib/policy-context.js";
-import { ensurePolicyLinks, loadPolicyLinkRow } from "../lib/policy-links.js";
+import { ensurePolicyLinks, loadPolicyLinkRow, policiesInWindow } from "../lib/policy-links.js";
 import { summarizeEventDisplayBatch } from "../lib/event-display-summary.js";
 
 // 비교 리포트는 LLM 두 번(작성 + 웹 검증), 함의 종합은 긴 입력 한 번을 부른다. `api/*.js` Node 함수는
@@ -58,6 +58,10 @@ function sortedCatalog() {
 }
 
 const EVENT_SELECT = "id,occurred_at,occurred_precision,occurred_basis,title_ko,fact_ko,display_summary_ko,trajectory_track,layer_key,region_scope,source_url,source_name,original_excerpt,original_excerpt_ko,timeline_eligibility,entity_names,evidence_kind,article(canonical_url,source_name,source_tier,published_at)";
+// 보고서용 정책: 생성 시점 ±3년 안의 것만(사용자 지정 2026-09-11). 기업 화면 시간축은 전체 연혁을 그대로 쓴다.
+async function loadReportPolicies() {
+  return policiesInWindow(await loadPolicyEvents());
+}
 async function loadPolicyEvents() {
   const live = await supabaseRest(`event?select=${EVENT_SELECT}&company_id=eq.${POLICY_COMPANY_ID}&timeline_eligibility=neq.exclude&order=occurred_at.asc`);
   return [...historicalPolicies(), ...(live || [])].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at));
@@ -194,7 +198,7 @@ async function runTimelineReport(request, response) {
     // 함께 준다. 거래소 표준 손익(연간·당해 누적)과 보고서 원문에서 뽑은 물량(출하·장착·생산능력).
     // 실패해도 리포트는 사건만으로 낸다 — 숫자가 빠진 채 나오는 쪽이 아예 안 나오는 것보다 낫다.
     const includePolicy = request.body?.includePolicy === true;
-    const [metrics, alternatives, policies] = await Promise.all([loadReportMetrics(companyId), loadAlternatives(companyId), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
+    const [metrics, alternatives, policies] = await Promise.all([loadReportMetrics(companyId), loadAlternatives(companyId), includePolicy ? loadReportPolicies() : Promise.resolve([])]);
     // 연결 판정은 재시도 바깥에서 한 번만 한다. 보고서 호출이 재시도돼도 판정을 다시 부르지 않는다.
     const policyLinks = includePolicy ? await loadCompanyPolicyLinks(company, policies) : { links: [], status: "none" };
     // 리포트 모델은 간헐적으로 첫 응답이 지연될 수 있다. 같은 입력을 즉시 사용자 실패로
@@ -230,7 +234,7 @@ async function runCompareReport(request, response) {
     // 두 회사의 정량 시계열도 같은 기간·단위 기준으로 넣어, 사건 나열만으로 비교하지 않는다.
     // 숫자 조회가 한쪽에서 실패해도 해당 회사의 이벤트 근거로 리포트는 계속 만든다.
     const includePolicy = request.body?.includePolicy === true;
-    const [metricsA, metricsB, alternativesA, alternativesB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), loadAlternatives(a.id), loadAlternatives(b.id), includePolicy ? loadPolicyEvents() : Promise.resolve([])]);
+    const [metricsA, metricsB, alternativesA, alternativesB, policies] = await Promise.all([loadReportMetrics(a.id), loadReportMetrics(b.id), loadAlternatives(a.id), loadAlternatives(b.id), includePolicy ? loadReportPolicies() : Promise.resolve([])]);
     const [linksA, linksB] = includePolicy
       ? await Promise.all([loadCompanyPolicyLinks(a, policies), loadCompanyPolicyLinks(b, policies)])
       : [{ links: [], ok: true }, { links: [], ok: true }];
