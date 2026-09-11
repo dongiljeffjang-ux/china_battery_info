@@ -47,10 +47,10 @@ const body = {
   instructions: "중국 이차전지 산업 뉴스 리서처다. 웹 검색을 이용한다. 검색 결과에 실제로 제시된 원문 기사 URL만 반환한다. URL·제목·매체·날짜를 추정하거나 만들어내지 않는다.",
   input: "최근 3일 사이 宁德时代(CATL)·容百科技(Ronbay)·贝特瑞(BTR)의 증설·수주·기술·재무 관련 중국어 기사 후보를 최대 6건 찾아 제목, 원문 URL, 매체명, 발행일, 1~2문장 요약을 반환하세요.",
   text: { format: { type: "json_schema", name: "probe_candidates", strict: true, schema } },
-  tools: [{ type: "web_search" }],
+  tools: [{ type: config.provider === "deepseek" ? "web_search_2025_08_26" : "web_search" }],
 };
 if (config.provider === "openai") { body.store = false; body.tool_choice = { type: "web_search" }; body.include = ["web_search_call.action.sources"]; }
-else { body.reasoning = { effort: "low" }; body.tool_choice = { type: "web_search" }; delete body.text; }
+else { body.reasoning = { effort: "low" }; body.tool_choice = { type: "web_search_2025_08_26" }; delete body.text; }
 
 const started = Date.now();
 const upstream = await fetch(config.url, { method: "POST", headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
