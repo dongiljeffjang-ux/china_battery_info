@@ -28,6 +28,7 @@ const capturesBeforeSuccess = logs.filter(row => row.payload.kind === 'search_re
 output = [{ type: 'web_search_call', status: 'completed' }, message];
 const result = await createJsonResponse(options);
 assert.deepEqual(providerRequests.at(-1).tool_choice, { type: 'web_search' }, 'DeepSeek discovery must force the web search tool');
+assert.equal(providerRequests.at(-1).reasoning?.effort, 'low', 'DeepSeek web search must keep reasoning enabled so the model can execute tools');
 assert.equal(providerRequests.at(-1).text, undefined, 'DeepSeek web search must not combine required tools with strict JSON schema');
 assert.equal(result.telemetry.search_calls, 1);
 assert.equal(logs.at(-1).status, 'ok');
