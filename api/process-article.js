@@ -9,9 +9,10 @@ import { LAYER_ENUM, LAYER_PROMPT_GUIDE, normalizeLayerKey } from "../lib/timeli
 import { sameFact } from "../lib/curation.js";
 import { extractPdfText } from "../lib/report-reader.js";
 import { checkRobots, waitForHostSlot, CRAWLER_UA } from "../lib/robots.js";
+import { sourcePublishedDay, sourceDayWithinTolerance } from "../lib/source-published-at.js";
 
 const MAX_BODY_CHARS = 30000;
-export const ARTICLE_FACT_CHECK_PROMPT = "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 분석의 각 사실이 본문에 직접 있는지 대조한다. verdict는 세 단계다. 핵심 사실이 모두 본문과 일치하면 pass, 일부 추정·평가·인과관계·본문에 없는 수치·주체가 있지만 그것을 제거하고도 의미 있는 사실이 하나 이상 남으면 corrected_pass, 기사와 회사가 무관하거나 본문으로 확인 가능한 의미 있는 사실이 하나도 없으면 reject다. 일부 오류만 있다는 이유로 기사 전체를 reject하지 않는다. pass와 corrected_pass 모두 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·이벤트 제목·이벤트 사실·300자 이내 원문 발췌 및 번역을 다시 작성한다. 이벤트 사실에 쓴 모든 수치와 주체는 한 개의 original_excerpt로 직접 뒷받침되어야 한다. 확인 가능한 기사 사실은 있지만 회사 시계열에 넣을 단일 이벤트가 없으면 timeline_eligibility를 exclude로 둔다. summary_ko는 서술형 문단이 아니라 개조식으로 쓴다: 본문에서 확인되는 사실 하나당 '- '로 시작하는 한 줄을 만들고, 각 줄은 명사형으로 끝내며 회사명과 핵심 수치를 앞에 둔다. 접속사·수식어 없이 사실만 나열하고 2~4줄로 쓴다. title_ko는 기사 자체의 주제를 따른다. 여러 회사를 함께 다루거나 정책·산업 전반을 다루는 기사를 특정 회사 관점으로 좁히지 않으며, 초안이 그렇게 좁혀 놓았으면 기사 주제에 맞게 고친다. 기사에 회사가 여럿 나오면 summary_ko에 회사마다 한 줄씩 남긴다. 제공된 서비스 표준 회사명과 본문 주체가 일치하면 한국어 제목·요약에서 반드시 그 표준명을 유지한다. 키워드에는 회사명을 넣지 않는다. headline_signals도 본문에서 확인되는 사실만 남기고 다시 작성한다. 회사명·기관명·부처명·일반 산업명은 신호가 아니므로 넣지 않으며, 본문 근거가 약한 항목은 direction을 neutral로 낮춘다. reason_ko에는 pass면 통과 근거를, corrected_pass면 제거하거나 고친 내용을, reject면 남길 수 있는 사실이 없는 이유를 간결하게 쓴다.";
+export const ARTICLE_FACT_CHECK_PROMPT = "당신은 독립적인 사실 검증자다. 기사 본문만 증거로 사용한다. 제시된 1차 분석의 각 사실이 본문에 직접 있는지 대조한다. 본문에 발행 연도나 날짜가 적혀 있으면 입력에 제시된 기사 발행일과 반드시 대조한다. 월·일만 같다고 현재 연도의 기사로 판단하지 않으며, 본문이 과거 연도를 명시하면 그 과거 시점을 사건 시점에 반영한다. verdict는 세 단계다. 핵심 사실이 모두 본문과 일치하면 pass, 일부 추정·평가·인과관계·본문에 없는 수치·주체가 있지만 그것을 제거하고도 의미 있는 사실이 하나 이상 남으면 corrected_pass, 기사와 회사가 무관하거나 본문으로 확인 가능한 의미 있는 사실이 하나도 없으면 reject다. 일부 오류만 있다는 이유로 기사 전체를 reject하지 않는다. pass와 corrected_pass 모두 본문에서 확인되는 사실만 남긴 더 보수적인 한국어 제목·요약·키워드·이벤트 제목·이벤트 사실·300자 이내 원문 발췌 및 번역을 다시 작성한다. 이벤트 사실에 쓴 모든 수치와 주체는 한 개의 original_excerpt로 직접 뒷받침되어야 한다. 확인 가능한 기사 사실은 있지만 회사 시계열에 넣을 단일 이벤트가 없으면 timeline_eligibility를 exclude로 둔다. summary_ko는 서술형 문단이 아니라 개조식으로 쓴다: 본문에서 확인되는 사실 하나당 '- '로 시작하는 한 줄을 만들고, 각 줄은 명사형으로 끝내며 회사명과 핵심 수치를 앞에 둔다. 접속사·수식어 없이 사실만 나열하고 2~4줄로 쓴다. title_ko는 기사 자체의 주제를 따른다. 여러 회사를 함께 다루거나 정책·산업 전반을 다루는 기사를 특정 회사 관점으로 좁히지 않으며, 초안이 그렇게 좁혀 놓았으면 기사 주제에 맞게 고친다. 기사에 회사가 여럿 나오면 summary_ko에 회사마다 한 줄씩 남긴다. 제공된 서비스 표준 회사명과 본문 주체가 일치하면 한국어 제목·요약에서 반드시 그 표준명을 유지한다. 키워드에는 회사명을 넣지 않는다. headline_signals도 본문에서 확인되는 사실만 남기고 다시 작성한다. 회사명·기관명·부처명·일반 산업명은 신호가 아니므로 넣지 않으며, 본문 근거가 약한 항목은 direction을 neutral로 낮춘다. reason_ko에는 pass면 통과 근거를, corrected_pass면 제거하거나 고친 내용을, reject면 남길 수 있는 사실이 없는 이유를 간결하게 쓴다.";
 export const ARTICLE_ANALYSIS_PROMPT_BODY = " 중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. summary_ko는 서술형 문단이 아니라 개조식으로 쓴다: 확인된 사실 하나당 '- '로 시작하는 한 줄을 만들고, 각 줄은 명사형으로 끝내며 회사명과 핵심 수치를 앞에 둔다(예: '- CATL, 헝가리 1공장 1기 라인 가동 개시 - 연 40GWh'). 접속사·수식어 없이 사실만 나열하고 2~4줄로 쓴다. title_ko는 기사 자체의 주제를 그대로 쓴다. 기사가 여러 회사를 함께 다루거나 정책·산업 전반을 다루면 특정 회사 관점으로 좁히지 않는다(예: 여러 업체의 진척을 곁들인 정책 기사는 ‘중국, 전고체 배터리 정의·과세 기준 마련’). 한 회사만 다루는 기사일 때만 그 회사를 제목의 주어로 쓴다. 기사에 회사가 여럿 나오면 summary_ko에 회사마다 한 줄씩 담아, 어느 회사로 이 기사를 보더라도 그 회사 사실이 보이게 한다. 반면 event_title_ko와 event_fact_ko는 시계열에 넣을 한 건이므로 제공된 ‘서비스 표준 회사명’ 회사의 사실만 쓴다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). headline_signals는 이 기사가 산업의 무엇을 확대(expansion) 또는 축소(contraction)시키는 신호인지 신호별로 판단한 것이다. keyword_ko에는 회사명·기관명·부처명·매체명·일반 산업명을 쓰지 않는다(예: 공업정보화부, 리튬전지 산업, 출하량 순위는 신호가 아니다). 생산능력·출하·수주·고객·가격·투자·기술 같은 실제로 늘거나 주는 대상을 쓴다. direction은 본문에 적힌 사실을 근거로 정하고, 판단 근거가 약하면 neutral을 쓴다. reason_ko에는 왜 그 방향인지 본문 사실을 들어 한 문장으로 쓴다. timeline_eligibility는 이 사실을 시계열에 넣을지만 고른다. 회사·산업의 사실이면 reference를 고르고, 시계열에 넣을 사실이 아니면(광고, 소비자 리뷰, 주가 단신, 회사와 무관한 내용) exclude를 고른다. core는 고르지 않는다 — 거래소 공시 원문인지 여부는 서버가 판단해 정한다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다. event_fact_ko에 쓴 수치는 하나도 빠짐없이 이 발췌 안에 있어야 한다. 본문 여기저기의 수치를 event_fact_ko 한 문장에 모으지 말고, 발췌 한 대목으로 뒷받침되는 사실만 남긴다. ";
 
 // 사건 시점은 기사 발행일이 아니다. 2026-09-04 大众日报 특집이 2026-03-05 발표된 비야디 2세대
@@ -196,7 +197,35 @@ export async function processPendingArticle(articleId, companyId) {
       await recordProcessing(articleId, "body_unavailable", `HTTP ${sourceResponse.status} · content-type: ${contentType || "없음"} · ${resolvedUrl}`);
       return { status: "body_unavailable", contentType };
     }
-    bodyText = htmlToText(await sourceResponse.text()).slice(0, MAX_BODY_CHARS);
+    const sourceHtml = await sourceResponse.text();
+    const sourceDay = sourcePublishedDay(sourceHtml);
+    const storedDay = String(article.published_at || "").slice(0, 10);
+    if (sourceDay && sourceDay !== storedDay) {
+      article.published_at = sourceDay;
+      await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
+        method: "PATCH", body: { published_at: sourceDay, updated_at: new Date().toISOString() }
+      });
+      console.info("[ARTICLE_SOURCE_DATE_CORRECTED]", JSON.stringify({ articleId, storedDay, sourceDay }));
+      const normalWebSearch = String(article.source_tier || "").startsWith("web_search_")
+        && !String(article.source_tier || "").startsWith("web_search_bootstrap_");
+      if (normalWebSearch && !sourceDayWithinTolerance(sourceDay, storedDay)) {
+        const note = `원문 발행일 ${sourceDay}이 검색 결과 날짜 ${storedDay}와 3일 넘게 달라 최근 기사에서 제외`;
+        await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
+          method: "PATCH",
+          body: {
+            verification_status: "rejected", source_tier: "fact_check_rejected",
+            processing_status: "fact_check_rejected", processing_note: note,
+            timeline_eligibility: "exclude", headline_signals: [],
+            processed_at: new Date().toISOString(), updated_at: new Date().toISOString()
+          }
+        });
+        await supabaseRest(`knowledge_chunk?article_id=eq.${encodeURIComponent(articleId)}&source_type=eq.headline`, {
+          method: "DELETE", prefer: "return=minimal"
+        }).catch(() => {});
+        return { status: "rejected", reason: "source_date_outside_search_window", storedDay, sourceDay };
+      }
+    }
+    bodyText = htmlToText(sourceHtml).slice(0, MAX_BODY_CHARS);
   }
   if (bodyText.length < 500) {
     await recordProcessing(articleId, "body_too_short", `본문 ${bodyText.length}자로 최소 500자에 못 미침 · ${resolvedUrl}`);

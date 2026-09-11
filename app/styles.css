@@ -448,3 +448,17 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 /* 관리자용 텍스트 버튼. 뒤에 오는 .secondary-button 테두리·hover 채움이 덮어쓰지 않게 두 클래스로 지정한다. */
 .secondary-button.admin-tool-button{border:0;border-radius:0;background:transparent;color:#8b96a3}
 .secondary-button.admin-tool-button:hover,.secondary-button.admin-tool-button:focus-visible{border:0;background:transparent;color:#596779}
+
+/* 리포트는 본문보다 제목의 위계를 확실히 크게 두고, 모델이 Markdown으로 표시한 핵심어는
+   파란색으로만 절제해 강조한다. 화면·PDF 모두 같은 정보 순서로 훑히게 하는 규칙이다. */
+.report-panel .report-doc,.company-timeline-report-panel .report-doc{font-size:16px;line-height:1.8;color:var(--ink)}
+.report-panel .report-doc h1,.company-timeline-report-panel .report-doc h1{margin:5px 0 8px;font-size:32px;line-height:1.28;color:var(--navy);letter-spacing:-.7px}
+.report-panel .report-doc h2,.company-timeline-report-panel .timeline-report-markdown h2{margin:32px 0 12px;padding-top:14px;border-top:2px solid var(--navy);font-size:23px;line-height:1.35;color:var(--navy)}
+.company-timeline-report-panel .timeline-report-markdown h3,.report-panel .report-doc h3{margin:24px 0 8px;font-size:19px;line-height:1.4;color:var(--market)}
+.company-timeline-report-panel .timeline-report-markdown h4,.report-panel .report-doc h4{font-size:16px;color:var(--ink)}
+.report-panel .report-doc .headline{font-size:18px;line-height:1.65;border-left-width:4px}
+.report-panel .report-doc .lead{font-size:16px;line-height:1.7}
+.report-panel .report-doc .txt,.company-timeline-report-panel .timeline-report-markdown p{font-size:16px}
+.report-panel .report-doc strong,.company-timeline-report-panel .timeline-report-markdown strong{color:var(--blue);font-weight:800;background:#edf5ff;padding:0 2px;border-radius:2px}
+.report-panel .report-doc .basis{font-size:13px;line-height:1.65}
+@media(max-width:760px){.report-panel .report-doc,.company-timeline-report-panel .report-doc{font-size:15px}.report-panel .report-doc h1,.company-timeline-report-panel .report-doc h1{font-size:26px}.report-panel .report-doc h2,.company-timeline-report-panel .timeline-report-markdown h2{font-size:20px}.report-panel .report-doc .txt,.company-timeline-report-panel .timeline-report-markdown p{font-size:15px}}
