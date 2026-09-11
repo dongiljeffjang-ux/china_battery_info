@@ -48,6 +48,24 @@ assert.match(app, /\[Top 10\] /, "툴팁에서 Top 10 근거를 구분한다");
 assert.match(app, /같은 소식 헤드라인 \$\{flow\.grades\.merged\}건은 합침/);
 assert.doesNotMatch(app, /비-Top 10/, "Top 10 제외 안내 문구를 남기지 않는다");
 
+// 신호의 주체 회사(2026-09-11): 여러 회사에 연결된 기사라도 신호는 근거 문장에 이름이 나온 회사에만 붙인다.
+{
+  const multi = {
+    id: "5b20", published_at: "2026-09-09T02:00:00Z", title_ko: "닝더스다이 주가 하락의 배경: 완성차 업체의 배터리 정의권 경쟁",
+    article_company: [{ company_id: "byd" }, { company_id: "calb" }, { company_id: "catl" }],
+    headline_signals: [
+      { direction: "contraction", keyword_ko: "고급 배터리 주문", reason_ko: "리샹 신형 MEGA가 자체 개발 5C 삼원계 배터리로 전환하고, 6월 출시된 신형 리샹 L8도 신왕다 전지로 전면 교체돼 닝더스다이의 해당 차종 공급이 빠진 사실" },
+      { direction: "expansion", keyword_ko: "배터리 공급망 다변화", reason_ko: "리샹이 신왕다동력에 26억5000만 위안을 증자한 사실, 샤오미가 중촹신항·신왕다동력과 룽자 배터리를 발표한 사실" },
+    ],
+  };
+  const split = sankeyFlowsFromArticles([multi], []);
+  assert.deepEqual(split.filter(flow => flow.direction === "negative").map(flow => flow.company_id), ["catl"], "CATL 얘기인 축소 신호는 CATL에만 붙는다");
+  assert.deepEqual(split.filter(flow => flow.direction === "positive").map(flow => flow.company_id), ["calb"], "중촹신항이 나오는 확대 신호는 중촹신항에만 붙는다");
+  assert.ok(!split.some(flow => flow.company_id === "byd"), "근거 문장에 이름이 없는 연결 회사에는 신호를 붙이지 않는다");
+  const unnamed = sankeyFlowsFromArticles([{ ...multi, headline_signals: [{ direction: "expansion", keyword_ko: "증설", reason_ko: "3개사가 공동으로 증설을 발표했다" }] }], []);
+  assert.equal(unnamed.length, 3, "근거 문장에 아무 회사도 없으면 예전처럼 연결 회사 전체에 붙인다");
+}
+
 // 회사 선택(2026-09-11 사용자 요청): 고른 회사만 그리고, 고른 회사는 상위 N개사 자르기에서 빼지 않는다.
 const html = fs.readFileSync(new URL("../app/index.html", import.meta.url), "utf8");
 assert.match(html, /<details class="sankey-company-filter"><summary id="sankey-company-summary">/, "Sankey 옆에 회사 선택 목록을 둔다");
