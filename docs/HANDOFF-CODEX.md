@@ -6,7 +6,7 @@
 - DeepSeek 검색 요청의 `tool_choice`를 `auto`에서 `required`로 바꿨다. 예전에 특정 웹 검색 도구를 직접 강제했을 때 검색만 반복하고 최종 JSON이 비는 문제가 있었으므로, 특정 도구 강제 대신 공식 Responses API의 `required`로 최소 한 번의 도구 사용만 요구한다.
 - 중국 현지 검색 프롬프트에도 웹 검색을 최소 한 번 실행하고, 회사마다 한 번 검색한 뒤 필요한 근거를 찾으면 최종 JSON을 반환하도록 명시했다. 실제 검색 호출이 0회인 응답을 폐기하는 안전장치는 유지한다.
 - 첫 배포 뒤 CATL 단일 운영 샘플에서 `required`인데도 `output_types=[message]`, `search_calls=0`, `response_status=completed`가 재현됐다. DeepSeek V4 Flash가 `required + strict JSON schema` 조합에서 검색보다 빈 JSON 출력을 우선한 것이다. DeepSeek 웹 검색 요청에서만 strict schema를 빼고, 응답 후 JSON 구조·URL·날짜 검증으로 같은 안전 경계를 유지하도록 후속 수정했다. 일반 DeepSeek 호출과 OpenAI 검색의 strict schema는 그대로다.
-- `scripts/check-llm-search.mjs`가 DeepSeek 검색 요청의 `tool_choice: required` 계약을 고정한다. `scripts/probe-web-search.mjs`도 운영 요청과 같은 설정을 쓴다.
+- strict schema 제거 뒤 두 번째 CATL 운영 샘플에서도 DeepSeek V4 Flash가 `required`를 무시해 `output_types=[message]`, `search_calls=0`으로 끝났다. 최종 조합은 strict schema 없이 특정 `web_search` 도구를 직접 지정한다. `scripts/check-llm-search.mjs`가 이 요청 계약을 고정하고 `scripts/probe-web-search.mjs`도 운영 요청과 같은 설정을 쓴다.
 
 ## 2026-09-11 Codex — 기업 시계열 보고서 3종 통합
 

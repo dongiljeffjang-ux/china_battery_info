@@ -27,7 +27,7 @@ await assert.rejects(createJsonResponse(options), /SEARCH_NOT_EXECUTED/);
 const capturesBeforeSuccess = logs.filter(row => row.payload.kind === 'search_response_raw').length;
 output = [{ type: 'web_search_call', status: 'completed' }, message];
 const result = await createJsonResponse(options);
-assert.equal(providerRequests.at(-1).tool_choice, 'required', 'DeepSeek discovery must require at least one web search call');
+assert.deepEqual(providerRequests.at(-1).tool_choice, { type: 'web_search' }, 'DeepSeek discovery must force the web search tool');
 assert.equal(providerRequests.at(-1).text, undefined, 'DeepSeek web search must not combine required tools with strict JSON schema');
 assert.equal(result.telemetry.search_calls, 1);
 assert.equal(logs.at(-1).status, 'ok');

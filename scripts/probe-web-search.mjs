@@ -50,7 +50,7 @@ const body = {
   tools: [{ type: "web_search" }],
 };
 if (config.provider === "openai") { body.store = false; body.tool_choice = { type: "web_search" }; body.include = ["web_search_call.action.sources"]; }
-else { body.reasoning = { effort: config.thinking ? "low" : "none" }; body.tool_choice = "required"; delete body.text; }
+else { body.reasoning = { effort: config.thinking ? "low" : "none" }; body.tool_choice = { type: "web_search" }; delete body.text; }
 
 const started = Date.now();
 const upstream = await fetch(config.url, { method: "POST", headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
