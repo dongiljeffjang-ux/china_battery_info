@@ -6,12 +6,14 @@ process.env.LANGSMITH_TRACING = 'false';
 delete process.env.DEEPSEEK_CAPTURE_RAW;
 const { createJsonResponse } = await import('../lib/llm-provider.js');
 const logs = [];
+const providerRequests = [];
 let output = [];
 globalThis.fetch = async (url, options) => {
   if (url.includes('supabase.co')) {
     logs.push(JSON.parse(options.body));
     return new Response(null, { status: 204 });
   }
+  providerRequests.push(JSON.parse(options.body));
   return Response.json({ status: 'completed', output, usage: { input_tokens: 100, output_tokens: 25 } });
 };
 const options = { provider: 'deepseek', webSearch: true, name: 'search_test', schema: {}, input: 'test' };
@@ -25,6 +27,7 @@ await assert.rejects(createJsonResponse(options), /SEARCH_NOT_EXECUTED/);
 const capturesBeforeSuccess = logs.filter(row => row.payload.kind === 'search_response_raw').length;
 output = [{ type: 'web_search_call', status: 'completed' }, message];
 const result = await createJsonResponse(options);
+assert.equal(providerRequests.at(-1).tool_choice, 'required', 'DeepSeek discovery must require at least one web search call');
 assert.equal(result.telemetry.search_calls, 1);
 assert.equal(logs.at(-1).status, 'ok');
 assert.equal(logs.filter(row => row.payload.kind === 'search_response_raw').length, capturesBeforeSuccess, 'successful searches are not captured');
