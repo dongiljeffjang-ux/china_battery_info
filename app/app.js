@@ -862,7 +862,7 @@ async function renderCompany(){
   const hidden = timeline.events.length - shown.length;
   const evidenceKey = shown.map(event => event.id).join(',');
   lastCompanyTimeline = { companyId: requestedId, companyName: company.name_ko, events: shown };
-  const reportButtons = document.querySelectorAll('[data-timeline-report-mode]');
+  const reportButtons = document.querySelectorAll('[data-timeline-report]');
   reportButtons.forEach(button => { button.disabled = !shown.length; });
   const reportPanel = document.querySelector('#company-timeline-report-panel');
   // 다른 기업으로 바꾸면 앞 기업의 일회성 리포트를 계속 보여 주지 않는다.
@@ -1008,32 +1008,22 @@ function renderTimelineMarkdown(markdown){
   return out.join('');
 }
 
-const timelineReportModeLabel = { direction: '전략 방향', pattern: '패턴 인사이트', inflection_point: '전략 분기점' };
-// 세 용도가 같은 모양으로 보이지 않게, 제목 아래에 그 보고서가 답하는 질문을 둔다.
-const timelineReportModeQuestion = {
-  direction: '두 시점을 대비해 — 이 기업의 무게중심은 어디서 어디로 옮겨 갔는가?',
-  pattern: '사건을 이어 — 하나씩 볼 때는 보이지 않던 연결은 무엇인가?',
-  inflection_point: '진행 중인 사건에서 — 앞으로 어느 두 갈래로 갈릴 수 있는가?',
-};
 function timelineReportParts(payload){
   const report = payload.report || {};
-  const modeKey = timelineReportModeLabel[payload.report_mode] ? payload.report_mode : 'direction';
-  const modeLabel = timelineReportModeLabel[payload.report_mode] || '전략 방향';
   // 정책은 이 회사와 연결 경로가 판정된 것만 보고서에 들어간다. 전체 정책 수가 아니라 그 수를 적는다.
   const linkedPolicies = Array.isArray(payload.policy_links) ? payload.policy_links.length : 0;
   // 정책 원문 검증 상태는 본문 대신 여기 한 번만 적는다(모델이 본문에 면책 문장을 반복하지 않게).
   const policyLine = payload.policy_link_status && payload.policy_link_status !== 'none' ? `과 이 회사에 연결된 중국 정책 ${linkedPolicies}건(사용자 첨부 연혁·수집 정책, 정책 원문 독립 미검증)을` : '을';
-  const title = `${payload.company_name_ko || '기업'} ${modeLabel} 리포트`;
+  const title = `${payload.company_name_ko || '기업'} 시계열 분석 보고서`;
   const generated = payload.generated_at ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(payload.generated_at)) : '';
   const markdown = renderTimelineMarkdown(report.markdown_ko || '생성된 리포트가 비어 있습니다.');
   const supportingLabel = payload.include_supporting === true ? '보조 데이터 포함' : '핵심 근거만';
-  const body = `<div class="timeline-report-document report-doc mode-${escapeHtml(modeKey)}"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><p class="report-mode-badge">${escapeHtml(modeLabel)}</p><h1>${escapeHtml(title)}</h1><p class="report-mode-question">${escapeHtml(timelineReportModeQuestion[modeKey])}</p><p class="meta">시장·기술 이벤트 ${payload.events?.length || 0}건 (${supportingLabel})${policyLine} 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
+  const body = `<div class="timeline-report-document report-doc"><header><p class="eyebrow">COMPANY TIMELINE REPORT · 해석</p><p class="report-mode-badge">시계열 통합 분석</p><h1>${escapeHtml(title)}</h1><p class="report-mode-question">전략 변화, 반복 실행 방식, 판단을 바꿀 핵심 변수를 하나의 흐름으로 읽습니다.</p><p class="meta">시장·기술 이벤트 ${payload.events?.length || 0}건 (${supportingLabel})${policyLine} 근거로 생성 · ${escapeHtml(generated)}${payload.model ? ` · ${escapeHtml(payload.model)}` : ''}</p></header><div class="timeline-report-markdown">${markdown}</div><footer>이 문서는 선택 당시 화면에 표시된 시계열 사실을 바탕으로 한 해석이며, 서버 히스토리나 DB에는 저장되지 않습니다.</footer></div>`;
   return { title, body };
 }
 
-// 용도별 강조색. 화면 패널과 HTML 저장본이 같은 규칙 한 벌을 쓴다(패널은 <style>로 함께 넣는다).
-// 전략 방향=남색(대비), 패턴=보라(연결), 분기점=주황(갈림).
-const TIMELINE_MODE_CSS = '.report-mode-badge{display:inline-block;margin:4px 0 2px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:800;color:#fff;background:#10365f}.report-mode-question{margin:2px 0 8px;font-size:17px;font-weight:700;color:#10365f}.mode-pattern .report-mode-badge{background:#6b3fa0}.mode-pattern .report-mode-question,.mode-pattern .timeline-report-markdown h2{color:#5a2f8c}.mode-inflection_point .report-mode-badge{background:#b8560f}.mode-inflection_point .report-mode-question,.mode-inflection_point .timeline-report-markdown h2{color:#9a4a0e}.timeline-report-markdown blockquote{margin:14px 0 22px;padding:14px 18px;border-left:5px solid #10365f;background:#f1f5fa;color:#10365f;font-size:1.12em;font-weight:700;line-height:1.6}.mode-pattern .timeline-report-markdown blockquote{border-left-color:#6b3fa0;background:#f5f0fb;color:#4a2775}.mode-inflection_point .timeline-report-markdown blockquote{border-left-color:#b8560f;background:#fdf4ec;color:#7a3a0b}.mode-pattern .timeline-report-markdown code{display:inline-block;margin:1px 0;padding:1px 6px;border-radius:4px;background:#efe7f8;color:#4a2775;font-family:inherit;font-weight:700}.timeline-report-markdown .summary-box{margin:14px 0 24px;padding:14px 20px;border:2px solid #10365f;border-radius:8px;background:#fff}.timeline-report-markdown .summary-title{margin:0 0 6px;font-size:.8em;font-weight:800;letter-spacing:.08em;color:#1674c5}.timeline-report-markdown .summary-box ul{margin:0;padding-left:20px}.timeline-report-markdown .summary-box li{margin:0 0 6px;font-weight:700;color:#10365f;line-height:1.65}.mode-pattern .timeline-report-markdown .summary-box{border-color:#6b3fa0}.mode-pattern .timeline-report-markdown .summary-box li{color:#4a2775}.mode-inflection_point .timeline-report-markdown .summary-box{border-color:#b8560f}.mode-inflection_point .timeline-report-markdown .summary-box li{color:#7a3a0b}';
+// 화면 패널과 HTML 저장본이 같은 강조 규칙 한 벌을 쓴다.
+const TIMELINE_MODE_CSS = '.report-mode-badge{display:inline-block;margin:4px 0 2px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:800;color:#fff;background:#10365f}.report-mode-question{margin:2px 0 8px;font-size:17px;font-weight:700;color:#10365f}.timeline-report-markdown blockquote{margin:14px 0 22px;padding:14px 18px;border-left:5px solid #10365f;background:#f1f5fa;color:#10365f;font-size:1.12em;font-weight:700;line-height:1.6}.timeline-report-markdown .summary-box{margin:14px 0 24px;padding:14px 20px;border:2px solid #10365f;border-radius:8px;background:#fff}.timeline-report-markdown .summary-title{margin:0 0 6px;font-size:.8em;font-weight:800;letter-spacing:.08em;color:#1674c5}.timeline-report-markdown .summary-box ul{margin:0;padding-left:20px}.timeline-report-markdown .summary-box li{margin:0 0 6px;font-weight:700;color:#10365f;line-height:1.65}';
 
 function downloadTimelineReportHtml(payload){
   const { title, body } = timelineReportParts(payload);
@@ -1079,10 +1069,8 @@ async function chooseReportOptions({ title, description }){
   });
 }
 
-async function generateTimelineReport(reportMode = 'direction'){
-  if (!timelineReportModeLabel[reportMode]) return;
-  const modeLabel = timelineReportModeLabel[reportMode];
-  const options = await chooseReportOptions({ title: `${modeLabel} 리포트`, description: '리포트에 포함할 근거 범위를 선택한 뒤 생성을 시작하세요.' });
+async function generateTimelineReport(){
+  const options = await chooseReportOptions({ title: '시계열 분석 보고서', description: '리포트에 포함할 근거 범위를 선택한 뒤 생성을 시작하세요.' });
   if (!options) return;
   const includePolicyInReport = options.includePolicy;
   if (includeSupporting !== options.includeSupporting) {
@@ -1092,13 +1080,13 @@ async function generateTimelineReport(reportMode = 'direction'){
   }
   if (!lastCompanyTimeline?.events?.length) { window.alert('현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다.'); return; }
   const snapshot = lastCompanyTimeline;
-  const reportButtons = document.querySelectorAll('[data-timeline-report-mode]');
+  const reportButtons = document.querySelectorAll('[data-timeline-report]');
   reportButtons.forEach(button => { button.disabled = true; });
-  showBusy(`${modeLabel} 리포트 생성 중`, `선택한 기업의 현재 화면 이벤트 ${snapshot.events.length}건을 ${modeLabel} 관점으로 읽습니다. 웹 검색은 하지 않습니다.${includePolicyInReport ? ' 정책 연결 판정이 없거나 오래됐으면 먼저 판정해 저장합니다(최대 1분 추가).' : ''} 1분 안팎 걸립니다.`);
+  showBusy('시계열 분석 보고서 생성 중', `선택한 기업의 현재 화면 이벤트 ${snapshot.events.length}건에서 전략 변화·반복 실행 방식·핵심 변수를 함께 읽습니다. 웹 검색은 하지 않습니다.${includePolicyInReport ? ' 정책 연결 판정이 없거나 오래됐으면 먼저 판정해 저장합니다(최대 1분 추가).' : ''} 1분 안팎 걸립니다.`);
   try {
     const response = await fetch('/api/company', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'timeline_report', reportMode, includeSupporting: options.includeSupporting, includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl, sourceDate: event.sourceDate })) })
+      body: JSON.stringify({ mode: 'timeline_report', includeSupporting: options.includeSupporting, includePolicy: includePolicyInReport, companyId: snapshot.companyId, events: snapshot.events.map(event => ({ id: event.id, date: event.date, period: periodOf(event.date), track: event.track, layer: event.layer, title: event.title, fact: event.fact, entity: entityLabel(event), sourceName: event.sourceName, sourceUrl: event.sourceUrl, sourceDate: event.sourceDate })) })
     });
     const payload = await response.json();
     if (payload.status !== 'ok') throw new Error(payload.message || payload.status);
@@ -2734,9 +2722,7 @@ async function initialize(){
   makeChainTabs(document.querySelector('#compare-chain-a'), chainA, chain => { makeSelect(compareA, '', chain); renderComparison(); });
   makeChainTabs(document.querySelector('#compare-chain-b'), chainB, chain => { makeSelect(compareB, '', chain); renderComparison(); });
   document.querySelector('#compare-report').addEventListener('click', generateCompareReport);
-  document.querySelectorAll('[data-timeline-report-mode]').forEach(button => {
-    button.addEventListener('click', () => generateTimelineReport(button.dataset.timelineReportMode));
-  });
+  document.querySelector('[data-timeline-report]')?.addEventListener('click', generateTimelineReport);
   // 목록은 비교 화면을 열 때 activateView가 읽는다. 첫 화면은 Daily라 여기서 미리 받아둘 이유가 없다.
   compareA.addEventListener('change', renderComparison);
   compareB.addEventListener('change', renderComparison);

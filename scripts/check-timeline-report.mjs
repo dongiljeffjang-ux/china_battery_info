@@ -19,8 +19,8 @@ assert.match(timeline, /발표일, 실제 사건 발생일, 통계 대상 기간
 assert.match(timeline, /절마다 항목은 최대 3개/, "항목 상한");
 assert.match(timeline, /근거가 없어 판단할 수 없는 논점은 쓰지 않는다/, "판단 불가 논점은 빼는 것이 규칙(2026-09-11 사용자 지정)");
 assert.doesNotMatch(timeline, /판단할 수 없다고 한 번만 표시한다|판단의 한계: 대안 설명/, "판단 불가를 쓰라는 옛 조항은 남기지 않는다");
-assert.match(timeline, /A4 한 장\(본문 500단어 안팎\)/, "분량 상한");
-assert.equal((timeline.match(/"## Takeaway",/g) || []).length, 3, "세 모드 모두 Takeaway 절을 둔다");
+assert.match(timeline, /본문은 800단어 안팎/, "통합 보고서 분량 상한");
+assert.equal((timeline.match(/"## 한국 배터리·소재사에 주는 의미",/g) || []).length, 1, "통합 보고서는 한국 사업 함의를 한 번만 쓴다");
 assert.match(timeline, /영업이익률 = 영업이익 ÷ 매출 × 100/, "비교 가능한 실적의 수익성 계산");
 assert.match(timeline, /기업 자체의 개선과 시장·경쟁사 대비 개선을 구분한다/, "자체 개선과 경쟁우위 구분");
 assert.match(timeline, /같은 사실·결론을 두 번 쓰지 않는다/, "반복 금지");
@@ -38,16 +38,11 @@ assert.match(api, /sourceUrl/);
 assert.doesNotMatch(api, /result\.report\.turning_points/, "Markdown 리포트에는 이전 turning_points 구조를 읽으면 안 된다");
 assert.match(timeline, /시장-실적\/생산기반/);
 assert.match(timeline, /function layerTable/);
-assert.match(html, /data-timeline-report-mode="direction"/);
-assert.match(html, /data-timeline-report-mode="pattern"/);
-assert.match(html, /data-timeline-report-mode="inflection_point"/);
-assert.match(html, /전략 보고서 생성/, "세 메뉴가 리포트 생성 기능임을 명확히 보여야 한다");
-assert.match(html, /전략 진단/, "전략 방향은 임원 보고서 톤의 제목을 써야 한다");
-assert.match(html, /패턴 분석/, "패턴 인사이트는 임원 보고서 톤의 제목을 써야 한다");
-assert.match(html, /전략 변수/, "전략 분기점은 임원 보고서 톤의 제목을 써야 한다");
-assert.match(html, /현재 전략의 중심축을 읽습니다/, "전략 방향 버튼의 목적을 툴팁으로 보여야 한다");
-assert.match(html, /반복되거나 함께 나타나는 투자·기술·수요 신호/, "패턴 인사이트 버튼의 목적을 툴팁으로 보여야 한다");
-assert.match(html, /어떤 조건에서 전략 경로가 갈리는지/, "전략 분기점 버튼의 목적을 툴팁으로 보여야 한다");
+assert.equal((html.match(/data-timeline-report(?:[\s>])/g) || []).length, 1, "시계열 보고서 생성 버튼은 하나여야 한다");
+assert.doesNotMatch(html, /data-timeline-report-mode=/, "기존 세 보고서 모드 버튼을 남기지 않는다");
+assert.match(html, /시계열 분석 보고서/, "통합 보고서 기능임을 명확히 보여야 한다");
+assert.match(html, /변화·패턴·핵심 변수 통합/, "통합 범위를 버튼에 보여야 한다");
+assert.match(html, /억지 시나리오는 만들지 않습니다/, "전략 분기 대신 관측 변수를 쓴다는 점을 툴팁으로 보여야 한다");
 assert.match(html, /class="timeline-report-tooltip" tabindex="0" data-tip=/, "비활성화된 버튼에서도 툴팁이 떠야 한다");
 assert.match(html, /id="company-timeline-report-panel"/);
 assert.match(app, /mode:\s*'timeline_report'/);
@@ -130,9 +125,9 @@ const input = buildTimelineInput({ companyName: "CATL", events: sampleEvents, me
 assert.ok(!input.includes("a45f53f5"), "이벤트 UUID를 모델 입력에 넣으면 안 된다");
 assert.match(input, /이벤트 식별자는 제공하지 않았으므로/, "식별자를 만들어 넣지 말라고 적어야 한다");
 assert.ok(!input.includes("<br>"), "입력에 <br>이 있으면 모델이 따라 뱉는다");
-// 방향은 숫자에서 먼저 읽는다. 정량 표가 사건 표보다 앞에 온다.
+// 통합 보고서도 방향은 숫자에서 먼저 읽는다. 정량 표가 사건 표보다 앞에 온다.
 assert.ok(input.indexOf("정량 시계열") < input.indexOf("화면 이벤트 3건"), "정량 표가 사건 표보다 앞이어야 한다");
-assert.match(input, /읽는 순서: \[기준 시점 대비 후보\]와 정량 시계열의 비교 가능성을 먼저 확인하고/, "기본(전략 방향)은 비교 가능성을 확인한 뒤 변화 유형을 판단한다");
+assert.match(input, /읽는 순서: 정량 시계열과 \[기준 시점 대비 후보\]로 전략 변화를 먼저 판단하고/, "통합 보고서는 비교 가능한 변화부터 판단한다");
 // 사건은 과거 → 최근. 최신순이면 흐름을 거꾸로 읽는다.
 assert.ok(input.indexOf("2023 하반기") < input.indexOf("2025 하반기") && input.indexOf("2025 하반기") < input.indexOf("2026 Q2"), "사건 표는 과거 → 최근 순이어야 한다");
 // 열: 연간 + 아직 연간이 안 나온 당해의 최신 누적 하나. 지난 해 반기는 연간이 있으니 뺀다.
@@ -167,9 +162,9 @@ const sourceYears = new Set(denseEvents.map(event => event.date.slice(0, 4)));
 const selectedYears = new Set(selectedEvidence.map(event => event.date.slice(0, 4)));
 assert.deepEqual([...selectedYears].sort(), [...sourceYears].sort(), "입력 압축 뒤에도 모든 연도의 흐름을 보존해야 한다");
 const compactInput = buildTimelineInput({ companyName: "CATL", events: denseEvents });
-const compactCount = compactInput.match(/화면 이벤트 90건 중 기간·레이어별 대표 근거 (\d+)건/);
+const compactCount = compactInput.match(/화면 이벤트 90건 중 시계열 통합 분석 근거 (\d+)건/);
 assert.ok(compactCount, "긴 시계열의 대표 근거 수를 표시해야 한다");
-assert.ok(Number(compactCount[1]) > 0 && Number(compactCount[1]) <= 24, "대표 근거는 최대 24건 이내여야 한다");
+assert.ok(Number(compactCount[1]) > 0 && Number(compactCount[1]) <= 48, "통합 보고서는 대표 근거를 최대 48건까지 사용해야 한다");
 assert.match(timeline, /timeoutMs: 110000/, "압축된 시계열 리포트에는 110초 응답 시간을 준다");
 const omittedEvidence = denseEvents.find(event => !selectedEvidence.some(selected => selected.id === event.id));
 assert.ok(omittedEvidence && !compactInput.includes(omittedEvidence.title), "선택되지 않은 반복 근거를 모델 입력에 넣으면 안 된다");
@@ -196,34 +191,25 @@ assert.match(api, /function cleanEvents[\s\S]{0,300}\.slice\(0, 200\)[\s\S]{0,70
 assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
 assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
 assert.match(api, /report_metric\?select=period,metric,value,unit,yoy_pct_stated/, "보고서 물량을 읽어야 한다");
-assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks\.links, deadline \}\)/, "정량 행·리포트 모드·정책 연결·시간 한도를 넘겨야 한다");
-assert.match(api, /\["direction", "pattern", "inflection_point"\]/, "허용된 리포트 모드만 API가 받는다");
-assert.match(timeline, /TIMELINE_REPORT_MODES/, "시계열 리포트 모드 목록을 유지해야 한다");
-assert.match(timeline, /선택한 보고서 용도: 전략 방향/);
-assert.match(timeline, /선택한 보고서 용도: 패턴 인사이트/);
-assert.match(timeline, /선택한 보고서 용도: 전략 분기점/);
+assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, events, metrics, alternatives, policies, policyLinks: policyLinks\.links, deadline \}\)/, "정량 행·정책 연결·시간 한도를 통합 보고서에 넘겨야 한다");
+assert.doesNotMatch(api, /request\.body\?\.reportMode|\["direction", "pattern", "inflection_point"\]/, "API가 기존 세 모드를 받으면 안 된다");
+assert.doesNotMatch(timeline, /TIMELINE_REPORT_MODES|REPORT_MODE_GUIDE/, "프롬프트가 세 모드로 갈라지면 안 된다");
+assert.match(timeline, /\[시계열 통합 분석\]/);
 assert.match(app, /chooseReportOptions/);
 assert.match(html, /id="report-options-dialog"/);
-assert.match(app, /generateTimelineReport\(button\.dataset\.timelineReportMode\)/);
+assert.match(app, /querySelector\('\[data-timeline-report\]'\)\?\.addEventListener\('click', generateTimelineReport\)/);
 
-// 세 용도가 같은 모양으로 수렴하지 않게: 용도 절이 공통 목차를 끄고, 서로 다른 골격·입력 보조표를 가진다.
+// 하나의 보고서가 변화·반복·핵심 변수를 서로 다른 역할로 연결하는지 확인한다.
 const { baselineTable, businessLineTable, businessLineOf, stageMapTable, stageOf } = await import("../lib/timeline-report.js");
-assert.equal((timeline.match(/MODE_OVERRIDE,/g) || []).length, 3, "세 용도 모두 공통 목차를 끄는 절을 가진다");
-assert.match(timeline, /골격에 없는 절을 만들지 마라/, "용도 절이 출력 골격을 정한다");
-assert.match(timeline, /## 과거 대 현재/, "전략 방향은 두 시점 대비표");
-// 2026-09-11 사용자 평가("3개 리포트 차별성 평가") 반영: 세 보고서는 같은 사실을 다른 연산으로 읽는다.
-assert.match(timeline, /Compare \/ Shift \/ Reallocation/);
-assert.match(timeline, /신규 사업 진입만 확인되면 확장으로 쓴다/, "전략 방향: 확장과 이동을 가른다");
-assert.match(timeline, /유지·확장·중심 이동 중 근거에 맞게 설명한다/, "전략 방향: 기존 주력의 유지도 판정한다");
-assert.match(timeline, /Cluster \/ Generalize \/ Mechanism/);
-assert.match(timeline, /한 사업의 단계 진척\(톤급 → 10톤급, 건설 → 인증\).*패턴이 아니다/, "패턴: 한 사업선의 진척은 패턴이 아니다");
-assert.match(timeline, /\*\*반복 행동:\*\*/, "패턴은 일반화한 반복 행동을 쓴다");
-assert.match(timeline, /같은 프로젝트의 착공·인증·출하는 하나의 사례다/, "패턴: 같은 프로젝트의 진척은 한 사례로 센다");
-assert.match(timeline, /제조업의 일반적인 순서만으로 패턴을 만들지 않는다/, "패턴: 일반 상업화 단계를 회사 패턴으로 격상하지 않는다");
-assert.match(timeline, /Branch \/ Trigger \/ Consequence/);
-assert.match(timeline, /진행 여부만 나눈 것은 실행 현황 점검이지 분기점이 아니다/, "분기점: 진척 여부가 아니라 지위·역할이 갈리는 지점");
-assert.match(timeline, /기업의 역할·자원 배분이 어떻게 달라지는가/);
-assert.match(timeline, /경로 A: \(회사의 지위·역할이 들어간 이름\) \| 경로 B/, "분기점은 두 경로 표");
+assert.match(timeline, /## 전략의 현재 위치와 변화/, "먼저 전략의 변화와 현재 위치를 읽는다");
+assert.match(timeline, /신규 사업 진입만 확인되면 확장으로 쓰고/, "전략 방향: 확장과 이동을 가른다");
+assert.match(timeline, /유지·확장·중심 이동을 구분한다/, "기존 주력의 유지도 판정한다");
+assert.match(timeline, /## 반복해서 나타난 실행 방식/, "독립 사례의 반복 행동을 별도 역할로 읽는다");
+assert.match(timeline, /같은 프로젝트의 개발·착공·인증·출하는 하나의 사례/, "같은 프로젝트의 진척은 한 사례로 센다");
+assert.match(timeline, /제조업의 일반 순서는 패턴이 아니다/, "일반 상업화 단계를 회사 패턴으로 격상하지 않는다");
+assert.match(timeline, /## 판단을 바꿀 핵심 변수/, "분기 시나리오 대신 관측 변수를 쓴다");
+assert.match(timeline, /미래를 두 개 시나리오로 나누지 마라/, "근거가 약한 양자택일 시나리오를 금지한다");
+assert.doesNotMatch(timeline, /경로 A:|경로 B:/, "양자택일 경로 표를 남기지 않는다");
 const modeEvents = [
   { id: "1", date: "2023-03-01", period: "2023H1", layer: "supply-performance", title: "LFP 셀 출하 20GWh", fact: "연간 출하" },
   { id: "2", date: "2023-09-01", period: "2023H2", layer: "technology-material-chemistry", title: "나트륨 셀 개발 발표", fact: "나트륨 셀 에너지밀도 160Wh/kg" },
@@ -238,13 +224,12 @@ assert.match(businessLineTable(modeEvents), /- LFP — 2023-03 \[출하·양산\
 assert.equal(businessLineTable(modeEvents.slice(0, 2)), "", "사업선이 하나뿐이면 표를 내지 않는다");
 assert.equal(stageOf(modeEvents[4]), "건설·생산 준비");
 assert.match(stageMapTable(modeEvents), /모로코 공장 착공/, "분기점 지도는 다음 단계가 남은 사건을 모은다");
-const inputs = Object.fromEntries(["direction", "pattern", "inflection_point"].map(mode => [mode, buildTimelineInput({ companyName: "테스트", reportMode: mode, events: modeEvents })]));
-assert.match(inputs.direction, /\[기준 시점 대비 후보\]/);
-assert.match(inputs.pattern, /\[사업선별 사건 순서\]/);
-assert.match(inputs.inflection_point, /\[진행 상태 후보\]/);
-assert.doesNotMatch(inputs.pattern, /\[기준 시점 대비 후보\]|\[진행 상태 후보\]/, "용도마다 자기 보조표만 받는다");
-assert.notEqual(inputs.direction.match(/읽는 순서: .*/)[0], inputs.pattern.match(/읽는 순서: .*/)[0], "읽는 순서도 용도마다 다르다");
-assert.match(app, /timelineReportModeQuestion/, "보고서 제목 아래 용도 질문을 둔다");
-assert.match(app, /mode-\$\{escapeHtml\(modeKey\)\}/, "용도별 강조색 클래스를 단다");
+const unifiedInput = buildTimelineInput({ companyName: "테스트", events: modeEvents });
+assert.match(unifiedInput, /\[기준 시점 대비 후보\]/);
+assert.match(unifiedInput, /\[사업선별 사건 순서\]/);
+assert.match(unifiedInput, /\[진행 상태 후보\]/);
+assert.match(unifiedInput, /읽는 순서: 정량 시계열.*전략 변화를 먼저 판단하고.*독립 사례의 반복 행동.*관측 변수를 고른다/, "한 입력에서 세 관점을 순서대로 읽는다");
+assert.doesNotMatch(app, /timelineReportModeLabel|timelineReportModeQuestion|timelineReportMode/, "클라이언트에 기존 모드 분기를 남기지 않는다");
+assert.match(app, /전략 변화, 반복 실행 방식, 판단을 바꿀 핵심 변수/, "보고서 제목 아래 통합 질문을 둔다");
 
 console.log("timeline report checks passed");

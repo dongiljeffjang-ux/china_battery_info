@@ -53,7 +53,7 @@ console.log("report phrasing checks passed");
 // 모든 보고서 맨 위 핵심 요약 3~4줄(2026-09-11 사용자 지정).
 const { REPORT_SUMMARY_RULE } = await import("../lib/report-phrasing.js");
 assert.match(REPORT_SUMMARY_RULE, /핵심 요약을 3~4줄/);
-assert.equal((timeline.match(/"## 핵심 요약",/g) || []).length, 3, "세 모드 골격 모두 제목 바로 아래 핵심 요약 절을 둔다");
+assert.equal((timeline.match(/"## 핵심 요약",/g) || []).length, 1, "통합 보고서 골격은 제목 바로 아래 핵심 요약 절을 한 번 둔다");
 assert.match(timeline, /핵심 요약은 3~4줄, 한 줄에 한 문장/, "시계열 공통 지시문이 요약 규칙을 담는다");
 assert.match(compare, /summary_ko는 리포트 맨 위에 놓이는 핵심 요약이다\. \$\{REPORT_SUMMARY_RULE\}/);
 assert.match(compare, /summary_ko는 종합 맨 위에 놓이는 핵심 요약이다\. \$\{REPORT_SUMMARY_RULE\}/);
