@@ -18,7 +18,12 @@ assert.match(policyLinks, /name: "company_policy_links",\s*schema: LINK_SHAPE,\s
 assert.match(ingest, /retryOnceOnTimeout\(\s*\(\) => generateDailyReport\(\),\s*\{ delayMs: 1500 \}/s);
 const companyApi = readFileSync(new URL("../api/company.js", import.meta.url), "utf8");
 assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildTimelineReport\(\{ companyName: company\.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks\.links, deadline \}\),\s*\{ delayMs: 1500 \}/s, "시계열 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
-assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildCompareReport\(\{ companyIdA: a\.id, companyIdB: b\.id, nameA: a\.name_ko, nameB: b\.name_ko, eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, policyLinksA: linksA\.links, policyLinksB: linksB\.links, policyStatus, pairContext: pairContextValue \}\),\s*\{ delayMs: 1500 \}/s, "비교 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
+assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildCompareReport\(\{ companyIdA: a\.id, companyIdB: b\.id, nameA: a\.name_ko, nameB: b\.name_ko, eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, policyLinksA: linksA\.links, policyLinksB: linksB\.links, policyStatus, pairContext: pairContextValue, deadline \}\),\s*\{ delayMs: 1500 \}/s, "비교 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
+// 비교 리포트 초안에 시간 한도를 준다. 기본 45초로는 2026-09-11 초안이 두 번 연속 끊겼다.
+assert.match(compareReport, /name: "compare_report_draft",[\s\S]{0,120}timeoutMs: Math\.max\(20000, Math\.min\(DRAFT_TIMEOUT_MS, remaining\(\)\)\)/, "초안 호출은 시간 한도를 명시한다");
+assert.match(compareReport, /const DRAFT_TIMEOUT_MS = 80000;/);
+assert.match(compareReport, /if \(verifyBudget < VERIFY_MIN_MS\)/, "검증할 시간이 모자라면 초안으로 낸다");
+assert.match(companyApi, /const deadline = Date\.now\(\) \+ 285000;/, "비교 리포트도 함수 한도 기준 시각을 넘긴다");
 
 // 리포트가 아닌 OpenAI 호출은 항상 일반(Luna) API 키·모델을 사용한다.
 const savedEnv = {

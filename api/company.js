@@ -223,6 +223,8 @@ async function runCompareReport(request, response) {
   const eventsB = cleanEvents(request.body?.eventsB);
   const pairContextValue = pairContext(a, b, eventsA, eventsB);
   const includeSupporting = request.body?.includeSupporting === true;
+  // 함수 한도 300초에서 응답 여유를 남긴 시각. 정책 판정·초안(재시도 포함)·검증이 이 안에 끝나야 한다.
+  const deadline = Date.now() + 285000;
   if (!eventsA.length && !eventsB.length) return response.status(400).json({ status: "no_evidence", message: "비교 화면에 근거로 쓸 이벤트가 없습니다." });
   try {
     // 두 회사의 정량 시계열도 같은 기간·단위 기준으로 넣어, 사건 나열만으로 비교하지 않는다.
@@ -236,7 +238,7 @@ async function runCompareReport(request, response) {
     // 비교 리포트 초안 호출은 일시적인 상류 TimeoutError가 나면 시계열 리포트와 같은 입력으로 한 번만
     // 재시도한다. 웹 검증 단계의 실패는 buildCompareReport 안에서 초안 결과로 이미 되돌린다.
     const result = await retryOnceOnTimeout(
-      () => buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, policyLinksA: linksA.links, policyLinksB: linksB.links, policyStatus, pairContext: pairContextValue }),
+      () => buildCompareReport({ companyIdA: a.id, companyIdB: b.id, nameA: a.name_ko, nameB: b.name_ko, eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, policyLinksA: linksA.links, policyLinksB: linksB.links, policyStatus, pairContext: pairContextValue, deadline }),
       { delayMs: 1500 },
     );
     result.report.policy_context = policies;
