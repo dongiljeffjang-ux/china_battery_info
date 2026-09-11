@@ -1998,9 +1998,11 @@ function compareReportParts(payload){
   const cmp = r.comparison || {};
   const pairLite = r.pair_lite || {};
   const bulletText = value => {
-    const lines = String(value || '').split(/\r?\n|•/).map(line => line.trim().replace(/^[*-]\s*/, '')).filter(Boolean);
+    const rawLines = String(value || '').split(/\r?\n|•/).map(line => line.trim()).filter(Boolean);
+    const numbered = rawLines.length > 1 && rawLines.every(line => /^\d+[.)]\s*/.test(line));
+    const lines = rawLines.map(line => line.replace(/^(?:[-*+]\s*|\d+[.)]\s*)/, '')).filter(Boolean);
     return lines.length > 1
-      ? `<ul class="report-bullets">${lines.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>`
+      ? `<${numbered ? 'ol' : 'ul'} class="report-bullets">${lines.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</${numbered ? 'ol' : 'ul'}>`
       : `<span>${escapeHtml(lines[0] || '')}</span>`;
   };
   // 1단계: 각 회사의 시장·기술 궤적을 회사별로 보여준다. 2단계 비교는 그 아래에 축별로 묶는다.
