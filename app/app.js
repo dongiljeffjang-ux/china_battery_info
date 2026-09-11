@@ -893,6 +893,18 @@ function renderTimelineMarkdown(markdown){
     const heading = line.match(/^(#{1,4})\s+(.+)$/);
     if (heading) {
       const level = Math.min(4, Math.max(2, heading[1].length + 1));
+      // 맨 위 "핵심 요약" 절은 요약 상자로 그린다(사용자 지정 2026-09-11). 바로 뒤 목록까지 상자에 넣는다.
+      if (/^\**핵심\s*요약\**$/.test(heading[2].trim())) {
+        const items = [];
+        index += 1;
+        while (index < lines.length && !lines[index].trim()) index += 1;
+        while (index < lines.length && (isBullet(lines[index].trim()) || isNumbered(lines[index].trim()))) {
+          items.push(`<li>${inlineMarkdown(lines[index].trim().replace(/^(?:[-*+]|\d+[.)])\s+/, ''))}</li>`);
+          index += 1;
+        }
+        out.push(`<section class="summary-box"><p class="summary-title">핵심 요약</p><ul>${items.join('')}</ul></section>`);
+        continue;
+      }
       out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
       index += 1; continue;
     }
@@ -956,7 +968,8 @@ function timelineReportParts(payload){
   const modeLabel = timelineReportModeLabel[payload.report_mode] || '전략 방향';
   // 정책은 이 회사와 연결 경로가 판정된 것만 보고서에 들어간다. 전체 정책 수가 아니라 그 수를 적는다.
   const linkedPolicies = Array.isArray(payload.policy_links) ? payload.policy_links.length : 0;
-  const policyLine = payload.policy_link_status && payload.policy_link_status !== 'none' ? `과 이 회사에 연결된 중국 정책 ${linkedPolicies}건을` : '을';
+  // 정책 원문 검증 상태는 본문 대신 여기 한 번만 적는다(모델이 본문에 면책 문장을 반복하지 않게).
+  const policyLine = payload.policy_link_status && payload.policy_link_status !== 'none' ? `과 이 회사에 연결된 중국 정책 ${linkedPolicies}건(사용자 첨부 연혁·수집 정책, 정책 원문 독립 미검증)을` : '을';
   const title = `${payload.company_name_ko || '기업'} ${modeLabel} 리포트`;
   const generated = payload.generated_at ? new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Seoul' }).format(new Date(payload.generated_at)) : '';
   const markdown = renderTimelineMarkdown(report.markdown_ko || '생성된 리포트가 비어 있습니다.');
@@ -967,7 +980,7 @@ function timelineReportParts(payload){
 
 // 용도별 강조색. 화면 패널과 HTML 저장본이 같은 규칙 한 벌을 쓴다(패널은 <style>로 함께 넣는다).
 // 전략 방향=남색(대비), 패턴=보라(연결), 분기점=주황(갈림).
-const TIMELINE_MODE_CSS = '.report-mode-badge{display:inline-block;margin:4px 0 2px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:800;color:#fff;background:#10365f}.report-mode-question{margin:2px 0 8px;font-size:17px;font-weight:700;color:#10365f}.mode-pattern .report-mode-badge{background:#6b3fa0}.mode-pattern .report-mode-question,.mode-pattern .timeline-report-markdown h2{color:#5a2f8c}.mode-inflection_point .report-mode-badge{background:#b8560f}.mode-inflection_point .report-mode-question,.mode-inflection_point .timeline-report-markdown h2{color:#9a4a0e}.timeline-report-markdown blockquote{margin:14px 0 22px;padding:14px 18px;border-left:5px solid #10365f;background:#f1f5fa;color:#10365f;font-size:1.12em;font-weight:700;line-height:1.6}.mode-pattern .timeline-report-markdown blockquote{border-left-color:#6b3fa0;background:#f5f0fb;color:#4a2775}.mode-inflection_point .timeline-report-markdown blockquote{border-left-color:#b8560f;background:#fdf4ec;color:#7a3a0b}.mode-pattern .timeline-report-markdown code{display:inline-block;margin:1px 0;padding:1px 6px;border-radius:4px;background:#efe7f8;color:#4a2775;font-family:inherit;font-weight:700}';
+const TIMELINE_MODE_CSS = '.report-mode-badge{display:inline-block;margin:4px 0 2px;padding:3px 10px;border-radius:99px;font-size:13px;font-weight:800;color:#fff;background:#10365f}.report-mode-question{margin:2px 0 8px;font-size:17px;font-weight:700;color:#10365f}.mode-pattern .report-mode-badge{background:#6b3fa0}.mode-pattern .report-mode-question,.mode-pattern .timeline-report-markdown h2{color:#5a2f8c}.mode-inflection_point .report-mode-badge{background:#b8560f}.mode-inflection_point .report-mode-question,.mode-inflection_point .timeline-report-markdown h2{color:#9a4a0e}.timeline-report-markdown blockquote{margin:14px 0 22px;padding:14px 18px;border-left:5px solid #10365f;background:#f1f5fa;color:#10365f;font-size:1.12em;font-weight:700;line-height:1.6}.mode-pattern .timeline-report-markdown blockquote{border-left-color:#6b3fa0;background:#f5f0fb;color:#4a2775}.mode-inflection_point .timeline-report-markdown blockquote{border-left-color:#b8560f;background:#fdf4ec;color:#7a3a0b}.mode-pattern .timeline-report-markdown code{display:inline-block;margin:1px 0;padding:1px 6px;border-radius:4px;background:#efe7f8;color:#4a2775;font-family:inherit;font-weight:700}.timeline-report-markdown .summary-box{margin:14px 0 24px;padding:14px 20px;border:2px solid #10365f;border-radius:8px;background:#fff}.timeline-report-markdown .summary-title{margin:0 0 6px;font-size:.8em;font-weight:800;letter-spacing:.08em;color:#1674c5}.timeline-report-markdown .summary-box ul{margin:0;padding-left:20px}.timeline-report-markdown .summary-box li{margin:0 0 6px;font-weight:700;color:#10365f;line-height:1.65}.mode-pattern .timeline-report-markdown .summary-box{border-color:#6b3fa0}.mode-pattern .timeline-report-markdown .summary-box li{color:#4a2775}.mode-inflection_point .timeline-report-markdown .summary-box{border-color:#b8560f}.mode-inflection_point .timeline-report-markdown .summary-box li{color:#7a3a0b}';
 
 function downloadTimelineReportHtml(payload){
   const { title, body } = timelineReportParts(payload);
@@ -2029,6 +2042,12 @@ function policyLinksHtml(r, payload){
   const inferred = links.every(link => !link.source_url);
   return `<p class="who" style="margin-top:4px">정책–기업 연결 ${inferred ? '(회사 사건을 출발점으로 한 추론)' : '재검토 (웹 검색)'}</p><ul>${rows}</ul>`;
 }
+// 모든 보고서 맨 위의 핵심 요약 3~4줄(사용자 지정 2026-09-11). 요약이 없는 예전 히스토리는 그리지 않는다.
+function reportSummaryBox(text){
+  const lines = String(text || '').split(/\r?\n|•/).map(line => line.trim().replace(/^(?:[-*+]\s*|\d+[.)]\s*)/, '')).filter(Boolean);
+  if (!lines.length) return '';
+  return `<section class="summary-box"><p class="summary-title">핵심 요약</p><ul>${lines.map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul></section>`;
+}
 function compareReportParts(payload){
   const r = payload.report || {};
   const insight = r.korea_insight || {};
@@ -2050,8 +2069,8 @@ function compareReportParts(payload){
   // 1단계: 각 회사의 시장·기술 궤적을 회사별로 보여준다. 2단계 비교는 그 아래에 축별로 묶는다.
   const trajCard = (who, node) => `
     <div class="col"><p class="who">${who}</p>
-    <div class="txt"><span class="axis-tag market">시장</span>${bulletText(node?.market_ko)}</div>
-    <div class="txt"><span class="axis-tag tech">기술</span>${bulletText(node?.technology_ko)}</div></div>`;
+    ${node?.market_ko ? `<div class="txt"><span class="axis-tag market">시장</span>${bulletText(node.market_ko)}</div>` : ''}
+    ${node?.technology_ko ? `<div class="txt"><span class="axis-tag tech">기술</span>${bulletText(node.technology_ko)}</div>` : ''}</div>`;
   const cmpRow = (label, key) => cmp?.[key] ? `<div class="contrast"><span class="tag">${label}</span>${bulletText(cmp[key])}</div>` : '';
   const points = (insight.points || []).map(item => `
     <div class="point"><div class="lead"><span class="seg">${escapeHtml(item.segment || '')}</span>${bulletText(item.implication_ko)}</div>
@@ -2083,6 +2102,10 @@ header{border-bottom:2px solid #10365f;padding-bottom:6px;margin-bottom:9px}
 h1{margin:2px 0 4px;font-size:20px;letter-spacing:-.35px;color:#10365f}
 .meta{margin:0;font-size:8.2px;color:#617187}
 .headline{margin:0 0 10px;padding:8px 11px;border-left:4px solid #10365f;background:#f3f6fa;font-size:11.2px;font-weight:800}
+.summary-box{margin:0 0 10px;padding:9px 12px;border:1px solid #10365f;border-radius:6px;background:#fff}
+.summary-title{margin:0 0 4px;font-size:9px;font-weight:800;letter-spacing:.6px;color:#1674c5}
+.summary-box ul{margin:0;padding-left:16px}
+.summary-box li{margin:0 0 3px;font-size:11px;font-weight:700;color:#10365f;line-height:1.6}
 .pair-lite-report{margin:0 0 8px;padding:7px 9px;border:1px solid #cbdceb;border-radius:6px;background:#f8fbfe}
 .pair-lite-report h2{margin:0 0 5px}
 .pair-lite-report dl{display:grid;grid-template-columns:1fr 1fr;margin:0;border-top:1px solid #dbe6ef;border-left:1px solid #dbe6ef}
@@ -2120,6 +2143,7 @@ footer{margin-top:9px;padding-top:5px;border-top:1px solid #dbe3ec;font-size:7.8
   const body = `<header><p class="eyebrow">CHINA BATTERY LENS · 기업 비교 리포트</p>
 <h1>${A} vs ${B}</h1>
 <p class="meta">근거 이벤트 ${payload.events_a}건 / ${payload.events_b}건 · 근거 범위: ${payload.include_supporting ? '공시·핵심 + 보조(참고) 데이터' : '공시·핵심 데이터만'} · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')}</p></header>
+${reportSummaryBox(r.summary_ko)}
 ${pairNote}
 ${r.headline_ko ? `<p class="headline">${escapeHtml(r.headline_ko)}</p>` : ''}
 <h2>1. 핵심 비교 논점</h2>${cmpRow('논점 1', 'market_ko')}${cmpRow('논점 2', 'technology_ko')}${cmpRow('논점 3', 'divergence_ko')}
@@ -2206,6 +2230,7 @@ function synthesisReportParts(payload){
   const body = `<header><p class="eyebrow">CHINA BATTERY LENS · 비교 리포트 함의 종합 — 해석</p>
 <h1>${title}</h1>
 <p class="meta">재료 리포트 ${sources.length}건 · 생성 ${escapeHtml(stamp)} · ${escapeHtml(payload.model || '')} · 웹 검색 없이 저장된 리포트만 근거</p></header>
+${reportSummaryBox(s.summary_ko)}
 ${s.headline_ko ? `<p class="headline">${escapeHtml(s.headline_ko)}</p>` : ''}
 <h2>재료가 된 리포트</h2><ul>${sourceList || '<li class="none">없음</li>'}</ul>
 <h2 class="insight">1. 리포트를 가로지르는 공통 흐름</h2>${threads || '<p class="none">두 건 이상에서 되풀이되는 흐름을 찾지 못했습니다.</p>'}
@@ -2395,10 +2420,10 @@ async function renderComparison(){
     return;
   }
   // 비교 화면의 셀은 훑어보는 자리다. 사실 문장을 다 싣지 않고 제목과 핵심 수치만 개조식으로,
-  // 중요한 것부터 최대 세 줄 보여준다. 전문은 마우스를 올리면 뜬다.
-  const CELL_LIMIT = 3;
+  // 중요한 것부터 셀당 6건까지 보여준다(사용자 지정 2026-09-11, 예전 3건). 전문은 마우스를 올리면 뜬다.
   // 한 회사를 기술/시장 두 갈래로 나눠 표시한다. 이벤트는 layer_key 분류에 따라 한 열에만 놓는다.
   // 시장·기술 양쪽 성격을 가진 이벤트는 중복해 싣지 않고, 대표 열에 두되 작은 표식을 붙인다.
+  const CELL_LIMIT = 6;
   const eventsAt = (events, date, track, companyId) => {
     const ranked = events.filter(event => displayDate(event) === date && event.track === track).sort((x, y) => importanceOf(y) - importanceOf(x));
     const shown = ranked.slice(0, CELL_LIMIT);

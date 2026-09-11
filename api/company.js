@@ -186,6 +186,8 @@ async function runTimelineReport(request, response) {
   const reportMode = ["direction", "pattern", "inflection_point"].includes(String(request.body?.reportMode || ""))
     ? String(request.body.reportMode) : "direction";
   const includeSupporting = request.body?.includeSupporting === true;
+  // 함수 한도 300초에서 응답·로그 여유 40초를 남긴 시각. 유보 표현 고쳐 쓰기는 이 안에서만 한다.
+  const deadline = Date.now() + 260000;
   if (!events.length) return response.status(400).json({ status: "no_evidence", message: "현재 화면에 리포트 근거로 쓸 시계열 이벤트가 없습니다." });
   try {
     // 리포트가 사건 조각만 받으면 나열에 머문다. 방향은 숫자에서 먼저 읽히므로 정량 시계열을
@@ -199,10 +201,10 @@ async function runTimelineReport(request, response) {
     // 돌려주지 말고, 네트워크/상류 시간 초과일 때만 한 번 다시 시도한다. 스키마·입력 오류는
     // 재시도해도 해결되지 않으므로 그대로 반환한다.
     const result = await retryOnceOnTimeout(
-      () => buildTimelineReport({ companyName: company.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks.links }),
+      () => buildTimelineReport({ companyName: company.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks.links, deadline }),
       { delayMs: 1500 },
     );
-    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, reportMode, includeSupporting, events: events.length, policyLinks: policyLinks.links.length, policyLinkStatus: policyLinks.status, reportChars: result.report.markdown_ko.length }));
+    console.info("[TIMELINE_REPORT]", JSON.stringify({ companyId, reportMode, includeSupporting, events: events.length, policyLinks: policyLinks.links.length, policyLinkStatus: policyLinks.status, hedge: result.hedge, reportChars: result.report.markdown_ko.length }));
     return response.status(200).json({ status: "ok", company_id: companyId, company_name_ko: company.name_ko, report_mode: reportMode, include_supporting: includeSupporting, events, policies, policy_links: policyLinks.links, policy_link_status: policyLinks.status, generated_at: new Date().toISOString(), ...result });
   } catch (error) {
     console.error("[TIMELINE_REPORT_FAILED]", JSON.stringify({ companyId, message: error.message }));

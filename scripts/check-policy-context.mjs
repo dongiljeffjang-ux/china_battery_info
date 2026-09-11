@@ -19,8 +19,19 @@ const input = buildTimelineInput({ companyName: '테스트 기업', events: [], 
 assert.doesNotMatch(input, /중국 정책/, '연결 판정 없이 정책을 보고서 입력에 넣지 않는다');
 assert.match(POLICY_ANALYSIS_RULE, /연결 경로가 미리 판정된/);
 assert.match(POLICY_ANALYSIS_RULE, /별도 목록이나 부록 표를 만들지 마라/);
-assert.match(POLICY_ANALYSIS_RULE, /시간적 선후만으로 인과를 단정하지 마라/);
-assert.match(POLICY_ANALYSIS_RULE, /원문 독립 미검증/);
+assert.match(POLICY_ANALYSIS_RULE, /인과를 주장하는 동사\(유발했다·때문이다\)를 쓰지 말고/, "인과는 면책 문장이 아니라 동사 선택으로 막는다");
+assert.match(POLICY_ANALYSIS_RULE, /"시행 중이다"라고 쓰지 않는다/, "미검증 정책을 시행 중으로 쓰지 않는다");
+assert.match(POLICY_ANALYSIS_RULE, /출처 면책 문장은 화면이 따로 표시하므로 본문에 쓰지 않는다/);
+assert.match(POLICY_ANALYSIS_RULE, /바로 뒤 괄호에 한국어 내용을 붙인다/);
+// 표준 번호 뒤 괄호 설명은 서버가 보장한다.
+const { annotatePolicyCodes, policyCodeGlossary } = await import('../lib/policy-context.js');
+const glossary = policyCodeGlossary(policies);
+assert.equal(annotatePolicyCodes('GB 38031-2025 및 GB18384-2025 시행', glossary), 'GB 38031-2025(동력전지 안전요구 개정) 및 GB18384-2025(전기차 안전요구 개정) 시행');
+assert.equal(annotatePolicyCodes('GB 38031-2025(동력전지) 이미 설명', glossary), 'GB 38031-2025(동력전지) 이미 설명', '이미 괄호가 있으면 두지 않는다');
+assert.equal(annotatePolicyCodes('GB 38031-2025 동력전지 안전요구 개정은', glossary), 'GB 38031-2025 동력전지 안전요구 개정은', '바로 뒤에 같은 내용을 적었으면 두지 않는다');
+assert.equal(annotatePolicyCodes('GB 99999-2025', glossary), 'GB 99999-2025', '모르는 번호는 건드리지 않는다');
+const { linkedPolicyTable } = await import('../lib/policy-links.js');
+assert.doesNotMatch(linkedPolicyTable([{ policy_id: 'policy-history-18', policy_title: '동력전지 안전요구(개정)', policy_date: '2025-03-28', policy_verification: '원문 독립 미검증', relation: 'direct', path_ko: '경로', basis: [] }], policies), /미검증/, '보고서 입력 표에 검증 표기를 넣지 않는다(모델이 본문에 옮겨 적는다)');
 
 // Execute the visible policy column renderer: period alignment and HTML escaping.
 const app = readFileSync(new URL('../app/app.js', import.meta.url), 'utf8');

@@ -17,7 +17,7 @@ const policyLinks = readFileSync(new URL("../lib/policy-links.js", import.meta.u
 assert.match(policyLinks, /name: "company_policy_links",\s*schema: LINK_SHAPE,\s*provider: "openai_report"/s, "정책 연결 판정도 리포트 전용 API를 쓴다");
 assert.match(ingest, /retryOnceOnTimeout\(\s*\(\) => generateDailyReport\(\),\s*\{ delayMs: 1500 \}/s);
 const companyApi = readFileSync(new URL("../api/company.js", import.meta.url), "utf8");
-assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildTimelineReport\(\{ companyName: company\.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks\.links \}\),\s*\{ delayMs: 1500 \}/s, "시계열 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
+assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildTimelineReport\(\{ companyName: company\.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks\.links, deadline \}\),\s*\{ delayMs: 1500 \}/s, "시계열 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
 assert.match(companyApi, /retryOnceOnTimeout\(\s*\(\) => buildCompareReport\(\{ companyIdA: a\.id, companyIdB: b\.id, nameA: a\.name_ko, nameB: b\.name_ko, eventsA, eventsB, metricsA, metricsB, alternativesA, alternativesB, policies, policyLinksA: linksA\.links, policyLinksB: linksB\.links, policyStatus, pairContext: pairContextValue \}\),\s*\{ delayMs: 1500 \}/s, "비교 리포트도 TimeoutError일 때만 한 번 재시도해야 한다");
 
 // 리포트가 아닌 OpenAI 호출은 항상 일반(Luna) API 키·모델을 사용한다.

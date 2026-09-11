@@ -16,11 +16,14 @@ assert.match(timeline, /활동이 없거나 중단되었다고 해석하지 않�
 assert.match(timeline, /계획 생산능력과 가동·생산 실적/, "계획과 실적을 가르는 조항");
 assert.match(timeline, /계약·전략협력·MOU를 실제 출하·매출로 취급하지 않는다/, "계약을 실적으로 읽지 않는다");
 assert.match(timeline, /발표일, 실제 사건 발생일, 통계 대상 기간을 구분한다/, "시점 구분 조항");
-assert.match(timeline, /핵심 변화는 최대 3개만 선정하라/, "핵심 변화 상한");
-assert.match(timeline, /확인된 것 \/ 아직 모르는 것 \/ 다음 확인 지표/, "외부 독자의 판단 구조");
+assert.match(timeline, /절마다 항목은 최대 3개/, "항목 상한");
+assert.match(timeline, /근거가 없어 판단할 수 없는 논점은 쓰지 않는다/, "판단 불가 논점은 빼는 것이 규칙(2026-09-11 사용자 지정)");
+assert.doesNotMatch(timeline, /판단할 수 없다고 한 번만 표시한다|판단의 한계: 대안 설명/, "판단 불가를 쓰라는 옛 조항은 남기지 않는다");
+assert.match(timeline, /A4 한 장\(본문 500단어 안팎\)/, "분량 상한");
+assert.equal((timeline.match(/"## Takeaway",/g) || []).length, 3, "세 모드 모두 Takeaway 절을 둔다");
 assert.match(timeline, /영업이익률 = 영업이익 ÷ 매출 × 100/, "비교 가능한 실적의 수익성 계산");
 assert.match(timeline, /기업 자체의 개선과 시장·경쟁사 대비 개선을 구분한다/, "자체 개선과 경쟁우위 구분");
-assert.match(timeline, /같은 수치·한계·결론을 두 번 이상 설명하지 않았는가/, "반복 제거 자체검수");
+assert.match(timeline, /같은 사실·결론을 두 번 쓰지 않는다/, "반복 금지");
 // 화면이 Markdown을 렌더링한다. 모델이 HTML을 내면 그대로 문자열이 보인다.
 assert.match(timeline, /반환 형식은 Markdown이다/, "반환 형식을 Markdown으로 못박아야 한다");
 assert.match(timeline, /report_markdown_ko/, "스키마는 Markdown 한 필드다");
@@ -193,7 +196,7 @@ assert.match(api, /function cleanEvents[\s\S]{0,300}\.slice\(0, 200\)[\s\S]{0,70
 assert.match(api, /loadReportMetrics\(companyId\)/, "리포트 생성 전에 정량 시계열을 읽어야 한다");
 assert.match(api, /market_financial\?select=period,metric,value,unit,yoy_pct/, "거래소 손익 항목을 읽어야 한다");
 assert.match(api, /report_metric\?select=period,metric,value,unit,yoy_pct_stated/, "보고서 물량을 읽어야 한다");
-assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks\.links \}\)/, "정량 행·리포트 모드·정책 연결을 넘겨야 한다");
+assert.match(api, /buildTimelineReport\(\{ companyName: company\.name_ko, reportMode, events, metrics, alternatives, policies, policyLinks: policyLinks\.links, deadline \}\)/, "정량 행·리포트 모드·정책 연결·시간 한도를 넘겨야 한다");
 assert.match(api, /\["direction", "pattern", "inflection_point"\]/, "허용된 리포트 모드만 API가 받는다");
 assert.match(timeline, /TIMELINE_REPORT_MODES/, "시계열 리포트 모드 목록을 유지해야 한다");
 assert.match(timeline, /선택한 보고서 용도: 전략 방향/);
@@ -206,7 +209,7 @@ assert.match(app, /generateTimelineReport\(button\.dataset\.timelineReportMode\)
 // 세 용도가 같은 모양으로 수렴하지 않게: 용도 절이 공통 목차를 끄고, 서로 다른 골격·입력 보조표를 가진다.
 const { baselineTable, linkCandidates, stageMapTable, stageOf } = await import("../lib/timeline-report.js");
 assert.equal((timeline.match(/MODE_OVERRIDE,/g) || []).length, 3, "세 용도 모두 공통 목차를 끄는 절을 가진다");
-assert.match(timeline, /\[3\. 보고서 구성\]의 A~E 목차/, "공통 A~E 목차를 용도 절에서 끈다");
+assert.match(timeline, /골격에 없는 절을 만들지 마라/, "용도 절이 출력 골격을 정한다");
 assert.match(timeline, /## 과거 대 현재/, "전략 방향은 두 시점 대비표");
 assert.match(timeline, /\*\*유형:\*\* 수렴 \| 선행-후행 \| 괴리 \| 전환/, "패턴은 유형 배지");
 assert.match(timeline, /경로 A: \(한 줄 이름\) \| 경로 B/, "분기점은 두 경로 표");
