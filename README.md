@@ -25,7 +25,7 @@ OpenAI 검색 3회 + DeepSeek 중국 현지 검색 3회 + 공식 소스
 → URL 중복 제거·회사/그룹 별칭 매칭
 → 헤드라인 Top 10
 → 원문 확보·보관
-→ OpenAI 사실 추출 + DeepSeek 교차검증
+→ 원문 기반 OpenAI 사실 추출
 → 한국어 Daily·회사 이벤트
 → 원문 청킹·배치 임베딩·Supabase pgvector 저장
 ```

@@ -66,11 +66,11 @@ assert.deepEqual(flows.map(flow => flow.company_id), ["byd"], "산업 전반 신
 const legacy = sankeyFlowsFromArticles([{ ...article, headline_signals: [{ direction: "expansion", keyword_ko: "출하량 증가", reason_ko: "비야디 에너지저장 출하량 증가" }] }], []);
 assert.deepEqual(legacy.map(flow => flow.company_id), ["byd"]);
 
-// 새 기사: 분석·검증 두 호출 모두 신호마다 주체를 적게 하고, 연결 회사 목록을 준다.
+// 새 기사: 원문 분석 호출이 신호마다 주체를 적게 하고, 연결 회사 목록을 준다.
 const processArticle = fs.readFileSync(new URL("../api/process-article.js", import.meta.url), "utf8");
-assert.equal((processArticle.match(/\.\.\.Object\.keys\(SIGNAL_SUBJECT_PROPERTIES\)/g) || []).length, 2, "분석·검증 스키마 모두 주체 필드를 요구한다");
+assert.equal((processArticle.match(/\.\.\.Object\.keys\(SIGNAL_SUBJECT_PROPERTIES\)/g) || []).length, 1, "원문 분석 스키마가 신호별 주체 필드를 요구한다");
 assert.match(processArticle, /ARTICLE_ANALYSIS_PROMPT_BODY \+ LAYER_PROMPT_GUIDE \+ " " \+ SIGNAL_SUBJECT_RULE/);
-assert.match(processArticle, /ARTICLE_FACT_CHECK_PROMPT \+ " " \+ SIGNAL_SUBJECT_RULE/);
+assert.doesNotMatch(processArticle, /ARTICLE_FACT_CHECK_PROMPT|factCheckArticle/, "교차대조 호출은 남아 있지 않아야 한다");
 assert.match(processArticle, /\[연결 회사\]/, "모델에 연결 회사 목록을 준다");
 assert.match(processArticle, /headline_signals: attachSubjects\(verifiedResult\.headline_signals \|\| \[\], linkedIds\)/, "저장 전에 서버가 주체를 연결 회사로 확인한다");
 assert.match(SIGNAL_SUBJECT_RULE, /이름만 언급됐거나 비교 대상·경쟁사로 나온 회사는 넣지 않는다/);

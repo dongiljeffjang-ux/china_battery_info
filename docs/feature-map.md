@@ -9,7 +9,7 @@ draw.io에서 **Arrange → Insert → Advanced → CSV**로 4절 CSV를 붙여 
 |---|---|---|
 | F1 | 접근 제어 | 키 기반 입장과 보호 API 인증 |
 | F2 | 소스 수집 | 중국 뉴스·공시 후보 발견과 회사 매칭 |
-| F3 | 본문 분석·검증 | 원문 읽기, 사실 추출, 교차검증, 이벤트화 |
+| F3 | 본문 분석·검증 | 원문 읽기, 사실 추출, 이벤트화 |
 | F4 | Daily 리포트 | 오늘의 한국어 리포트와 근거 Top 10 |
 | F5 | 기업 시계열 | 레이어 × 분기 매트릭스와 기업 프로필 |
 | F6 | 기업 비교 | 두 기업 비교 리포트 생성·검증·히스토리 |
@@ -49,8 +49,8 @@ draw.io에서 **Arrange → Insert → Advanced → CSV**로 4절 CSV를 붙여 
 | F3.1 | 헤드라인 신호 Top 10 선별 | `selectHeadlineTop10()`, `supabase/headline-signals.sql` | 규칙 점수(LLM 아님). `web_search_*`·CATL·거래소 공시 대상, 최근 3일 |
 | F3.2 | 원문 HTML 수집 | `api/process-article.js` | 60초 함수 제약 |
 | F3.3 | OpenAI 한국어 사실·이벤트 1차 추출 | `api/process-article.js` | 요약·키워드·이벤트 |
-| F3.4 | DeepSeek 교차검증 | 〃 | 같은 본문 재검증 |
-| F3.5 | 검증 상태 저장 | `article.verification_status` | `pending` → `pending_review`(=자동 통과, 레거시명) |
+| F3.4 | 원문 추출 상태 전환 | 〃 | 원문 확보·구조화 추출 성공 시 `verified` |
+| F3.5 | 검증 상태 저장 | `article.verification_status` | `pending` → `verified` |
 | F3.6 | 레이어 정규화 | `lib/timeline-layers.js` | 시장 4 + 기술 4, 규격 밖은 `null`→미분류 |
 | F3.7 | 계열사 발생 법인 표기 | `matchGroupEntities()` → `event.entity_names` | `supabase/company-entity.sql` |
 | F3.8 | 구조화 사실 추출 | `lib/fact-extraction.js` → `event_fact` | 7종 factType, 단위·세그먼트·상태 enum |
@@ -135,7 +135,7 @@ draw.io에서 **Arrange → Insert → Advanced → CSV**로 4절 CSV를 붙여 
 크론/버튼 → ingest-rss → discoverChinaSources → (OpenAI검색 / DeepSeek검색 / CATL뉴스룸 / CNINFO공시)
 discoverChinaSources → 중복제거·회사매칭 → article, article_company
 article → 헤드라인 Top10 선별 → process-article
-process-article → OpenAI 사실추출 → DeepSeek 교차검증 → article(pending_review), event
+process-article → OpenAI 원문 사실추출 → article(verified), event
 event → 레이어 정규화 / 발생법인 표기 / event_fact
 article 본문 → 청킹 → 임베딩 → knowledge_chunk
 event → embed-event → knowledge_chunk
@@ -184,7 +184,7 @@ F3,F3 본문 분석·검증,root,#7C3AED
 F3.1,헤드라인 Top10 선별,F3,#A78BFA
 F3.2,원문 HTML 수집,F3,#A78BFA
 F3.3,OpenAI 사실 추출,F3,#A78BFA
-F3.4,DeepSeek 교차검증,F3,#A78BFA
+F3.4,원문 추출 상태 전환,F3,#A78BFA
 F3.5,검증 상태 저장,F3,#A78BFA
 F3.6,레이어 정규화,F3,#A78BFA
 F3.7,발생 법인 표기,F3,#A78BFA

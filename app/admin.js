@@ -120,7 +120,7 @@
       card('CNINFO 공시', cninfo),
       card('본문 처리 미시도', untried, '최근 3일 창 밖은 흘려보냄'),
       card('본문 처리 실패', failed, 'URL·PDF·길이 문제', failed > 0),
-      card('교차검증 탈락', rejected),
+      card('기존 교차검증 탈락', rejected),
       card('검증 기사 중 청크 없음', overview.verified_without_chunks, '', overview.verified_without_chunks > 0),
       card('기사 임베딩 실패', embFailed, '', embFailed > 0),
       card('벡터 청크', chunkTotal, chunkNoVec ? `벡터 없는 청크 ${num(chunkNoVec)}` : '모두 벡터 있음', chunkNoVec > 0),
