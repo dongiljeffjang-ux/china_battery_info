@@ -39,6 +39,19 @@ let lastComparison = null;
 let lastCompanyTimeline = null;
 const TOP_NEWS_PREVIEW = 4;
 let topNewsExpanded = false;
+// 기업 시간축의 한 셀은 핵심 사업·기술 신호를 먼저 보여주고, 보조 사실은 접어 둔다.
+const MATRIX_PREVIEW = 4;
+const MATRIX_LOW_SIGNAL_TERMS = [
+  '연구인력 구성', '연구 인력 구성', '연구인력', '직원 구성', '임직원 수', '직원 수', '인원 현황',
+  '복리후생', '보증 제공', '파생상품', '어음', '임대차', '자본금', '스톡옵션',
+  '研究人员构成', '员工人数', '员工构成', '福利', '衍生品', '注册资本'
+];
+const MATRIX_HIGH_SIGNAL_TERMS = [
+  '증설', '생산', '생산능력', '가동', '양산', '출하', '판매', '매출', '수주', '공급',
+  '투자', '공장', '고객', '해외', '유럽', '북미', '기술', '특허', '인증', '전고체',
+  '나트륨', '실리콘', '배터리', '소재', '공정', '产能', '投产', '扩产', '出货', '订单',
+  '供应', '客户', '海外', '技术', '专利', '认证', '电池', '材料', '工艺'
+];
 
 function companyById(id){ return companyCatalog.find(company => company.id === id) || null; }
 function displayName(id){ return companyById(id)?.name_ko || id; }
@@ -1116,6 +1129,16 @@ function importanceOf(event){
   if (/(증설|투산|가동|출하|판매|매출|수주|인증|양산|생산능력|공장|투자)/.test(event.title)) score += 1;
   return score;
 }
+// 시장·기술 셀 안에서도 사업·기술 결과를 위로, 단순 인력·관리 현황을 아래로 보낸다.
+function matrixImportanceOf(event){
+  const text = `${event.title || ''} ${event.fact || ''} ${event.displaySummary || ''} ${event.label || ''}`;
+  const low = MATRIX_LOW_SIGNAL_TERMS.some(term => text.includes(term));
+  const high = MATRIX_HIGH_SIGNAL_TERMS.reduce((sum, term) => sum + (text.includes(term) ? 1 : 0), 0);
+  const trackBonus = event.track === 'tech'
+    ? (/기술|소재|공정|특허|인증|양산|研发|技术|材料|工艺/.test(text) ? 3 : 0)
+    : (/사업|생산|고객|매출|수주|공급|해외|经营|生产|客户|订单/.test(text) ? 3 : 0);
+  return importanceOf(event) * 10 + high * 2 + trackBonus - (low ? 30 : 0);
+}
 // 사실 문장에서 단위 붙은 수치 두 개까지만 뽑는다. 개조식 한 줄에 실을 핵심이다.
 function keyMetrics(event){
   const found = [...String(event.fact || '').matchAll(METRIC_PATTERN)].map(match => match[1].trim());
@@ -1868,9 +1891,9 @@ function renderLayerMatrix(timeline){
     return MATRIX_GROUPS.find(group => group.track === (event.track === 'tech' ? 'tech' : 'market'));
   };
   const cell = (group, period) => {
-    const matched = events.filter(event => groupOf(event) === group && periodOf(event.date) === period).sort((x, y) => importanceOf(y) - importanceOf(x));
+    const matched = events.filter(event => groupOf(event) === group && periodOf(event.date) === period).sort((x, y) => matrixImportanceOf(y) - matrixImportanceOf(x));
     if (!matched.length) return `<span style="color:#9aa7b6" title="${EMPTY_CELL_NOTE}">—</span>`;
-    return matched.map(event => {
+    const item = event => {
       const tip = [event.fact, `레이어: ${event.label}`, entityLabel(event) ? `발생 법인: ${entityLabel(event)}` : '', sourceTipText(event), alternativeTipText(event.alternatives)].filter(Boolean).join('\n\n');
       const unclassified = event.layer === UNCLASSIFIED_LAYER ? '<span class="matrix-entity">미분류</span>' : '';
       // 표는 빠르게 훑는 영역이므로 제목 아래에는 한 개의 짧은 핵심 불릿만 둔다.
@@ -1886,7 +1909,9 @@ function renderLayerMatrix(timeline){
       // 공시·검증 통과 사실과 보조(참고) 데이터를 글자색으로 구분한다.
       const supporting = isPrimaryEvidence(event) ? '' : ' is-supporting';
       return `<div class="matrix-item${supporting}" data-tip="${escapeHtml(tip)}"><span class="matrix-title">${escapeHtml(displayTitle)}</span>${detail}${unclassified}${entityLabel(event) ? `<span class="matrix-entity">${escapeHtml(entityLabel(event))}</span>` : ''}${event.sourceUrl ? ` <a class="matrix-src" href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer">원문</a>` : ''}${alternativeLinks(event.alternatives)}</div>`;
-    }).join('');
+    };
+    const shown = matched.slice(0, MATRIX_PREVIEW), rest = matched.slice(MATRIX_PREVIEW);
+    return `<div class="matrix-items">${shown.map(item).join('')}</div>${rest.length ? `<div class="matrix-items matrix-more" hidden>${rest.map(item).join('')}</div><button type="button" class="matrix-toggle" aria-expanded="false" data-more-count="${rest.length}">+${rest.length}건 더보기</button>` : ''}`;
   };
   const head = MATRIX_GROUPS.map(group => `<th class="matrix-head ${group.track}">${group.label}</th>`);
   const body = periods.map(period => {
@@ -1895,7 +1920,14 @@ function renderLayerMatrix(timeline){
     const policy = policyCell(policies, period, timeline.policyLinks);
     return `<tr>${cells[0]}${cells[1]}<th class="matrix-period">${period}</th>${cells[2]}${cells[3]}</tr>${policy ? `<tr class="policy-inline-row"><td colspan="5">${policy}</td></tr>` : ''}`;
   }).join('');
-  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><colgroup><col class="matrix-layer-col"><col class="matrix-layer-col"><col class="matrix-time-col"><col class="matrix-layer-col"><col class="matrix-layer-col"></colgroup><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 정책은 해당 시점 아래 한 줄로 간추려 표시하며, 마우스를 올리면 전체 내용을 볼 수 있습니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
+  target.innerHTML = `<div class="matrix-scroll" style="overflow-x:auto"><table class="matrix-table"><colgroup><col class="matrix-layer-col"><col class="matrix-layer-col"><col class="matrix-time-col"><col class="matrix-layer-col"><col class="matrix-layer-col"></colgroup><thead><tr><th class="matrix-track market" colspan="2">시장</th><th></th><th class="matrix-track tech" colspan="2">기술</th></tr><tr>${head[0]}${head[1]}<th class="matrix-period-head">시점</th>${head[2]}${head[3]}</tr></thead><tbody>${body}</tbody></table></div><p style="margin:10px 0 0;color:#617187;font-size:12px">위가 최근, 아래로 갈수록 과거입니다. 지난 연도는 상·하반기, 당해 연도는 분기로 나눕니다. 왼쪽 두 칸이 시장(실적·생산기반 / 고객·해외), 오른쪽 두 칸이 기술(소재·공정 / IP·인증·양산)입니다. 각 칸은 사업·기술 신호를 우선 4건만 보여주며 나머지는 ‘더보기’로 열 수 있습니다. 마우스를 올리면 전체 근거를 볼 수 있습니다. 빈 칸(—)은 그 구간에 ${EMPTY_CELL_NOTE}을 뜻하며 사건이 없었다는 뜻이 아닙니다.</p>`;
+  target.querySelectorAll('.matrix-toggle').forEach(button => button.addEventListener('click', () => {
+    const more = button.previousElementSibling;
+    const opening = more?.hidden === true;
+    if (more) more.hidden = !opening;
+    button.setAttribute('aria-expanded', String(opening));
+    button.textContent = opening ? '접기' : `+${button.dataset.moreCount}건 더보기`;
+  }));
 }
 
 // 벡터 지식에 질문한다. 근거가 없으면 답을 만들지 않고 무엇을 확인할지 안내받는다.

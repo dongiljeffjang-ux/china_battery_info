@@ -229,7 +229,7 @@ select:focus,input:focus,.ask-form input:focus{outline:0;border-color:var(--blue
 .matrix-item,.digest-line{position:relative;padding-left:11px}
 .matrix-item::before,.digest-line::before{content:"";position:absolute;left:0;top:7px;width:4px;height:4px;border-radius:50%;background:#b8c9d9}
 .matrix-item.is-supporting::before,.digest-line.is-supporting::before{background:#cbd4de}
-.matrix-details{list-style:none;margin:3px 0 0;padding:0;color:#526277;font-size:11px;line-height:1.5}.matrix-details li{position:relative;padding-left:10px}.matrix-details li::before{content:"-";position:absolute;left:0;color:#8a97a8}
+.matrix-details{list-style:none;margin:3px 0 0;padding:0;color:#526277;font-size:11px;line-height:1.5}.matrix-details li{position:relative;padding-left:10px}.matrix-details li::before{content:"-";position:absolute;left:0;color:#8a97a8}.matrix-items{display:grid;gap:9px}.matrix-item{margin-bottom:0}.matrix-toggle{margin:8px 0 0;padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--blue);font-size:11px;font-weight:700;cursor:pointer}.matrix-toggle:hover{background:var(--pale)}
 
 /* 긴 페이지를 위한 노션식 현재 페이지 목차. 넓은 화면에서는 펼치고, 좁은 데스크톱에서는
    오른쪽의 작은 목차 버튼으로 접어 본문을 가리지 않는다. */
