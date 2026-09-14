@@ -187,7 +187,7 @@ async function selectHeadlineTop10(pilot = false) {
     supabaseRest(`article?select=${select}&${filter}&source_tier=eq.official_disclosure&published_at=gte.${disclosureSince}&order=published_at.desc&limit=300`),
     supabaseRest(`article?select=${select}&${filter}&source_tier=like.web_search_bootstrap_*&order=published_at.desc&limit=50`),
     // 최근 처리 창 밖으로 밀린 "미시도" 뉴스만 저우선으로 복구한다. 종료 상태·공시는 섞지 않는다.
-    supabaseRest(`article?select=${select}&verification_status=eq.pending&processing_status=is.null&source_tier=neq.official_disclosure&published_at=lt.${since}&order=published_at.asc&limit=50`),
+    supabaseRest(`article?select=${select}&verification_status=eq.pending&processing_status=is.null&source_tier=neq.official_disclosure&published_at=lt.${since}&order=published_at.desc&limit=50`),
     feedbackPreference(),
   ]);
   const pick = (candidates, keep) => {

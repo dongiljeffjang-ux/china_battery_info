@@ -17,6 +17,7 @@ assert.equal(retryIsDue({ processing_status: "robots_disallowed" }, now), false)
 const ingest = fs.readFileSync(new URL("../api/ingest-rss.js", import.meta.url), "utf8");
 assert.match(ingest, /const BACKLOG_PER_RUN = 4;/, "과거 미시도 기사는 매 회차 4건씩 복구한다");
 assert.match(ingest, /processing_status=is\.null&source_tier=neq\.official_disclosure/, "종료 상태·공시는 과거 뉴스 복구 큐에 섞지 않는다");
+assert.match(ingest, /published_at=lt\.\$\{since\}&order=published_at\.desc/, "과거 미시도 기사는 최신 발행일 순으로 복구한다");
 assert.match(ingest, /stageName === "recover"/, "수집 실패 뒤 본문 전용 복구 단계를 실행한다");
 assert.match(ingest, /chainStage\(request, "recover", 1/, "크론 수집 실패가 복구 홉을 예약한다");
 console.log("pending recovery regression checks passed");
