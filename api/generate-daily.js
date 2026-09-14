@@ -113,6 +113,13 @@ function koreaWindowBounds(reportDate, days) {
   return { start: new Date(dayStart.getTime() - (days - 1) * 86400000).toISOString(), end: new Date(dayStart.getTime() + 86400000).toISOString() };
 }
 
+// 후보로 남을 수 있는 가장 오래된 발행일. 넓힌 창과 같은 3일이다(사용자 지정 2026-09-14).
+// 발행일 조건은 아래 (a)·(b)·(c) 세 갈래 전부에 걸어야 한다. 전에는 (a)와 (b)가 처리 시각만 보고
+// (c)는 아무 조건도 없어, 2026-09-13 pending 일괄 처리(249건, 발행일이 2026-02-03까지 거슬러 올라감)가
+// 통째로 후보가 됐다. 그날 (b)로 들어온 40건 중 창 안은 1건뿐이었고 09-14 Top 10에 09-01·09-02 공시가
+// 올라갔다. 공시는 45일 창으로 처리하므로 이 경로는 백필이 아니어도 다시 열린다.
+const CANDIDATE_WINDOW_DAYS = 3;
+
 // 후보는 세 갈래를 합친다. 2026-09-11 12:24 수동 실행이 전날 23:05 Daily(Top 10 5건)를 Top 10 1건·요약
 // 167자로 덮은 일이 있었다(pipeline_log·daily_report로 확인). 원인은 세 가지였다.
 //   ① 후보가 리포트 날짜 하루치(오전이면 거의 0건)였고, 전날로 넓혀도 발행일 기준이라 수가 적었다.
@@ -126,6 +133,10 @@ export function mergeDailyCandidates(...groups) {
 
 export async function generateDailyReport(articleIds = []) {
   const reportDate = koreaDate();
+  const oldestAllowed = koreaWindowBounds(reportDate, CANDIDATE_WINDOW_DAYS).start;
+  const oldestAllowedMs = Date.parse(oldestAllowed);
+  // 발행일 표기가 REST 응답과 상한 문자열에서 다를 수 있어 문자열이 아니라 시각으로 견준다.
+  const withinWindow = (articles) => (articles || []).filter((article) => Date.parse(article.published_at) >= oldestAllowedMs);
   const fetchWindow = (days) => {
     const { start, end } = koreaWindowBounds(reportDate, days);
     return supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&published_at=gte.${start}&published_at=lt.${end}&order=published_at.desc&limit=80`);
@@ -137,12 +148,14 @@ export async function generateDailyReport(articleIds = []) {
   ]);
   // 직전 Daily 이후 검증된 기사. 직전 Daily가 없으면 하루 전부터 본다.
   const lastGenerated = previousReports?.[0]?.generated_at || new Date(Date.now() - 86400000).toISOString();
-  const newlyVerified = await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&processed_at=gte.${encodeURIComponent(lastGenerated)}&order=processed_at.desc&limit=40`).catch(() => []);
+  // 발행일 하한을 질의에도 건다. 40건 한도를 백필 기사가 다 써 버리면 정작 최근 발행인데 검증이
+  // 늦은 기사가 잘려 나간다(09-14: 40건 중 창 안 1건).
+  const newlyVerified = await supabaseRest(`article?select=${CANDIDATE_SELECT}&verification_status=eq.verified&processed_at=gte.${encodeURIComponent(lastGenerated)}&published_at=gte.${oldestAllowed}&order=processed_at.desc&limit=40`).catch(() => []);
   let windowDays = 2;
-  let candidates = mergeDailyCandidates(justProcessed, newlyVerified, await fetchWindow(windowDays), carriedTop10);
+  let candidates = withinWindow(mergeDailyCandidates(justProcessed, newlyVerified, await fetchWindow(windowDays), carriedTop10));
   if (candidates.length < TOP10_TARGET) {
     windowDays = 3;
-    candidates = mergeDailyCandidates(justProcessed, newlyVerified, await fetchWindow(windowDays), carriedTop10);
+    candidates = withinWindow(mergeDailyCandidates(justProcessed, newlyVerified, await fetchWindow(windowDays), carriedTop10));
   }
   if (!candidates.length) return { status: "no_reviewed_articles" };
   console.info("[DAILY_CANDIDATES]", JSON.stringify({ reportDate, windowDays, candidates: candidates.length, newlyVerified: newlyVerified.length, carried: carriedTop10.length }));
