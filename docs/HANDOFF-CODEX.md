@@ -1,6 +1,56 @@
 # Codex → Claude Code 인수인계
 
-## 2026-09-14 Claude Code — 죽은 코드 제거와 캐시 버전 고정값 정리 (로컬 커밋 전)
+## 2026-09-14 Claude Code — Daily Top 10에 9월 1일 공시가 오른 원인 두 겹과 야간 수집 실패
+
+### 증상
+
+09-14 Daily Top 10(5건)에 09-01·09-02 CNINFO 공시가 TOP 3으로 올랐다.
+
+### 원인 1 — Daily 후보에 발행일 하한이 없었다 (고침, `3be0285`)
+
+- 후보 세 갈래 중 "직전 Daily 이후 검증된 기사"(b)는 `processed_at`만 보고, "이어받은 Top 10"(c)은 조건이 없었다.
+- 09-13 pending 일괄 처리가 **249건을 한꺼번에 verified**로 만들었고 발행일은 **2026-02-03까지** 거슬러 올라갔다.
+  09-14 (b)로 들어온 40건 중 창(2일) 안은 **1건**, 7일 넘은 것 35건(최고 08-28).
+- 사용자 지정: 하한 **3일(넓힌 창과 동일)**. `CANDIDATE_WINDOW_DAYS = 3`, (b) 질의 조건 + 병합 뒤 `withinWindow()`로 세 갈래 전부.
+  후보 0건이면 `no_reviewed_articles`로 먼저 반환하므로 기존 Top 10은 지워지지 않는다. `check-daily-candidates.mjs`가 고정.
+- **주의:** 이 하한을 걸면 09-14 기준 후보는 3건뿐이다. 아래 원인 2 때문이다.
+
+### 원인 2 — 09-13·09-14 발행 기사가 DB에 0건. 야간 수집 크론이 이틀 연속 죽었다
+
+운영 DB(`pipeline_log`)와 Supabase 로그(`edge_logs`·`postgrest_logs`)로 확인한 것:
+
+| 시각(UTC) | 무엇이 | 결과 |
+|---|---|---|
+| 09-12 14:00 | 수집 크론 | `company_tracking` GET·`pipeline_log` POST×2·`article` GET이 14:00:27~14:01:13에 연달아 504. `article_storage`에서 55초 만에 사망 |
+| 09-12 16:00 | 임베딩 크론 | 요청 1건 → 504. 조용히 사망(`pipeline_log` 없음) |
+| 09-13 14:00 | 수집 크론 | 첫 요청 `ingestion_guard` upsert(`acquireRun`)가 14:00:24 504. 5.6초 만에 사망. `stage`는 `company_seed`로 찍히지만 실제로는 잠금 획득 |
+| 09-13 16:00 | 임베딩 크론 | 요청 1건 → 504 |
+| 09-14 04:55 | 사용자가 BYD 기업 페이지 열기 | `event`·`company_policy_link`·`report_metric`·`market_financial`·`evidence_alternative` 5건이 같은 초에 전부 504 |
+
+- **부하 문제가 아니다.** 09-14 01시(pending 일괄 처리) 5,200건 요청에 504는 0건. 504가 난 시간대는 전부 2~29건이다.
+- **느린 질의 문제가 아니다.** `pg_stat_statements`에서 앱 경로 최대는 벡터 검색 RPC 4.5초·`knowledge_chunk` 삽입 4.4초. Postgres 로그에 statement timeout·재시작 없음. DB 351 MB.
+- 패턴은 **같은 순간에 날아간 서로 무관한 작은 요청이 통째로 504** — API 계층(PostgREST/게이트웨이)이 수십 초 답하지 않는 창이 간헐적으로 생긴다. `postgrest_logs`의 "Warp server error: Thread killed by timeout manager"는 매 시간 수십 건이라 그 자체는 신호가 아니다(유휴 연결 종료 로그). 09-14 00:00 UTC에 PostgREST가 재접속했다("Config reloaded", 풀 10개 초기화).
+- **근본 원인은 Supabase 쪽이라 여기서 못 본다.** `get_project`는 컴퓨트 등급을 안 돌려준다. 사용자가 대시보드 Settings → Compute와 Reports의 해당 시각 CPU/메모리를 봐야 한다. Nano/Micro면 그게 원인일 가능성이 크다(추정).
+
+### 코드 쪽 대응 — `lib/supabase.js` 시간제한 + 멱등 요청 재시도
+
+- 전에는 재시도도 시간제한도 없었다. 504 하나가 크론 체인 전체를 죽였고, 응답이 안 오면 함수 예산을 다 태웠다.
+- `AbortSignal.timeout(20초)`, 502/503/504·TimeoutError·네트워크 실패에 **1초·2초 간격 2회 재시도**. 최악 63초.
+- **멱등 요청만** 기본 재시도: GET/PATCH/DELETE, `on_conflict`가 있는 POST, `rpc/`(이 저장소의 RPC는 전부 읽기). 조건 없는 POST(`event`·`pipeline_log`·`concept_edge`·`event_fact` append)는 첫 요청이 커밋된 뒤 응답만 끊긴 경우 행이 두 번 들어가므로 재시도하지 않는다. `retry: true`로 명시하면 한다.
+- 재시도는 `[SUPABASE_RETRY]`로 남긴다. `scripts/check-supabase-retry.mjs`가 판정·횟수·4xx 비재시도·시간제한을 고정한다. 기존 검사 61개는 5xx를 흉내내지 않아 영향 없음(전체 12초).
+
+### 검색 자체는 정상이다
+
+09-14 오전 수동 실행 두 번: 그룹마다 `search_calls` 2~4회, 반환 19건 중 날짜 창 밖 탈락 ~1건, 새 기사 23건 저장(발행 09-11~09-12). 2개 그룹 시간초과. 모델이 09-13·14 발행 기사를 아예 돌려주지 않았다.
+지난 주말 대조: 09-05(토)·09-06(일) 기사는 대부분 **다음 평일 저녁 크론**에서 들어왔다(09-07 실행이 토 19건·일 10건). 이번 주말은 그 저녁 크론이 둘 다 죽었다. 월요일 오전 실행에서 일요일 기사 0건은 그래서 설명은 되지만 증명은 못 한다(추정).
+
+### 다음 작업자가 볼 것
+
+1. 오늘 밤 14:00 UTC 크론: `pipeline_log.collect`가 `partial`/`ok`로 끝나는지, Vercel 로그에 `[SUPABASE_RETRY]`가 찍히는지. 재시도로도 못 넘기면 창이 60초 이상이라는 뜻이고 그때는 Supabase 쪽 조치가 필요하다.
+2. 사용자가 Supabase 컴퓨트 등급을 확인한 결과.
+3. Daily 하한 배포 뒤 Top 10 건수. 수집이 살아나면 자연히 찬다.
+
+## 2026-09-14 Claude Code — 죽은 코드 제거와 캐시 버전 고정값 정리 (`8b13726`, 푸시됨)
 
 ### 고친 것
 
