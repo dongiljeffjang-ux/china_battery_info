@@ -32,6 +32,16 @@ assert.equal(searchLaneEngine('china_local'), 'openai', 'unknown engine names fa
 delete process.env.CHINA_LOCAL_SEARCH_ENGINE;
 assert.doesNotMatch(searchProviderPrompt('china_local'), /회사마다 검색 1회씩만/, 'OpenAI engine does not carry the DeepSeek call-count guard');
 assert.match(searchProviderPrompt('china_local'), /중국어/, 'china_local lane still asks for Chinese local sources');
+// 2026-09-14: DeepSeek 검색 중단 뒤 당일 발행 기사 발견이 0건으로 떨어졌다. 오늘·어제 우선과 전문매체 도메인
+// site: 검색을 두 레인 프롬프트와 요청 본문에 고정한다.
+assert.match(searchProviderPrompt('china_local'), /발행일이 오늘·어제인 기사를 먼저/, 'china_local lane asks for today/yesterday first');
+for (const domain of ['gg-lb.com', 'cbea.com', 'libattery.ofweek.com', 'itdcw.com']) {
+  assert.ok(searchProviderPrompt('china_local').includes(domain), `china_local lane names trade-press domain ${domain} for site: search`);
+}
+assert.match(searchProviderPrompt('openai'), /발행일이 오늘·어제인 기사를 먼저/, 'global lane asks for today/yesterday first');
+const { readFileSync } = await import('node:fs');
+const chinaSources = readFileSync(new URL('../lib/china-sources.js', import.meta.url), 'utf8');
+assert.match(chinaSources, /가장 최근 발행 기사를 먼저 찾으세요\(오늘 \$\{until\}·어제 우선, 그다음 \$\{since\}까지\)/, 'search request body states recency order with concrete dates');
 
 for (const lane of SEARCH_LANES) {
   const groups = buildSearchGroups(lane, false);
