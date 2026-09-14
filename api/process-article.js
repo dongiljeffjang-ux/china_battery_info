@@ -11,6 +11,7 @@ import { extractPdfText } from "../lib/report-reader.js";
 import { checkRobots, waitForHostSlot, CRAWLER_UA } from "../lib/robots.js";
 import { sourcePublishedDay, sourceDayWithinTolerance } from "../lib/source-published-at.js";
 import { SIGNAL_SUBJECT_PROPERTIES, SIGNAL_SUBJECT_RULE, attachSubjects, linkedCompanyLines } from "../lib/signal-subjects.js";
+import { retryPlan } from "../lib/pending-recovery.js";
 
 const MAX_BODY_CHARS = 30000;
 export const ARTICLE_ANALYSIS_PROMPT_BODY = " 중국 배터리 산업 기사에서 출처에 명시된 사실만 한국어로 구조화한다. 전망·인과 추정·성공 가능성을 만들지 않는다. summary_ko는 서술형 문단이 아니라 개조식으로 쓴다: 확인된 사실 하나당 '- '로 시작하는 한 줄을 만들고, 각 줄은 명사형으로 끝내며 회사명과 핵심 수치를 앞에 둔다(예: '- CATL, 헝가리 1공장 1기 라인 가동 개시 - 연 40GWh'). 접속사·수식어 없이 사실만 나열하고 2~4줄로 쓴다. title_ko는 기사 자체의 주제를 그대로 쓴다. 기사가 여러 회사를 함께 다루거나 정책·산업 전반을 다루면 특정 회사 관점으로 좁히지 않는다(예: 여러 업체의 진척을 곁들인 정책 기사는 ‘중국, 전고체 배터리 정의·과세 기준 마련’). 한 회사만 다루는 기사일 때만 그 회사를 제목의 주어로 쓴다. 기사에 회사가 여럿 나오면 summary_ko에 회사마다 한 줄씩 담아, 어느 회사로 이 기사를 보더라도 그 회사 사실이 보이게 한다. 반면 event_title_ko와 event_fact_ko는 시계열에 넣을 한 건이므로 제공된 ‘서비스 표준 회사명’ 회사의 사실만 쓴다. 제공된 ‘서비스 표준 회사명’이 본문 주체와 일치하면 title_ko, summary_ko, event_title_ko, event_fact_ko에서 그 한국어 표준명을 반드시 사용한다. 원문 중국어·영어 법인명과 한국어 표준명을 섞어 새 이름을 만들지 않는다. keywords_ko에는 회사명 대신 사건을 대표하는 짧은 한국어 핵심 키워드 1~3개만 넣는다(예: 증설, 고객 인증, 실리콘 음극, 해외 생산). headline_signals는 이 기사가 산업의 무엇을 확대(expansion) 또는 축소(contraction)시키는 신호인지 신호별로 판단한 것이다. keyword_ko에는 회사명·기관명·부처명·매체명·일반 산업명을 쓰지 않는다(예: 공업정보화부, 리튬전지 산업, 출하량 순위는 신호가 아니다). 생산능력·출하·수주·고객·가격·투자·기술 같은 실제로 늘거나 주는 대상을 쓴다. direction은 본문에 적힌 사실을 근거로 정하고, 판단 근거가 약하면 neutral을 쓴다. reason_ko에는 왜 그 방향인지 본문 사실을 들어 한 문장으로 쓴다. timeline_eligibility는 이 사실을 시계열에 넣을지만 고른다. 회사·산업의 사실이면 reference를 고르고, 시계열에 넣을 사실이 아니면(광고, 소비자 리뷰, 주가 단신, 회사와 무관한 내용) exclude를 고른다. core는 고르지 않는다 — 거래소 공시 원문인지 여부는 서버가 판단해 정한다. original_excerpt에는 핵심 근거 원문을 300자 이내로만 발췌하고, original_excerpt_ko에는 그 발췌문의 충실한 한국어 번역만 쓴다. event_fact_ko에 쓴 수치는 하나도 빠짐없이 이 발췌 안에 있어야 한다. 본문 여기저기의 수치를 event_fact_ko 한 문장에 모으지 말고, 발췌 한 대목으로 뒷받침되는 사실만 남긴다. ";
@@ -106,9 +107,19 @@ async function analyzeArticle(article, bodyText, provider, companyContext = "") 
 // "시도했다 실패"와 "아직 시도한 적 없음"을 구분하기 위함이다. 기록 실패가 처리 실패가 되면 안 된다.
 export async function recordProcessing(articleId, status, note = null) {
   try {
+    const retryable = status === "processing_failed";
+    const existing = retryable
+      ? await supabaseRest(`article?select=processing_attempts&id=eq.${encodeURIComponent(articleId)}&limit=1`)
+      : [];
+    const plan = retryable ? retryPlan(existing?.[0]?.processing_attempts) : null;
     await supabaseRest(`article?id=eq.${encodeURIComponent(articleId)}`, {
       method: "PATCH",
-      body: { processing_status: status, processing_note: note ? String(note).slice(0, 500) : null, processed_at: new Date().toISOString() }
+      body: {
+        processing_status: plan?.status || status,
+        processing_note: note ? String(note).slice(0, 500) : null,
+        processed_at: new Date().toISOString(),
+        ...(plan ? { processing_attempts: plan.attempts, next_processing_at: plan.nextProcessingAt } : { next_processing_at: null })
+      }
     });
   } catch (error) {
     console.error("[PROCESSING_RECORD_FAILED]", JSON.stringify({ articleId, status, message: error.message }));

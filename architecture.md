@@ -24,8 +24,8 @@ flowchart LR
   INGEST[/Vercel: ingest-rss<br>일일 Cron 또는 수동 수집/]
   INGEST -->|URL 중복 제거<br>회사·그룹 계열사 별칭 매칭| ARTICLE[(Supabase<br>article · article_company)]
 
-  ARTICLE -->|web_search_* 또는 CATL 뉴스룸만<br>헤드라인 점수 상위 10건| PROCESS[/LLM 본문 처리<br>process-article/]
-  ARTICLE -.->|공시는 헤드라인 선별에서 제외돼<br>분석되지 않고 pending으로 남는다| PROCESS
+  ARTICLE -->|최근 뉴스 상위 10건 + 과거 미시도 2건<br>공시 별도 몫| PROCESS[/LLM 본문 처리<br>process-article/]
+  ARTICLE -.->|공시는 최근 45일 중 별도 4건씩<br>분석·복구한다| PROCESS
 
   PROCESS -->|원문 보관·한국어 제목·요약·키워드| ARTICLE
   PROCESS -->|시장/기술 트랙·레이어·발생 법인| EVENT[(Supabase<br>event)]
@@ -47,7 +47,7 @@ flowchart LR
   ASK --> UI
 ```
 
-수집은 공개 트리거를 허용하고, 비용이 발생하는 본문 LLM 처리·Daily 생성은 Vercel Cron의 `CRON_SECRET` 인증 요청에서만 실행한다. 뉴스 원문은 사용자의 명시 요구로 `article.body_original`에 보관하며 청킹·임베딩에 사용한다. 본문을 확보하고 원문 기반 구조화 추출을 마친 기사는 `verified`로 저장한다. 원문을 읽지 못하거나 본문이 짧고, 검색 결과 날짜와 원문 날짜가 크게 다른 기사는 표시 대상에서 제외한다.
+수집은 공개 트리거를 허용하고, 비용이 발생하는 본문 LLM 처리·Daily 생성은 Vercel Cron의 `CRON_SECRET` 인증 요청에서만 실행한다. 뉴스 원문은 사용자의 명시 요구로 `article.body_original`에 보관하며 청킹·임베딩에 사용한다. 원문을 확보하고 원문 기반 구조화 추출을 마친 기사는 `verified`로 저장한다. 원문을 읽지 못하거나 본문이 짧고, 검색 결과 날짜와 원문 날짜가 크게 다른 기사는 표시 대상에서 제외한다. 수집이 DB 오류로 중단되면 크론은 Daily를 다시 만들지 않는 본문 복구 홉을 이어, 이미 저장된 `pending` 기사가 다음 날까지 방치되지 않게 한다. 일시적 fetch 오류만 1시간·6시간 간격으로 최대 세 번 재시도하며 robots 차단과 본문 품질 기준은 완화하지 않는다.
 
 RSS 수집기는 웹 검색 방식으로 전환하면서 호출이 끊겨 제거했다. 실제 수집 경로는 위 네 가지다.
 

@@ -16,6 +16,7 @@ import { extractMetricsFromEvents } from "../lib/report-metrics.js";
 import { fetchCompanyFinancials, securityCodeOf } from "../lib/market-financials.js";
 import { fetchPeriodRates } from "../lib/fx-rates.js";
 import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor } from '../lib/ingestion-guard.js';
+import { retryIsDue } from '../lib/pending-recovery.js';
 
 // Vercel Fluid compute(2025-04 이후 새 프로젝트 기본)에서 Hobby 함수 한도는 기본·최대 300초다.
 // `api/*.js` Node 함수는 `export const config = { maxDuration }` 형식만 읽는다. 예전의
@@ -24,6 +25,8 @@ import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor }
 export const config = { maxDuration: 300 };
 
 const TOP10_LIMIT = 10;
+// 정상 수집 때도 오래된 미시도 기사를 조금씩 되살린다. 최근 뉴스 처리량을 침범하지 않게 2건으로 고정한다.
+const BACKLOG_PER_RUN = 2;
 // 검증 기사가 0건인 핵심 비상장사. 연결 기사가 하나라도 생기면 그 회사는 다음 실행부터 빠진다
 // (bootstrapCompanyIds 계산이 매 실행 다시 확인한다). docs/HANDOFF-CODEX.md 2026-09-07 절 참고.
 const BOOTSTRAP_CANDIDATE_IDS = ["reshine", "kaijin-new-energy"];
@@ -171,16 +174,18 @@ async function selectHeadlineTop10(pilot = false) {
   // 후보는 최근 며칠치로 끊는다. 예전에는 미처리 기사 전체(수년치)를 놓고 점수를 매겨,
   // 신호 단어가 많은 옛 기사가 오늘 기사를 계속 밀어내고 재고만 쌓였다. Daily는 오늘 것을
   // 읽는 게 목적이므로, 그 창을 벗어난 기사는 다시 집지 않고 흘려보낸다.
-  const select = "id,title_original,source_name,source_tier,published_at,article_company(company_id)";
+  const select = "id,title_original,source_name,source_tier,published_at,processing_status,next_processing_at,article_company(company_id)";
   const filter = "verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)";
   const since = new Date(Date.now() - PROCESS_WINDOW_DAYS * 86400000).toISOString();
   const disclosureSince = new Date(Date.now() - DISCLOSURE_WINDOW_DAYS * 86400000).toISOString();
   // bootstrap 기사는 최대 365일 전 것이라 위 3일 창에 들지 않는다. 창 없이 별도로 뽑아,
   // 처음 한 번 확보한 과거 기사가 실제 본문대조까지 가도록 한다.
-  const [rows, disclosureRows, bootstrapRows, preference] = await Promise.all([
+  const [rows, disclosureRows, bootstrapRows, backlogRows, preference] = await Promise.all([
     supabaseRest(`article?select=${select}&${filter}&published_at=gte.${since}&order=published_at.desc&limit=500`),
     supabaseRest(`article?select=${select}&${filter}&source_tier=eq.official_disclosure&published_at=gte.${disclosureSince}&order=published_at.desc&limit=300`),
     supabaseRest(`article?select=${select}&${filter}&source_tier=like.web_search_bootstrap_*&order=published_at.desc&limit=50`),
+    // 최근 처리 창 밖으로 밀린 "미시도" 뉴스만 저우선으로 복구한다. 종료 상태·공시는 섞지 않는다.
+    supabaseRest(`article?select=${select}&verification_status=eq.pending&processing_status=is.null&source_tier=neq.official_disclosure&published_at=lt.${since}&order=published_at.asc&limit=50`),
     feedbackPreference(),
   ]);
   const pick = (candidates, keep) => {
@@ -192,6 +197,7 @@ async function selectHeadlineTop10(pilot = false) {
     }
     return [...unique.values()]
       .filter(keep)
+      .filter((article) => retryIsDue(article))
       .map((article) => ({ ...article, headline_score: headlineScore(article, preference) }))
       .sort((a, b) => b.headline_score - a.headline_score || new Date(b.published_at) - new Date(a.published_at));
   };
@@ -203,10 +209,12 @@ async function selectHeadlineTop10(pilot = false) {
   ).slice(0, TOP10_LIMIT);
   const disclosures = pick(disclosureRows || [], () => true).slice(0, DISCLOSURE_PER_RUN);
   const bootstrap = pick(bootstrapRows || [], () => true).slice(0, BOOTSTRAP_PER_RUN);
+  const backlog = pick(backlogRows || [], (article) => article.source_tier !== "official_disclosure")
+    .slice(0, BACKLOG_PER_RUN).map((article) => ({ ...article, recovery: true }));
   const policies = pick(rows || [], article => article.article_company?.some(link => link.company_id === POLICY_COMPANY_ID)).slice(0, 4);
   // 최근에 발견된 bootstrap 기사는 news 창(3일)에도 걸릴 수 있다. 같은 기사를 두 번 처리하지 않는다.
   const combined = new Map();
-  for (const article of [...policies, ...news, ...disclosures, ...bootstrap]) combined.set(article.id, article);
+  for (const article of [...backlog, ...policies, ...news, ...disclosures, ...bootstrap]) combined.set(article.id, article);
   return [...combined.values()];
 }
 
@@ -638,10 +646,21 @@ async function runProcessStage(request, startHop) {
   await flushTraces();
 }
 
+// 수집 단계가 DB 504 등으로 끝나도 이미 저장된 기사가 pending에 남을 수 있다.
+// 이 경로는 Daily를 다시 만들지 않고 본문 처리만 한 홉 수행해, 다음 정상 수집까지의 공백을 줄인다.
+async function runRecoveryStage(request) {
+  const started = Date.now();
+  const more = await runProcessHop(request, 1, 1);
+  await logPipeline("recovery", { more, reason: "collection_failure_recovery" }, { durationMs: Date.now() - started });
+  await flushTraces();
+}
+
 // 본문 처리 훅 하나. 남은 일이 있으면 true.
 async function runProcessHop(request, hop, hopCap) {
   const started = Date.now();
   const selected = await selectHeadlineTop10(request.query?.pilot === '1');
+  // 과거 복구 몫은 작지만, 신호 점수 경쟁에서 계속 밀리지 않도록 먼저 처리한다.
+  selected.sort((a, b) => Number(Boolean(b.recovery)) - Number(Boolean(a.recovery)));
   const results = selected.length ? await processSelectedBatch(selected, started + STAGE_BUDGET_MS) : [];
   const counts = results.reduce((acc, result) => ({ ...acc, [result.status]: (acc[result.status] || 0) + 1 }), {});
   const attempted = new Set(results.map((result) => result.articleId));
@@ -856,6 +875,7 @@ async function handleRequest(request, response) {
       if (!await claimStage(request.query?.run_id, stageName, hop)) return response.status(409).json({status:'duplicate_or_expired_stage'});
     }
     if (stageName === "process") waitUntil(runProcessStage(request, hop));
+    else if (stageName === "recover") waitUntil(runRecoveryStage(request));
     else if (stageName === "daily") waitUntil(runDailyStage(request).finally(() => releaseRun(request.query.run_id)));
     else if (stageName === "curate") waitUntil(runCurateStage(request, hop));
     else return response.status(400).json({ status: "unknown_stage", stage: stageName });
@@ -953,6 +973,9 @@ async function handleRequest(request, response) {
     if (runId) await releaseRun(runId).catch(() => {});
     console.error("[INGESTION_FAILED]", JSON.stringify({ stage, message: error.message }));
     await logPipeline("collect", { stage, message: error.message }, { status: "failed", durationMs: Date.now() - collectStarted });
+    // article_storage가 504를 돌려도 DB에는 일부 행이 이미 들어갔을 수 있다. 다음 날까지
+    // 그대로 pending으로 두지 않도록, 크론 실행에서만 기존 대기열을 한 홉 복구한다.
+    if (isCronRequest(request)) await chainStage(request, "recover", 1, { curate: false, deep: false });
     return response.status(502).json({ status: "ingestion_failed", stage, message: error.message });
   }
 }
