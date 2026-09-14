@@ -39,10 +39,33 @@
 - **멱등 요청만** 기본 재시도: GET/PATCH/DELETE, `on_conflict`가 있는 POST, `rpc/`(이 저장소의 RPC는 전부 읽기). 조건 없는 POST(`event`·`pipeline_log`·`concept_edge`·`event_fact` append)는 첫 요청이 커밋된 뒤 응답만 끊긴 경우 행이 두 번 들어가므로 재시도하지 않는다. `retry: true`로 명시하면 한다.
 - 재시도는 `[SUPABASE_RETRY]`로 남긴다. `scripts/check-supabase-retry.mjs`가 판정·횟수·4xx 비재시도·시간제한을 고정한다. 기존 검사 61개는 5xx를 흉내내지 않아 영향 없음(전체 12초).
 
-### 검색 자체는 정상이다
+### 원인 3 — 당일 기사 발견 채널이 DeepSeek 검색 중단(09-10)과 함께 사라졌다 (근본 원인)
 
-09-14 오전 수동 실행 두 번: 그룹마다 `search_calls` 2~4회, 반환 19건 중 날짜 창 밖 탈락 ~1건, 새 기사 23건 저장(발행 09-11~09-12). 2개 그룹 시간초과. 모델이 09-13·14 발행 기사를 아예 돌려주지 않았다.
-지난 주말 대조: 09-05(토)·09-06(일) 기사는 대부분 **다음 평일 저녁 크론**에서 들어왔다(09-07 실행이 토 19건·일 10건). 이번 주말은 그 저녁 크론이 둘 다 죽었다. 월요일 오전 실행에서 일요일 기사 0건은 그래서 설명은 되지만 증명은 못 한다(추정).
+검색 호출 자체는 정상이다(그룹마다 `search_calls` 2~4회, 날짜 필터 탈락 ~0건). 문제는 **무엇을 돌려주느냐**다. 레인별 당일(KST) 발행 기사 발견 수:
+
+| 삽입일 | DeepSeek 레인 | OpenAI 레인 | 현지 레인(OpenAI 엔진) |
+|---|---|---|---|
+| 09-07 | **23** | 8 | — |
+| 09-08 | **8** | 5 | — |
+| 09-09 | **10** | 1 | — |
+| 09-10 (DeepSeek 사망) | — | 3 | — |
+| 09-11 / 09-12 | — | 0 / 0 | — / 0 |
+| 09-14 (3회 실행) | — | 0 | **0** (18건 전부 이틀 이상 지난 것) |
+
+OpenAI 웹 검색은 두 레인 모두 1~3일 지난 포털 재게재 기사만 돌려준다. 09-12 인수인계가 "손실이 확인되지 않아 보류"한 그 손실이다. 검색 모델은 09-08부터 줄곧 `gpt-5.6-luna`라 모델 변경은 원인이 아니다.
+
+**대응 1 (`578c707`, 배포됨):** 두 레인 프롬프트에 오늘·어제 우선, 현지 레인에 전문매체 **도메인**(gg-lb.com·cbea.com·libattery.ofweek.com·itdcw.com·escn.com.cn·d1ev.com·gasgoo.com)을 주어 site: 검색, 요청 본문에 구체 날짜로 최신 순서. 효과는 실행당 당일 발견 수로 잰다.
+
+**대응 2 — DeepSeek Anthropic 호환 경로가 살아 있었다 (실호출 확인, 로컬 커밋).** 09-12 인수인계의 "미검증 경로"를 `scripts/probe-deepseek-anthropic.mjs`로 1회 호출했다(사용자 터미널, 실제 키).
+결과: HTTP 200, `content` = `thinking,text,server_tool_use×2,web_search_tool_result×2,thinking,text`, `usage.server_tool_use.web_search_requests: 2`, 검색 결과 URL 20건, 모델이 고른 기사 3건이 **전부 09-13·09-14 발행**. Responses API 호환표가 Ignored로 바뀐 것과 별개로 이 경로는 서버 측 검색을 실행한다.
+
+`lib/llm-provider.js`를 고쳤다: DeepSeek `webSearch` 호출만 `https://api.deepseek.com/anthropic/v1/messages`로 보낸다(`x-api-key`, `tools: [{type: "web_search_20250305", name: "web_search", max_uses: 8}]`, `max_tokens: 6000`, 시간제한 55초). 응답은 `anthropicToResponsesPayload()`가 Responses 모양으로 바꿔 뒤 처리(검색 0회 폐기·URL 대조·JSON 파싱·복구·원문 저장)를 그대로 탄다. `server_tool_use` → `web_search_call`, 검색 결과 URL → `action.sources`, `stop_reason=max_tokens` → `incomplete_details`. 검색 모델 기본값은 이 경로의 정식 ID `deepseek-flash`. 비검색 DeepSeek 호출(교차검증)은 Responses API 그대로다. `check-llm-search.mjs`를 새 계약으로 다시 썼고 `check-json-recovery.mjs`의 가짜 응답을 맞췄다.
+
+**켜는 법:** Vercel에 `CHINA_LOCAL_SEARCH_ENGINE=deepseek`. 레인→엔진 전환, 그룹 3곳, 회사당 1건 상한, "회사마다 검색 1회" 프롬프트 가드는 09-12에 만들어 둔 것이 그대로 작동한다. 켠 뒤 첫 실행에서 볼 것: `pipeline_log.collect.web_search`의 `china_local` 행 `engine: deepseek`·`search_calls>0`, `telemetry.model=deepseek-flash`, 당일 발행 기사 수, 그룹당 소요(55초 안에 드는지).
+
+**보안 메모:** 프로브 실행 때 사용자가 DeepSeek 키를 대화에 붙였다. 키 폐기·재발급과 Vercel `DEEPSEEK_API_KEY` 교체를 안내했다. 로컬 파일에는 쓰지 않았다(`vercel env pull`도 Sensitive 변수는 `[SENSITIVE]`로만 내려온다 — 로컬 `.env`가 "마스킹"돼 있던 이유).
+
+지난 주말 대조(참고): 09-05(토)·09-06(일) 기사는 대부분 다음 평일 저녁 크론에서 들어왔다(09-07 실행이 토 19건·일 10건). 이번 주말은 그 저녁 크론이 둘 다 죽었다.
 
 ### 다음 작업자가 볼 것
 

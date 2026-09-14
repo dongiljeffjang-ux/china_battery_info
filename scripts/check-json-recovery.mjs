@@ -13,8 +13,13 @@ let calls=[], invented=false, broken=false;
 globalThis.fetch=async (url,options)=>{
   const body=JSON.parse(options.body); calls.push(body);
   const deep=url.includes('deepseek');
-  const text=deep?'기사 링크 https://example.com/news':broken?'still not JSON':JSON.stringify({articles:[{url:invented?'https://invented.com/':'https://example.com/news'}]});
-  return Response.json({status:'completed',output:[...(deep?[{type:'web_search_call'}]:[]),{type:'message',content:[{type:'output_text',text}]}]});
+  // DeepSeek 검색은 Anthropic 호환 경로라 응답도 그 모양이다(2026-09-14). 검색은 돌았지만 최종 텍스트가 JSON이 아닌 경우.
+  if (deep) return Response.json({type:'message',stop_reason:'end_turn',content:[
+    {type:'server_tool_use',id:'c1',name:'web_search',input:{query:'CATL'}},
+    {type:'web_search_tool_result',tool_use_id:'c1',content:[{type:'web_search_result',url:'https://example.com/news'}]},
+    {type:'text',text:'기사 링크 https://example.com/news'}]});
+  const text=broken?'still not JSON':JSON.stringify({articles:[{url:invented?'https://invented.com/':'https://example.com/news'}]});
+  return Response.json({status:'completed',output:[{type:'message',content:[{type:'output_text',text}]}]});
 };
 const opts={provider:'deepseek',webSearch:true,name:'test',schema,input:'CATL'};
 const result=await createJsonResponse(opts);
