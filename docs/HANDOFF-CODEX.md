@@ -1721,3 +1721,35 @@ git diff --check
 
 (이전 세션이 남긴 "제약의 존재와 구속력을 구분하라" 같은 진단 규칙은 `CLAUDE.md`에 있으므로 여기
 반복하지 않는다.)
+
+## 9. 2026-09-14 추가 변경 — pending 처리·RAG 모델·기업 시간축 UI
+
+### 9.1 9월 pending 일괄 처리 완료
+
+`scripts/process-pending-range.mjs --from 2026-09-01 --to 2026-10-01 --concurrency 3`를 실행해
+9월 pending 기사를 날짜 가까운 순(최신→과거)으로 처리했다. 대상 300건 중 회사 미연결 14건을 제외하고
+276건을 시도했다. 최종 결과는 `verified 220`, `not_pending 4`, `robots_disallowed 8`,
+`processing_failed 28`, `body_too_short 12`, `body_unavailable 4`다. 오류 건은 일시적 fetch·번역
+timeout이 섞여 있으며, `processing_failed`는 다음 pending 재시도 대상이다. 로그는
+`outputs/pending-september-2026.out.log`와 `.err.log`에 남아 있다. 완료 후 heartbeat 자동화
+`9-pending`은 삭제했다.
+
+다음 작업: 9월 처리가 끝났으므로 일반 수집 1회를 실행해 오늘 기준 최근 3일 신규 기사를 찾는다.
+기존 URL은 `ignore-duplicates`로 보존되며, 새 pending만 본문 처리 대상으로 들어간다.
+
+### 9.2 RAG 검색 모델 Luna 전환
+
+`lib/llm-provider.js`의 `OPENAI_RAG_MODEL` 기본값을 `gpt-5.6-luna`로 변경했고,
+Vercel Production 환경변수 `OPENAI_RAG_MODEL`도 `gpt-5.6-luna`로 재설정했다. RAG 답변·질의 재작성에
+Luna를 사용한다. 뉴스 수집·본문 구조화 모델과 임베딩 모델(`text-embedding-3-small`)은 바꾸지 않았다.
+관련 커밋은 `e4cc34d`, 환경변수 반영 재배포 트리거는 `a9bd43c`다.
+
+### 9.3 기업 시간축 셀 토글 UI
+
+기업 페이지 시간축(`app/app.js`의 `renderLayerMatrix`)에서 사업·기술 신호를 우선 정렬하고,
+연구인력·직원 구성·복리후생·자본금 등 저신호 항목을 낮은 순위로 보낸다. 각 셀은 핵심 4건을
+기본 표시하고 나머지는 `+N건 더보기`/`접기` 토글로 열 수 있다. 기존 데이터나 이벤트를 삭제하지 않으며,
+모바일에서도 같은 동작을 한다. 정적 회귀검사 `scripts/check-company-cell-toggle.mjs`를 추가했다.
+
+운영 배포 완료: 커밋 `df8f8b3`, Production alias `https://china-battery-lens.vercel.app`,
+Vercel 상태 `READY`, 운영 URL HEAD 응답 `HTTP 200`.
