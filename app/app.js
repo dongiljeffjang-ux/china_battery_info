@@ -847,10 +847,6 @@ function groupLine(group){
 function entityLabel(event){
   return event.entities.length ? event.entities.join(' · ') : '';
 }
-function sourceLink(event, fontSize){
-  if (!event.sourceUrl) return escapeHtml(event.sourceName);
-  return `<a href="${escapeHtml(event.sourceUrl)}" target="_blank" rel="noreferrer"${fontSize ? ` style="font-size:${fontSize}"` : ''}>${escapeHtml(event.sourceName)}</a>`;
-}
 async function renderCompany(){
   const profile = document.querySelector('#company-profile');
   const grid = document.querySelector('#snapshot-grid');
@@ -1208,10 +1204,6 @@ function digestItemParts(event, companyId){
     budget -= clipped.length;
   }
   return { title, points };
-}
-function digestItemText(event, companyId){
-  const { title, points } = digestItemParts(event, companyId);
-  return [title, ...points].join('\n');
 }
 // ── 정량 궤적 ───────────────────────────────────────────────────────────────
 // 하나의 연속 시간축을 지표 선과 사건 플래그가 나눠 쓴다. 축은 연도 칸이 아니라 날짜라

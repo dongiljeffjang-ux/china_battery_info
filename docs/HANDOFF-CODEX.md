@@ -1,5 +1,54 @@
 # Codex → Claude Code 인수인계
 
+## 2026-09-14 Claude Code — 죽은 코드 제거와 캐시 버전 고정값 정리 (로컬 커밋 전)
+
+### 고친 것
+
+전수 조사로 참조가 없는 선언만 골라 지웠다. 동작 변경은 없다.
+
+| 파일 | 지운 것 | 근거 |
+|---|---|---|
+| `app/app.js` | `sourceLink()`, `digestItemText()` | 파일 안팎 어디서도 호출하지 않는다 |
+| `lib/curation.js` | `redateCompanyBatch()`, `REDATE_BATCH`, `ENRICH_PER_HOP`, `redateReportEvents` import | `HEAVY_TASKS`·API·스크립트 어디에도 없다. 연차보고서 시점 재확인은 `api/ingest-rss.js`의 `?redate=<회사>` 경로(`runRedate`)가 맡는다 |
+| `lib/timeline-report.js` | `linkCandidates()`와 전용 보조 `STOP_TOKENS`·`tokensOf`·`monthIndex` | 2026-09-11 보고서 3종 통합으로 `패턴 분석` 모드가 사라지며 호출부가 없어졌다 |
+| `lib/concept-graph.js` | `LAYER_ENUM`·`LAYER_PROMPT_GUIDE` import | 쓰지 않는다 |
+| `scripts/check-policy-context.mjs` | `policyCell`에 주입하던 `sourceLink` 인자 | 추출 대상 슬라이스가 이 함수를 부르지 않는다 |
+| `scripts/check-rag-evaluation.mjs` | `CHUNK_B` 픽스처 | 쓰지 않는다 |
+
+`app/app.js`를 고쳤으므로 캐시 버전을 `20260914-dead-code`로 올렸다.
+
+### 캐시 버전 검사가 이미 깨져 있었다 (내 변경 이전 문제)
+
+작업을 시작할 때 `scripts/check-digest-bullets.mjs`와 `check-page-outline.mjs`가 이미 실패 상태였다.
+두 스크립트가 `app.js?v=20260911-unified-timeline`을 하드코딩했는데 09-14 커밋 `df8f8b3`이 버전을
+`20260914-matrix-toggle`로 올리면서 `check-company-cell-toggle.mjs` 한 곳만 고쳤기 때문이다.
+
+**값을 세 곳에 나눠 적는 방식 자체가 원인이라 걷어냈다.** 고정값은 보호 효과도 없다 — 버전을 올렸을
+때만 실패하고, app.js를 고치고 버전을 안 올린 경우(막으려던 바로 그 상황)는 잡지 못한다.
+지금은 `check-page-outline.mjs` 한 곳에서 `app.js`·`styles.css`가 `날짜-이름` 형식의 `?v=`를 달고
+있는지 **형식만** 본다. 나머지 두 스크립트의 중복 단언은 지웠다.
+
+`check-company-cell-toggle.mjs`는 검사 항목을 배열 인덱스(`checks[6]`·`checks[7]`)로 파일과
+짝지어 항목 하나만 빼도 뒤 항목이 엉뚱한 파일을 보게 돼 있었다. 항목마다 대상 파일을 함께
+적도록 바꿨다.
+
+### 검증
+
+`node --check`(4개 파일), `npm run check`, `git diff --check`, `scripts/check-*.mjs` **61개 전부 통과**
+(시작 시점에는 2개 실패). 로컬 정적 서버로 `app/index.html`을 띄워 `app.js?v=20260914-dead-code`가
+200으로 로드되고 JS 콘솔 오류가 없음을 확인했다(`/api/*` 404는 정적 서버라 나는 것이 정상).
+
+### 문서
+
+`docs/HANDOFF.md` 7절과 `docs/feature-map.md` 5절의 `renderCandidateQueue()` 죽은 코드 항목을 지웠다.
+그 함수는 이미 오래전에 제거됐고 문서만 남아 있었다.
+
+### 다음 작업자가 볼 것
+
+- 이 변경은 아직 커밋 전이다. 사용자 개인 산출물(`docs/PRESENTATION-*`, `docs/PROJECT-REPORT-*`)은
+  untracked 그대로 두었다.
+- 캐시 버전을 올릴 때 이제 스크립트를 같이 고칠 필요가 없다. `app/index.html` 한 곳만 바꾼다.
+
 ## 2026-09-12 Claude Code — DeepSeek 검색 중단의 원인 확정과 중국 현지 검색의 OpenAI 이관
 
 ### 확인한 것 (운영 DB `pipeline_log` + DeepSeek 공식 문서)
@@ -87,7 +136,7 @@
 > **캐시 버전 규칙 (2026-09-10 21시 확인):** `app/app.js`·`app/styles.css`를 바꾸면 `app/index.html`의 `?v=`를 반드시 올린다.
 > Codex의 전략 보고서 모드 커밋 6개(`d71b031`~`1a62883`)가 두 파일을 바꾸고 버전을 그대로 둬, 20:22 이후 접속한 브라우저가
 > 새 HTML에 옛 `app.js`를 붙여 쓸 수 있었다(새 보고서 버튼 무동작 위험). `bee9b70` 뒤 커밋에서 `app.js?v=20260910-report-modes`,
-> `styles.css?v=20260910-borderless-tools`로 올렸다. `scripts/check-digest-bullets.mjs`·`check-page-outline.mjs`가 app.js 버전을 고정하므로 같이 고친다.
+> `styles.css?v=20260910-borderless-tools`로 올렸다. (2026-09-14 정정: 검사 스크립트의 버전 고정값은 걷어냈다. 이제 `app/index.html` 한 곳만 고치면 된다.)
 
 ## 2026-09-11 Claude Code — 정책 연결·보고서 프롬프트 전면 개정·Daily·Sankey 신호 주체 (전부 푸시됨)
 

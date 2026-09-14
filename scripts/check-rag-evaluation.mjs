@@ -14,7 +14,6 @@ const {
 } = await import("../lib/rag-evaluation.js");
 
 const CHUNK = "11111111-2222-3333-4444-555555555555";
-const CHUNK_B = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
 // --- 1) 입력 검증 -----------------------------------------------------------
 

@@ -15,6 +15,9 @@ assert.match(app, /new IntersectionObserver\(/, "현재 구간을 스크롤 위�
 assert.match(app, /activateView[\s\S]*refreshPageOutline\(view\)/, "페이지 전환 때 목차도 바뀌어야 한다");
 assert.ok(css.includes(".page-outline{"), "고정 목차 스타일이 있어야 한다");
 assert.ok(css.includes("@media(max-width:760px){.page-outline{display:none}"), "모바일에서는 목차를 숨겨야 한다");
-assert.match(html, /app\.js\?v=20260911-unified-timeline/, "새 목차 스크립트를 받도록 캐시 버전을 올려야 한다");
+// 캐시 버전은 여기 한 곳에서만 본다. 값을 세 스크립트에 나눠 적었더니 버전을 올릴 때마다 빠뜨린
+// 스크립트가 생겼다(2026-09-14 커밋 df8f8b3 이후 검사 2개가 깨진 채 남았다). 값이 아니라 형식을 본다.
+assert.match(html, /app\.js\?v=\d{8}-[a-z0-9-]+/, "app.js는 날짜-이름 형식의 캐시 버전을 달고 있어야 한다");
+assert.match(html, /styles\.css\?v=\d{8}-[a-z0-9-]+/, "styles.css도 같은 형식의 캐시 버전을 달고 있어야 한다");
 
 console.log("page outline checks passed");

@@ -37,7 +37,7 @@ assert.doesNotMatch(linkedPolicyTable([{ policy_id: 'policy-history-18', policy_
 const app = readFileSync(new URL('../app/app.js', import.meta.url), 'utf8');
 const source = app.slice(app.indexOf('function policyInlineItems('), app.indexOf('// 리포트 출력은 제한된 Markdown('));
 const escapeHtml = value => String(value || '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
-const { policyCell } = new Function('escapeHtml', 'periodOf', 'displayDate', 'sourceLink', source + '\nreturn { policyCell };')(escapeHtml, date => date.slice(0, 4), event => event.date, event => escapeHtml(event.sourceName));
+const { policyCell } = new Function('escapeHtml', 'periodOf', 'displayDate', source + '\nreturn { policyCell };')(escapeHtml, date => date.slice(0, 4), event => event.date);
 const fake = [
   { id: 'policy-1', date: '2026-07-16', title: '<script>bad</script>', fact: '발표 내용', sourceName: '첨부 미검증' },
   { id: 'policy-1-schedule-2026-09-01', date: '2026-09-01', title: '<script>bad</script> · 시행·유예 일정(첨부)', fact: '시행 내용', sourceName: '첨부 미검증' },

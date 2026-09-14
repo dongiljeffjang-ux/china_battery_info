@@ -254,4 +254,3 @@ F9.10,모듈 정합성 체크,F9,#9CA3AF
 - `pending_review` → `verified` 스키마 마이그레이션
 - 실행별 수집·처리 카운트 운영 화면
 - HKEX(홍콩 상장사) 연차보고서 수집 경로
-- `app/app.js` `renderCandidateQueue()` 죽은 코드
