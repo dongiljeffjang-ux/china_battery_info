@@ -17,6 +17,7 @@ import { fetchCompanyFinancials, securityCodeOf } from "../lib/market-financials
 import { fetchPeriodRates } from "../lib/fx-rates.js";
 import { acquireRun, releaseRun, claimStage, withSearchBudget, searchBudgetFor } from '../lib/ingestion-guard.js';
 import { retryIsDue } from '../lib/pending-recovery.js';
+import { processWindowStart } from '../lib/date-window.js';
 
 // Vercel Fluid compute(2025-04 이후 새 프로젝트 기본)에서 Hobby 함수 한도는 기본·최대 300초다.
 // `api/*.js` Node 함수는 `export const config = { maxDuration }` 형식만 읽는다. 예전의
@@ -25,8 +26,8 @@ import { retryIsDue } from '../lib/pending-recovery.js';
 export const config = { maxDuration: 300 };
 
 const TOP10_LIMIT = 10;
-// 정상 수집 때도 오래된 미시도 기사를 조금씩 되살린다. 최근 뉴스 처리량을 침범하지 않게 2건으로 고정한다.
-const BACKLOG_PER_RUN = 2;
+// 정상 수집 때도 오래된 미시도 기사를 별도 몫으로 되살린다. 최근 뉴스 처리량과 섞지 않고 4건씩 본문·임베딩까지 보낸다.
+const BACKLOG_PER_RUN = 4;
 // 검증 기사가 0건인 핵심 비상장사. 연결 기사가 하나라도 생기면 그 회사는 다음 실행부터 빠진다
 // (bootstrapCompanyIds 계산이 매 실행 다시 확인한다). docs/HANDOFF-CODEX.md 2026-09-07 절 참고.
 const BOOTSTRAP_CANDIDATE_IDS = ["reshine", "kaijin-new-energy"];
@@ -176,7 +177,8 @@ async function selectHeadlineTop10(pilot = false) {
   // 읽는 게 목적이므로, 그 창을 벗어난 기사는 다시 집지 않고 흘려보낸다.
   const select = "id,title_original,source_name,source_tier,published_at,processing_status,next_processing_at,article_company(company_id)";
   const filter = "verification_status=eq.pending&or=(processing_status.is.null,processing_status.eq.processing_failed)";
-  const since = new Date(Date.now() - PROCESS_WINDOW_DAYS * 86400000).toISOString();
+  // 한국시간 3일 전 00:00부터다. 실행 시각 기준 정확히 72시간을 빼면 같은 날짜 기사 일부가 빠진다.
+  const since = processWindowStart(PROCESS_WINDOW_DAYS);
   const disclosureSince = new Date(Date.now() - DISCLOSURE_WINDOW_DAYS * 86400000).toISOString();
   // bootstrap 기사는 최대 365일 전 것이라 위 3일 창에 들지 않는다. 창 없이 별도로 뽑아,
   // 처음 한 번 확보한 과거 기사가 실제 본문대조까지 가도록 한다.
