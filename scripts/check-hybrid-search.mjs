@@ -464,7 +464,7 @@ assert.match(source, /KNOWLEDGE_REWRITE_SKIPPED/, "재작성 실패는 기존 �
 assert.match(source, /parsed \? ordered\.filter\(\(row\) => parsed\.companies\.includes\(row\.company_id\)\) : ordered/, "정량 질문에 다른 회사 근거를 섞지 않는다");
 const providerSource = await import("node:fs").then((fs) => fs.readFileSync(new URL("../lib/llm-provider.js", import.meta.url), "utf8"));
 assert.ok(providerSource.includes('provider === "openai_rag"'), "전용 RAG 제공자 설정이 있어야 한다");
-assert.ok(providerSource.includes('OPENAI_RAG_MODEL') && providerSource.includes('gpt-5.4-nano'), "RAG 기본 모델은 gpt-5.4-nano여야 한다");
+assert.ok(providerSource.includes('OPENAI_RAG_MODEL') && providerSource.includes('gpt-5.6-luna'), "RAG 기본 모델은 gpt-5.6-luna여야 한다");
 
 // --- 3-4) '보조 데이터 포함'은 검증 근거를 보존하고 헤드라인을 뒤에 덧붙인다 ----------------
 //
